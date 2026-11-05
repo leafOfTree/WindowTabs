@@ -1105,7 +1105,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                             if DesktopPlan.isEmpty plan then Notice.show (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.nothingChanged)
                             else
                                 GroupEditorApply.run plan (fun outcome ->
-                                    Notice.show (tr Strings.GroupEditor.title) (tr (Strings.GroupEditor.applied outcome.moved outcome.detached outcome.made))))
+                                    Notice.show (tr Strings.GroupEditor.title) (tr (Strings.GroupEditor.applied outcome.moved outcome.detached outcome.made outcome.closed))))
                         groupEditorCell.set(Some editor)
                         editor.Show()
                 for info in groups do

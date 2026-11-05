@@ -131,6 +131,18 @@ let main() =
     let m6 = DesktopDraft.newGroup f desk |> DesktopDraft.newGroup d
     check (m6.loose=[e] && (m6.groups |> List.map(fun g -> g.group,g.tabs))=[Some(IntPtr 1),[a;b;c];None,[f];None,[d]]) "New rows did not come above the loose row, or the row left empty stayed"
     check (DesktopDraft.newGroup (IntPtr 99) desk=desk) "A window from nowhere made a row"
+    // The bin: a window put in it leaves its group and its pane, closes on Save, and comes back
+    // out as any window moves.
+    let binned = DesktopDraft.moveToClosing b desk |> DesktopDraft.moveToClosing e
+    check (binned.closing=[b;e] && binned.loose=[f] && binned.groups.[0].tabs=[a;c] && binned.groups.[0].panes.IsNone && DesktopDraft.find b binned=Closing)
+          (sprintf "A window put in the bin did not leave its row and pane: %A" binned)
+    check (DesktopDraft.moveToClosing b binned=binned && DesktopDraft.moveToClosing (IntPtr 99) desk=desk) "The bin took a window twice, or one from nowhere"
+    let back = DesktopDraft.moveToLoose b binned |> DesktopDraft.moveToGroup e 1 None
+    check (back.closing.IsEmpty && back.loose=[f;b] && back.groups.[1].tabs=[d;e]) (sprintf "A window taken out of the bin stayed in it: %A" back)
+    let planClose = DesktopPlan.make desk binned
+    check (planClose.closing=[b;e] && planClose.detached.IsEmpty && not (DesktopPlan.isEmpty planClose)
+           && planClose.groups |> List.forall(fun step -> not (List.contains b step.tabs)))
+          (sprintf "Save did not plan to close the bin's windows, or kept one in its group: %A" planClose)
     check (DesktopDraft.emptyCells (DesktopDraft.edit 0 (GroupDraft.cut a [First] ThreeColumns) desk)=2) "The desktop did not count its empty cells"
 
     // The plan: only what changed, per group.
@@ -453,6 +465,20 @@ let main() =
             check (editor.Draft.loose=[e;f;b] && editor.Drag |> Option.exists(fun d -> d.aim=None)) "A tab over the loose row did not go loose there"
             editor.MouseUp(centre l.loose)
             check (editor.Draft.loose=[e;f;b] && tabsOf 0=[a] && editor.Draft.groups.[0].panes.IsNone) "A tab dropped on the loose row did not leave its group"
+            // Into the bin and out again: over it the tab is in it, closing on Save; taken back
+            // to the loose row it stays open.
+            do
+                let l = editor.Layout
+                editor.MouseDown(centre (l.looseTabs |> List.find(fun (hwnd,_) -> hwnd=b) |> snd))
+                editor.MouseMove(centre l.closing)
+                editor.MouseUp(centre l.closing)
+                check (editor.Draft.closing=[b] && editor.Draft.loose=[e;f]) (sprintf "A tab dropped on the bin did not go in it: %A" editor.Draft)
+                let l = editor.Layout
+                check (l.closingTabs |> List.exists(fun (hwnd,_) -> hwnd=b)) "The bin does not show the tab put in it"
+                editor.MouseDown(centre (l.closingTabs |> List.find(fun (hwnd,_) -> hwnd=b) |> snd))
+                editor.MouseMove(centre l.loose)
+                editor.MouseUp(centre l.loose)
+                check (editor.Draft.closing.IsEmpty && editor.Draft.loose=[e;f;b]) (sprintf "A tab taken out of the bin stayed in it: %A" editor.Draft)
             let l = editor.Layout
             editor.MouseDown(centre (tabIn l.rows.[1] c))
             editor.MouseMove(centre l.newGroup)
@@ -898,13 +924,13 @@ let main() =
             check (order groupA=[w1;w4]) (sprintf "The pane tabs did not take layout order: %A" (order groupA))
             // A window gone before Save is skipped, and no group is made for it alone.
             let skipped = ref None
-            GroupEditorApply.run {detached=[];groups=[{group=None;tabs=[IntPtr 0x5555];joining=[IntPtr 0x5555];reorder=false;layout=None}]} (fun result -> skipped.Value <- Some result)
+            GroupEditorApply.run {detached=[];groups=[{group=None;tabs=[IntPtr 0x5555];joining=[IntPtr 0x5555];reorder=false;layout=None}];closing=[IntPtr 0x5556]} (fun result -> skipped.Value <- Some result)
             pumpUntil "The plan for a window that is gone did not finish" (fun () -> skipped.Value.IsSome)
             let gone = skipped.Value.Value
-            check (gone.made=0 && gone.skipped=[IntPtr 0x5555] && gone.moved=0) (sprintf "A window gone was not skipped: %A" gone)
+            check (gone.made=0 && gone.skipped=[IntPtr 0x5555] && gone.moved=0 && gone.closed=0) (sprintf "A window gone was not skipped, or one gone from the bin counted as closed: %A" gone)
             // Nothing to do finishes at once.
             let nothing = ref None
-            GroupEditorApply.run {detached=[];groups=[]} (fun result -> nothing.Value <- Some result)
+            GroupEditorApply.run {detached=[];groups=[];closing=[]} (fun result -> nothing.Value <- Some result)
             check (nothing.Value.IsSome && nothing.Value.Value.moved=0) "An empty plan did not finish at once"
             printfn "PASS: group editor model, plan and apply pipeline."
         finally

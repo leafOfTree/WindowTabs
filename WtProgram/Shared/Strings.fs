@@ -786,14 +786,15 @@ module Strings =
                      ar="اسحب علامات التبويب على طول الشريط أو إلى لوحة؛ زر الزاوية يقسم اللوحة؛ انقر بزر الفأرة الأيمن على علامة تبويب لإخراجها؛ وEsc يعود." }
         let noGroup = { en="The window in front is in no group."; zh="当前窗口不在任何分组里。"; ja="手前のウィンドウはどのグループにもありません。"; ar="النافذة الأمامية ليست في أي مجموعة." }
         /// What saving did.
-        let applied moved detached made =
+        let applied moved detached made closed =
             let parts (en:string list) = System.String.Join(", ",en |> List.filter(fun part -> part<>""))
             { en=parts [ (if moved=0 then "" elif moved=1 then "1 window moved" else sprintf "%d windows moved" moved)
                          (if detached=0 then "" elif detached=1 then "1 window taken out" else sprintf "%d windows taken out" detached)
-                         (if made=0 then "" elif made=1 then "1 group made" else sprintf "%d groups made" made) ]
-              zh=parts [ (if moved=0 then "" else sprintf "移动 %d 个窗口" moved); (if detached=0 then "" else sprintf "移出 %d 个窗口" detached); (if made=0 then "" else sprintf "新建 %d 个分组" made) ]
-              ja=parts [ (if moved=0 then "" else sprintf "%d 個のウィンドウを移動" moved); (if detached=0 then "" else sprintf "%d 個のウィンドウを外しました" detached); (if made=0 then "" else sprintf "%d 個のグループを作成" made) ]
-              ar=parts [ (if moved=0 then "" else sprintf "نُقلت %d نافذة" moved); (if detached=0 then "" else sprintf "أُخرجت %d نافذة" detached); (if made=0 then "" else sprintf "أُنشئت %d مجموعة" made) ] }
+                         (if made=0 then "" elif made=1 then "1 group made" else sprintf "%d groups made" made)
+                         (if closed=0 then "" elif closed=1 then "1 window closed" else sprintf "%d windows closed" closed) ]
+              zh=parts [ (if moved=0 then "" else sprintf "移动 %d 个窗口" moved); (if detached=0 then "" else sprintf "移出 %d 个窗口" detached); (if made=0 then "" else sprintf "新建 %d 个分组" made); (if closed=0 then "" else sprintf "关闭 %d 个窗口" closed) ]
+              ja=parts [ (if moved=0 then "" else sprintf "%d 個のウィンドウを移動" moved); (if detached=0 then "" else sprintf "%d 個のウィンドウを外しました" detached); (if made=0 then "" else sprintf "%d 個のグループを作成" made); (if closed=0 then "" else sprintf "%d 個のウィンドウを閉じました" closed) ]
+              ar=parts [ (if moved=0 then "" else sprintf "نُقلت %d نافذة" moved); (if detached=0 then "" else sprintf "أُخرجت %d نافذة" detached); (if made=0 then "" else sprintf "أُنشئت %d مجموعة" made); (if closed=0 then "" else sprintf "أُغلقت %d نافذة" closed) ] }
         let nothingChanged = { en="Nothing changed."; zh="没有改动。"; ja="変更はありません。"; ar="لم يتغير شيء." }
         let dropHere = { en="Drop a window here"; zh="拖窗口到这里"; ja="ここにウィンドウをドロップ"; ar="أفلت نافذة هنا" }
         /// Said in the footer while the split button's slots are still empty.
@@ -809,6 +810,9 @@ module Strings =
               zh=sprintf "%d 个分组，共 %d 个窗口" groups windows
               ja=sprintf "グループ %d、ウィンドウ %d" groups windows
               ar=sprintf "%d مجموعة، %d نافذة" groups windows }
+        /// The bin's label, and what it says while empty.
+        let closeBin = { en="Close on save"; zh="保存时关闭"; ja="保存時に閉じる"; ar="تُغلق عند الحفظ" }
+        let closeBinEmpty = { en="Drop tabs here to close their windows when you save"; zh="把标签拖到这里，保存时关闭这些窗口"; ja="ここにタブをドロップすると、保存時にそのウィンドウを閉じます"; ar="أفلت علامات التبويب هنا لإغلاق نوافذها عند الحفظ" }
         let looseWindows = { en="Loose windows"; zh="未分组窗口"; ja="未分類のウィンドウ"; ar="نوافذ غير مجمّعة" }
         /// In the loose row while no window is on its own: what the row is for.
         let looseEmpty = { en="Ungroup: drop a tab or a whole row here"; zh="移出分组：把标签或整行拖到这里"; ja="グループ解除：タブや行ごとここにドロップ"; ar="فك التجميع: أفلت علامة تبويب أو صفًا كاملًا هنا" }

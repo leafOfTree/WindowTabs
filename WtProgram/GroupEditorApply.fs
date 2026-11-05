@@ -9,6 +9,8 @@ type GroupEditorOutcome = {
     made: int
     /// Windows taken out to stand on their own.
     detached: int
+    /// Windows asked to close, from the bin.
+    closed: int
     /// Windows that were to join a group and could not: gone meanwhile, or their group was.
     skipped: IntPtr list }
 
@@ -34,13 +36,17 @@ module GroupEditorApply =
         let made = ref 0
         // The run itself, then one per group with work queued.
         let pending = ref 1
+        let closing = plan.closing |> List.filter WinUserApi.IsWindow
         program.suspendTabMonitoring()
         let settle() =
             pending.Value <- pending.Value-1
             if pending.Value=0 then
                 program.resumeTabMonitoring()
-                finished {moved=moved.Value; made=made.Value; detached=plan.detached.Length; skipped=List.ofSeq skipped}
+                finished {moved=moved.Value; made=made.Value; detached=plan.detached.Length; closed=closing.Length; skipped=List.ofSeq skipped}
         for hwnd in plan.detached do program.detachTab hwnd
+        // Asked as their close buttons ask, so an app with unsaved work can still ask about it;
+        // each leaves its group as any closed window does.
+        for hwnd in closing do OS().windowFromHwnd(hwnd).close()
         for step in plan.groups do
             let joining,gone = step.joining |> List.partition WinUserApi.IsWindow
             skipped.AddRange gone

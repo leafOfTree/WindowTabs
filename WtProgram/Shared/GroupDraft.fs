@@ -25,7 +25,8 @@ type GroupDraft = {
     focused: PanePath }
 
 /// The desktop as the editor shows it: the rows in order, and the windows in none.
-type DesktopDraft = { groups: GroupDraft list; loose: IntPtr list }
+/// The rows, the windows in no group, and the windows put in the bin, which close on Save.
+type DesktopDraft = { groups: GroupDraft list; loose: IntPtr list; closing: IntPtr list }
 
 module GroupDraft =
     let private isPinned draft hwnd = draft.pinned.Contains hwnd
@@ -271,21 +272,21 @@ module GroupDraft =
         | _ -> true
 
 /// Where a window is in the picture.
-type DraftPlace = InGroup of int | Loose | Nowhere
+type DraftPlace = InGroup of int | Loose | Closing | Nowhere
 
 module DesktopDraft =
     /// The rows, and the loose windows that are in none of them.
     let ofDesktop (groups:GroupDraft list) (loose:IntPtr list) =
-        {groups=groups; loose=loose |> List.distinct |> List.filter(fun hwnd -> not(groups |> List.exists(fun g -> List.contains hwnd g.tabs)))}
+        {groups=groups; loose=loose |> List.distinct |> List.filter(fun hwnd -> not(groups |> List.exists(fun g -> List.contains hwnd g.tabs))); closing=[]}
     let find hwnd draft =
         match draft.groups |> List.tryFindIndex(fun g -> List.contains hwnd g.tabs) with
         | Some index -> InGroup index
-        | None -> if List.contains hwnd draft.loose then Loose else Nowhere
+        | None -> if List.contains hwnd draft.loose then Loose elif List.contains hwnd draft.closing then Closing else Nowhere
     let private prune draft = {draft with groups=draft.groups |> List.filter(fun g -> not g.tabs.IsEmpty)}
     /// The window out of wherever it is; rows left empty stay until the move is done, so the
     /// target's index holds.
     let private lift hwnd draft =
-        {groups=draft.groups |> List.map(GroupDraft.removeWindow hwnd); loose=draft.loose |> List.filter((<>) hwnd)}
+        {groups=draft.groups |> List.map(GroupDraft.removeWindow hwnd); loose=draft.loose |> List.filter((<>) hwnd); closing=draft.closing |> List.filter((<>) hwnd)}
     let private updateGroup index f draft = {draft with groups=draft.groups |> List.mapi(fun i g -> if i=index then f g else g)}
     /// An edit within one row.
     let edit index (f:GroupDraft -> GroupDraft) draft =
@@ -302,6 +303,11 @@ module DesktopDraft =
         match find hwnd draft with
         | Loose -> draft
         | _ -> let lifted = lift hwnd draft in prune {lifted with loose=lifted.loose@[hwnd]}
+    /// The window into the bin, out of its group and its pane: it closes on Save.
+    let moveToClosing hwnd draft =
+        match find hwnd draft with
+        | Closing | Nowhere -> draft
+        | _ -> let lifted = lift hwnd draft in prune {lifted with closing=lifted.closing@[hwnd]}
     /// A new row of the one window, above the loose row.
     let newGroup hwnd draft =
         match find hwnd draft with
@@ -324,8 +330,8 @@ type GroupPlan = {
     layout: GroupLayout option }
 
 /// What Save does: windows taken out to stand on their own, then each group's windows, order
-/// and layout.
-type DesktopPlan = { detached: IntPtr list; groups: GroupPlan list }
+/// and layout; and the windows put in the bin, closed.
+type DesktopPlan = { detached: IntPtr list; groups: GroupPlan list; closing: IntPtr list }
 
 module DesktopPlan =
     let make (before:DesktopDraft) (after:DesktopDraft) =
@@ -345,5 +351,5 @@ module DesktopPlan =
                 let layout = if layout=before then None else Some layout
                 if joining.IsEmpty && not reorder && layout.IsNone then None
                 else Some {group=g.group; tabs=g.tabs; joining=joining; reorder=reorder; layout=layout})
-        {detached=detached; groups=groups}
-    let isEmpty plan = plan.detached.IsEmpty && plan.groups.IsEmpty
+        {detached=detached; groups=groups; closing=after.closing}
+    let isEmpty plan = plan.detached.IsEmpty && plan.groups.IsEmpty && plan.closing.IsEmpty
