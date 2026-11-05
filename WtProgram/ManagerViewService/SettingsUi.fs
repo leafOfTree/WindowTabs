@@ -29,6 +29,8 @@ module SettingsUi =
     /// Windows 11's face, as WinUI sets its text; Segoe UI where it is missing, as on Windows 10.
     let uiFamily() = UiFace.text "Segoe UI"
     let uiSemiboldFamily() = UiFace.semibold()
+    /// The face for captions and other small text, in the optical size Windows sets them in.
+    let smallFamily() = UiFace.small (uiFamily())
     let bodyFont() = font (uiFamily()) 10.5f FontStyle.Regular
     let rowFont() = bodyFont()
     /// Semibold, as WinUI heads its sections, not Bold.
@@ -37,7 +39,7 @@ module SettingsUi =
     let subsectionFont() = font (uiSemiboldFamily()) 10.5f FontStyle.Regular
     /// A setting's description under its name: a step smaller, 12px as WinUI's captions, so size
     /// as well as colour tells the two apart.
-    let descriptionFont() = font (uiFamily()) 9.0f FontStyle.Regular
+    let descriptionFont() = font (smallFamily()) 9.0f FontStyle.Regular
 
     let palette() = SettingsColors.current()
 

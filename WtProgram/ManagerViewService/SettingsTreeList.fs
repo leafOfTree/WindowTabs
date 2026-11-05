@@ -840,7 +840,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             let measureIn (font:Font) (value:string) = TextRenderer.MeasureText(g,value,font,Size(Int32.MaxValue,rowHeight),flags).Width
                             let measure = measureIn this.Font
                             // A step smaller than the name, so the name leads.
-                            let suffixFont = SettingsUi.font this.Font.FontFamily.Name (this.Font.SizeInPoints*0.86f) FontStyle.Regular
+                            let suffixFont = SettingsUi.font (UiFace.small this.Font.FontFamily.Name) (this.Font.SizeInPoints*0.86f) FontStyle.Regular
                             let gap = Dpi.scale 6
                             let suffixWidth = measureIn suffixFont item.Suffix
                             let nameWidth = min (measure item.Text+Dpi.scale 2) (max 0 (nameBounds.Width-suffixWidth-gap))
@@ -947,7 +947,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     let half = Dpi.scale (this.CellGap/2)
                     let bounds = Rectangle(cell.X+half,top,max 1 (cell.Width-2*half-reserve),rowHeight)
                     let font =
-                        if column=columns.Length-1 && item.SmallValue then SettingsUi.font this.Font.FontFamily.Name (this.Font.SizeInPoints*0.86f) FontStyle.Regular
+                        if column=columns.Length-1 && item.SmallValue then SettingsUi.font (UiFace.small this.Font.FontFamily.Name) (this.Font.SizeInPoints*0.86f) FontStyle.Regular
                         else this.Font
                     // Move text and its match highlights together, preserving ellipsis clipping. Text
                     // at the right ends where a switch does: the padding DrawText leaves after the

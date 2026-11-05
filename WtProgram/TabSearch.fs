@@ -670,7 +670,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             match asideWidths.TryGetValue key with
             | true,width -> width
             | _ ->
-                let font = if aside.small then SettingsUi.font list.Font.FontFamily.Name (list.Font.SizeInPoints*0.86f) FontStyle.Regular else list.Font
+                let font = if aside.small then SettingsUi.font (UiFace.small list.Font.FontFamily.Name) (list.Font.SizeInPoints*0.86f) FontStyle.Regular else list.Font
                 let width = TextRenderer.MeasureText(value,font,Size(Int32.MaxValue,Dpi.scale rowHeight),TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width
                 asideWidths.[key] <- width
                 width
@@ -989,7 +989,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     assignment |> Option.map(fun assignment -> entry,assignment))
                 |> Option.iter(fun (entry,assignment) ->
                     // A size under the rows' text, as the shortcuts beside the names are.
-                    let editor = new SettingsShortcutInput(Font=SettingsUi.font (SettingsUi.uiFamily()) 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text,InList=assignment.inList)
+                    let editor = new SettingsShortcutInput(Font=SettingsUi.font (SettingsUi.smallFamily()) 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text,InList=assignment.inList)
                     // On the chosen row: round its corners the row's highlight shows, not the
                     // list's surface, which showed as dark corners.
                     editor.PlaceOn(if SystemInformation.HighContrast then SystemColors.Highlight else palette.selection)

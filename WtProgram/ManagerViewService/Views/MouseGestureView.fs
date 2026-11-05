@@ -52,7 +52,7 @@ module GestureUi =
         use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 4))
         use brush = new SolidBrush(fill)
         g.FillPath(brush,shape)
-    let smallFont() = SettingsUi.font (SettingsUi.uiFamily()) 9.0f FontStyle.Regular
+    let smallFont() = SettingsUi.font (SettingsUi.smallFamily()) 9.0f FontStyle.Regular
     let monoFont() = SettingsUi.font "Consolas" 9.5f FontStyle.Regular
 
 /// The 16 gestures to pick from, each played while the pointer or the keyboard is on it, with a
@@ -845,7 +845,7 @@ type MouseGestureEditor() as this =
             let saidWidth = GestureUi.measure said small
             GestureUi.text g said small (Rectangle(bounds.X+m 10,bounds.Y,saidWidth+m 4,bounds.Height)) (GestureUi.accentText p)
             let link = tr Strings.MouseGestures.startEmpty
-            let linkFont = SettingsUi.font (SettingsUi.uiFamily()) 9.0f (if hoverPart="blank" then FontStyle.Underline else FontStyle.Regular)
+            let linkFont = SettingsUi.font (SettingsUi.smallFamily()) 9.0f (if hoverPart="blank" then FontStyle.Underline else FontStyle.Regular)
             let linkBounds = Rectangle(bounds.X+m 10+saidWidth,bounds.Y,GestureUi.measure link linkFont+m 4,bounds.Height)
             GestureUi.text g link linkFont linkBounds (GestureUi.accentText p)
             blankRect.Value <- linkBounds

@@ -257,6 +257,10 @@ module UiFace =
     /// other family, such as a menu font the user chose, stays as it is. Windows 10 keeps Segoe UI.
     let text (family:string) = if family="Segoe UI" && variable.Value then "Segoe UI Variable Text" else family
     let semibold() = if variable.Value then "Segoe UI Variable Text Semibold" else "Segoe UI Semibold"
+    /// The face's optical size for text under 10.5pt, as Windows sets its captions: a larger
+    /// x-height and looser spacing keep small text clear. Any other family stays as it is.
+    let small (family:string) =
+        if (family="Segoe UI" || family="Segoe UI Variable Text") && variable.Value then "Segoe UI Variable Small" else family
     /// The icon font of Windows 11, or of Windows 10; None on a system with neither.
     let icons =
         lazy(

@@ -557,6 +557,8 @@ let main() =
         // Text in Windows 11's face where it is installed, sections headed in Semibold, not Bold.
         let variable = FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text")
         check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))
+        // Small text in the face's small optical size, as Windows sets its captions, so it stays clear.
+        check (SettingsUi.descriptionFont().Name=(if variable then "Segoe UI Variable Small" else "Segoe UI")) (sprintf "Descriptions are set in %s" (SettingsUi.descriptionFont().Name))
         check (not (SettingsUi.sectionFont().Bold) && SettingsUi.sectionFont().Name.EndsWith("Semibold")) (sprintf "Section headings are set in %A" (SettingsUi.sectionFont()))
         check (form.Font.Name=SettingsUi.bodyFont().Name) (sprintf "The settings window's text is set in %s" form.Font.Name)
         // Tabs too, while the menu font is Windows' own; a menu font the user chose stays.
@@ -670,7 +672,9 @@ let main() =
             let contrast (a:Color) (b:Color) = let la,lb = luminance a,luminance b in (max la lb+0.05)/(min la lb+0.05)
             check (contrast p.muted p.background>=4.5 && contrast p.muted p.surface>=4.5)
                   (sprintf "Secondary text is too faint in the %s theme: %.2f:1" mode (contrast p.muted p.background))
-            check (SettingsUi.descriptionFont().Size<SettingsUi.rowFont().Size && contrast p.muted p.text>=2.2)
+            // A size smaller than the names, and apart from them in colour by at least WinUI's own
+            // margin: its secondary grey stands 1.6:1 from the text on dark pages.
+            check (SettingsUi.descriptionFont().Size<SettingsUi.rowFont().Size && contrast p.muted p.text>=1.5)
                   (sprintf "Descriptions are not a size smaller than names, or too close to them, in the %s theme: %.2f:1" mode (contrast p.muted p.text))
             let described = controls form |> Seq.filter(fun c -> c :? SettingsEllipsisLabel && string c.Tag="muted" && c.Text<>"") |> List.ofSeq
             check (not described.IsEmpty && described |> List.forall(fun c -> c.Font.Size=SettingsUi.descriptionFont().Size))
