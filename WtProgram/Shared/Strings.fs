@@ -24,7 +24,6 @@ module Strings =
         let never = { en="Never"; zh="从不"; ja="しない"; ar="أبدًا" }
         let whenMaximized = { en="Maximized"; zh="最大化时"; ja="最大化時"; ar="عند التكبير" }
         let always = { en="Always"; zh="始终"; ja="常に"; ar="دائمًا" }
-        let selectedChoice (name:LocalizedText) = { en=name.en+"  ✓"; zh=name.zh+"  ✓"; ja=name.ja+"  ✓"; ar=name.ar+"  ✓" }
         let operationFailed = { en="Operation failed"; zh="操作失败"; ja="操作に失敗しました"; ar="فشلت العملية" }
 
     module Messages =
@@ -74,7 +73,6 @@ module Strings =
         let splitRatio = { en="Split divider"; zh="分屏分隔条"; ja="分割境界"; ar="فاصل التقسيم" }
         let splitFailed = { en="These windows could not fit the split layout. Split view has ended."; zh="窗口无法适应分屏尺寸，已退出分屏。"; ja="ウィンドウを分割領域に配置できないため、分割を終了しました。"; ar="تعذّر احتواء هذه النوافذ في تخطيط التقسيم. انتهى العرض المقسّم." }
         let top = { en="Top"; zh="顶部"; ja="上部"; ar="أعلى" }
-        let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示"; ar="إظهار عناوين علامات التبويب" }
         let showIconsOnly = { en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示"; ar="إظهار الأيقونات فقط" }
         let newTab = { en="New tab"; zh="新建标签"; ja="新しいタブ"; ar="علامة تبويب جديدة" }
         let renameTab = { en="Rename"; zh="重命名"; ja="名前を変更"; ar="إعادة تسمية" }

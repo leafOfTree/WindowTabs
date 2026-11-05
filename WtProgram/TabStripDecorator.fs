@@ -420,11 +420,13 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.contextMenu(hwnd,images:ResizeArray<Img>) =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
+        // Ticked while on, as the menu's other switches are, under one name: the one the
+        // setting and the palette's command go by.
         let iconOnlyItem = CmiRegular({
-            text = (if group.isIconOnly then tr Strings.TabMenu.showTabTitles else tr Strings.TabMenu.showIconsOnly)
+            text = tr Strings.TabMenu.showIconsOnly
             image = None
             click = fun() -> group.isIconOnly <- group.isIconOnly.not
-            flags = List2()
+            flags = checkedFlag(group.isIconOnly)
         })
         let window = os.windowFromHwnd(hwnd)
         let pid = window.pid
@@ -576,10 +578,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                 let color = palette.[index]
                 let image = Img(MenuImages.colorTab (Dpi.scale 28) (Dpi.scale 16) color (tr Strings.Settings.tabColorSample))
                 images.Add(image)
-                let name = Strings.Settings.tabColorNames.[index]
-                let caption = if currentColor=Some(PaletteColor index) then Strings.Common.selectedChoice name else name
-                CmiRegular({text=tr caption;image=Some image
-                            flags=List2()
+                CmiRegular({text=tr Strings.Settings.tabColorNames.[index];image=Some image
+                            flags=checkedFlag(currentColor=Some(PaletteColor index))
                             click=fun() -> choose (PaletteColor index)}))
             // The colours tabs are given automatically, then the ones only picked by hand.
             |> List.splitAt Theme.automaticColorCount |> fun (main,more) -> main @ [CmiSeparator] @ more

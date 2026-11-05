@@ -1541,6 +1541,14 @@ let main() =
                 check (List.head alone = Localization.tr Strings.TabMenu.newTab + "\tCtrl+Alt+N") "The tab menu does not start with New tab and its shortcut"
                 // Closing the tab has a shortcut of its own, Ctrl+Alt+W, shown beside Close.
                 check (List.contains (Localization.tr Strings.TabMenu.close + "\tCtrl+Alt+W") alone) "Close does not show its shortcut in the tab menu"
+                // Icons only is one switch under one name, ticked while it is on.
+                let iconsOnlyTicked() =
+                    menu handles.Head |> List.tryFind(fun item -> item.text=Localization.tr Strings.TabMenu.showIconsOnly)
+                    |> Option.map(fun item -> item.flags.list |> List.exists(fun flag -> flag &&& MenuFlags.MF_CHECKED<>0))
+                check (iconsOnlyTicked()=Some false) "Show icons only is missing or ticked while the titles show"
+                onGroup(fun group -> group.isIconOnly <- true)
+                check (iconsOnlyTicked()=Some true) "Show icons only changed its name or is not ticked while on"
+                onGroup(fun group -> group.isIconOnly <- false)
                 (List.head (menu handles.[1])).click()
                 check (newTabRequests.ToArray() = [|handles.[1]|]) "New tab did not start the program of the tab it was opened from"
                 // Renaming edits the name in place: a field in the tab's own colours and font, inside the tab.

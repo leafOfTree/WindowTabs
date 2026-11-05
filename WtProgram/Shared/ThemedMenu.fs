@@ -136,6 +136,24 @@ type SettingsPopupShadow(owner:Control, ?corner:int, ?body:unit -> Rectangle, ?s
             cached <- None
             (helper :?> IDisposable).Dispose()
 
+/// The tick a menu gives its chosen item. Drawn as a stroke rather than the icon font's check,
+/// whose hairline at a menu's size read fainter than the text beside it.
+module MenuTick =
+    /// The tick's em, the box it is drawn in.
+    let size() = Dpi.scale 12
+    /// Centred in `box`, its stroke as heavy as Windows 11's own menu tick.
+    let draw (g:Graphics) (box:RectangleF) (color:Color) =
+        let state = g.Save()
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        g.PixelOffsetMode <- Drawing2D.PixelOffsetMode.HighQuality
+        use pen = new Pen(color,float32(Dpi.scaleF 1.75))
+        pen.StartCap <- Drawing2D.LineCap.Round
+        pen.EndCap <- Drawing2D.LineCap.Round
+        pen.LineJoin <- Drawing2D.LineJoin.Round
+        let at x y = PointF(box.X+box.Width*x,box.Y+box.Height*y)
+        g.DrawLines(pen,[|at 0.10f 0.55f;at 0.36f 0.80f;at 0.90f 0.24f|])
+        g.Restore(state)
+
 /// Paint every surface explicitly so nested menus never inherit the light system renderer.
 type ThemeMenuRenderer(p:SettingsPalette) =
     inherit ToolStripProfessionalRenderer()
@@ -163,15 +181,31 @@ type ThemeMenuRenderer(p:SettingsPalette) =
     /// Marks a note's item, drawn inset under the item it is about.
     static member noteTag = box "note"
     static member noteInset = Dpi.scale 14
-    override _.OnRenderItemText(e) =
+    /// The ink of a chosen item's tick: the accent, or the text's where the item cannot be taken.
+    member private _.tickInk (item:ToolStripItem) =
+        if not item.Enabled || SystemInformation.HighContrast then textColor item else p.accentText
+    /// A wide image, such as a tab colour swatch, fills the gutter with a sample of its own, so
+    /// its item's tick goes after the label instead. The room an item keeps for it.
+    static member tickAfterLabel (item:ToolStripMenuItem) = item.Checked && not(isNull item.Image) && item.Image.Width>item.Image.Height
+    static member tickAfterWidth() = Dpi.scale 8+MenuTick.size()
+    override this.OnRenderItemText(e) =
         let isNote = obj.ReferenceEquals(e.Item.Tag,ThemeMenuRenderer.noteTag)
         e.TextColor <- if isNote && not SystemInformation.HighContrast then p.muted else textColor e.Item
         // Keep the shortcut column fixed while bringing every label closer to its glyph.
-        if e.TextFormat &&& TextFormatFlags.Right = enum<TextFormatFlags>(0) then
+        let label = e.TextFormat &&& TextFormatFlags.Right = enum<TextFormatFlags>(0)
+        if label then
             let r = e.TextRectangle
             let inset = Dpi.scale 6 - (if isNote then ThemeMenuRenderer.noteInset else 0)
             e.TextRectangle <- Rectangle(r.X-inset,r.Y,r.Width+inset,r.Height)
         base.OnRenderItemText(e)
+        match e.Item with
+        | :? ToolStripMenuItem as item when label && ThemeMenuRenderer.tickAfterLabel item ->
+            let r = e.TextRectangle
+            let width = TextRenderer.MeasureText(e.Graphics,e.Text,e.TextFont,Size.Empty,e.TextFormat).Width
+            let em = float32(MenuTick.size())
+            let box = RectangleF(float32(r.X+width+Dpi.scale 4),float32 r.Y+(float32 r.Height-em)/2.0f,em,em)
+            MenuTick.draw e.Graphics box (this.tickInk e.Item)
+        | _ -> ()
     override _.OnRenderArrow(e) =
         e.ArrowColor <- textColor e.Item
         base.OnRenderArrow(e)
@@ -199,17 +233,14 @@ type ThemeMenuRenderer(p:SettingsPalette) =
             if right+inset<e.Item.Width-inset then e.Graphics.DrawLine(pen,right+inset,y,e.Item.Width-inset,y)
             TextRenderer.DrawText(e.Graphics,e.Item.Text,e.Item.Font,Rectangle(Point.Empty,e.Item.Size),
                                   (if SystemInformation.HighContrast then p.text else p.muted),flags)
-    /// The tick the settings' drop-down lists give their chosen item: the icon font's check, at
-    /// its size and in the accent; greyed on an item that cannot be taken.
-    override _.OnRenderItemCheck(e) =
+    /// The tick in the gutter of a chosen item without an image; one with an image carries its
+    /// own mark, over the image or after the label.
+    override this.OnRenderItemCheck(e) =
         if isNull e.Item.Image then
-            let ink = if not e.Item.Enabled || SystemInformation.HighContrast then textColor e.Item else p.accentText
             let r = e.ImageRectangle
-            let em = float32(Dpi.scale 12)
+            let em = float32(MenuTick.size())
             let box = RectangleF(float32 r.X+(float32 r.Width-em)/2.0f,float32 r.Y+(float32 r.Height-em)/2.0f,em,em)
-            if not (UiFace.glyph e.Graphics 0xE73E box ink) then
-                TextRenderer.DrawText(e.Graphics,"✓",e.Item.Font,r,ink,
-                                      TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.NoClipping)
+            MenuTick.draw e.Graphics box (this.tickInk e.Item)
 
 /// Own image copies until the menu loop has finished closing, then dispatch the command.
 /// ownsForeground: windows whose activation must not close the menu, such as the tab's own
@@ -328,12 +359,15 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
                 entry.Checked <- flags |> List.exists(fun flag -> flag &&& MenuFlags.MF_CHECKED<>0)
                 if parts.Length=2 then entry.ShortcutKeyDisplayString <- parts.[1]
                 image |> Option.iter(fun source ->
-                    let copy = if entry.Checked then MenuImages.checkedCopy source.bitmap else new Bitmap(source.bitmap)
-                    images.Add(copy)
                     // A wide image, such as a tab colour swatch, is drawn at its own size and the
-                    // gutter widens for it, rather than being squeezed square.
-                    if copy.Width>copy.Height then entry.ImageScaling <- ToolStripItemImageScaling.None
-                    entry.Image <- copy)
+                    // gutter widens for it, rather than being squeezed square. Its sample is kept
+                    // clear of the mark, which the renderer draws after the label instead.
+                    let wide = source.bitmap.Width>source.bitmap.Height
+                    let copy = if entry.Checked && not wide then MenuImages.checkedCopy source.bitmap else new Bitmap(source.bitmap)
+                    images.Add(copy)
+                    if wide then entry.ImageScaling <- ToolStripItemImageScaling.None
+                    entry.Image <- copy
+                    if ThemeMenuRenderer.tickAfterLabel entry then entry.Padding <- Padding(0,0,ThemeMenuRenderer.tickAfterWidth(),0))
                 click |> Option.iter(fun run -> entry.Click.Add(fun _ -> action <- Some run))
                 entry.MouseEnter.Add(fun _ -> hovered <- Some entry; hoverOpen.Stop(); hoverOpen.Start())
                 if not children.IsEmpty then
