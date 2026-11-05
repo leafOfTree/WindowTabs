@@ -643,6 +643,9 @@ module Strings =
                                              ja="フォーカスしているペインを分割から外し、隣のペインがその場所を使います。ウィンドウはタブとして残ります。"
                                              ar="يغادر الجزء المركّز التقسيم ويأخذ جاره مكانه؛ وتبقى النافذة علامة تبويب." }
                                keywords=splitWords }
+        let splitWithNext = { caption={ en="Split with the next tab"; zh="与下一个标签分屏"; ja="次のタブと分割表示"; ar="تقسيم مع علامة التبويب التالية" }
+                              description={ en="The tab in front and the one after it, side by side."; zh="当前标签和它后面的标签左右并排。"; ja="手前のタブとその次のタブを左右に並べます。"; ar="العلامة الأمامية والتي تليها جنبًا إلى جنب." }
+                              keywords=splitWords }
         let splitEnd = { caption={ en="End split view"; zh="结束分屏"; ja="分割表示を終了"; ar="إنهاء العرض المقسّم" }
                          description={ en="Every window becomes a tab again."; zh="所有窗口恢复为标签。"; ja="すべてのウィンドウをタブに戻します。"; ar="تعود كل نافذة إلى علامة تبويب." }
                          keywords=splitWords }

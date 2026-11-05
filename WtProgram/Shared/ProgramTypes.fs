@@ -256,6 +256,8 @@ type IGroup =
     abstract member executeSplit: SplitCommand -> unit
     /// Lists the windows to put on that side of the tab in front, as the tab menu does.
     abstract member pickPane: SplitAxis * Side -> unit
+    /// Puts the tab after the one in front beside it, on its right.
+    abstract member splitWithNext: unit -> unit
     abstract member windows: List2<IntPtr>
     abstract member destroy: unit -> unit
 

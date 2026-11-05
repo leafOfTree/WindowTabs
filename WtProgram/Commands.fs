@@ -494,6 +494,7 @@ module Commands =
               MouseGestureRules.setEnabled path (not (MouseGestureRules.enabled path)))
           with scope=Everywhere; state=appState MouseGestureRules.enabled }
         // A window chosen from a list goes beside the tab in front, as from the tab menu.
+        fromCatalog "split-next" SplitCommands hasOtherTabs (onGroup(fun g -> g.splitWithNext()))
         fromCatalog "split-pick-right" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(SideBySide,Second)))
         fromCatalog "split-pick-below" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(Stacked,Second)))
         fromCatalog "split-pick-left" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(SideBySide,First)))

@@ -61,6 +61,7 @@ module SettingsCatalog =
         // Ctrl+Alt+W beside New tab's Ctrl+Alt+N; Ctrl+W alone belongs to the apps.
         { id="close-tab"; page=HotKeySettings; text=Strings.Settings.closeTab; binding=Shortcut("closeTab",1623) }
         // Split view keys ship unbound: nothing global is taken until the user picks a key.
+        { id="split-next"; page=HotKeySettings; text=Strings.Commands.splitWithNext; binding=Shortcut("splitWithNext",0) }
         { id="split-pick-right"; page=HotKeySettings; text=Strings.Settings.splitPickRight; binding=Shortcut("splitPickRight",0) }
         { id="split-pick-below"; page=HotKeySettings; text=Strings.Settings.splitPickBelow; binding=Shortcut("splitPickBelow",0) }
         { id="split-pick-left"; page=HotKeySettings; text=Strings.Settings.splitPickLeft; binding=Shortcut("splitPickLeft",0) }

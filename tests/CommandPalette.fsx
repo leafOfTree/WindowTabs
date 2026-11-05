@@ -410,6 +410,28 @@ let main() =
             let frame = Rect(Pt(60,60),Sz(900,600))
             helper.asyncInvoke(fun () -> for hwnd in [splitOne;splitTwo] do OS().windowFromHwnd(hwnd).move(frame))
             pumpUntil "The split group's windows on screen" (fun () -> [splitOne;splitTwo] |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).bounds=frame))
+            // Split with the next tab: the tab in front on the left, the other on its right,
+            // with no list to choose from; End split view takes them back to tabs.
+            let shown = onGroupOf splitOne (fun group -> group.topWindow)
+            let other = if shown=splitOne then splitTwo else splitOne
+            let before = picks.Count
+            runDone "split-next" splitOne
+            pumpUntil "Split with the next tab" isSplit
+            let pair = onGroupOf splitOne (fun group -> group.splitLayout |> Option.map(fun s -> s.tree.axis,s.tree.first,s.tree.second))
+            note (pair=Some(SideBySide,Leaf(Occupied shown),Leaf(Occupied other)) && picks.Count=before)
+                 (sprintf "Split with the next tab did not put the next tab on the right of the one in front: %A" pair)
+            onGroupOf splitOne (fun group -> group.execute(EndSplit None))
+            pumpUntil "Ending the split" (isSplit >> not)
+            // With the other tab in front, the pair comes the other way round: each time the tab
+            // in front on the left, whether its partner is after it in the strip or before it.
+            onGroupOf splitOne (fun group -> group.tabActivate(Tab other,false))
+            pumpUntil "The other tab in front" (fun () -> onGroupOf splitOne (fun group -> group.topWindow)=other)
+            runDone "split-next" splitOne
+            pumpUntil "Split with the next tab again" isSplit
+            let again = onGroupOf splitOne (fun group -> group.splitLayout |> Option.map(fun s -> s.tree.first,s.tree.second))
+            note (again=Some(Leaf(Occupied other),Leaf(Occupied shown))) (sprintf "Split with the next tab did not keep the tab in front on the left: %A" again)
+            onGroupOf splitOne (fun group -> group.execute(EndSplit None))
+            pumpUntil "Ending the split again" (isSplit >> not)
             onGroupOf splitOne (fun group -> group.execute(SplitWith(splitTwo,SideBySide),current=splitOne))
             pumpUntil "Splitting" isSplit
             for id in ["split-focus-left";"split-focus-right";"split-focus-up";"split-focus-down";"split-focus-other";"split-swap";"split-equalize";"split-turn"] do
