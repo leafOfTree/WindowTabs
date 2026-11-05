@@ -420,11 +420,13 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.contextMenu(hwnd,images:ResizeArray<Img>) =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
+        // Ticked while on, as the menu's other switches are, under one name: the one the
+        // setting and the palette's command go by.
         let iconOnlyItem = CmiRegular({
-            text = (if group.isIconOnly then tr Strings.TabMenu.showTabTitles else tr Strings.TabMenu.showIconsOnly)
+            text = tr Strings.TabMenu.showIconsOnly
             image = None
             click = fun() -> group.isIconOnly <- group.isIconOnly.not
-            flags = List2()
+            flags = checkedFlag(group.isIconOnly)
         })
         let window = os.windowFromHwnd(hwnd)
         let pid = window.pid
