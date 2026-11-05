@@ -802,8 +802,8 @@ let main() =
         let wholeRight,cutRight = lastInk whole,lastInk cut
         assertTrue (wholeRight>0 && wholeRight=cutRight) (sprintf "A lit letter moved the text after it: it ends at %d, not %d" cutRight wholeRight)
         rowsForm.Close()
-    // A row that does nothing now is in the disabled grey, its match faded with it: in the
-    // secondary grey it stood nearly as bright as the rows that can act.
+    // A row that does nothing now is all in the disabled grey, its match too, as a menu's disabled
+    // item: in the secondary grey it stood nearly as bright as the rows that can act.
     if not SystemInformation.HighContrast then
         use rowsForm = new Form(ClientSize=Size(400,120),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
         let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn)],ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
@@ -831,7 +831,7 @@ let main() =
         let matchFrom = TextRenderer.MeasureText("Focus the ",rows.Font).Width
         let matchTo = TextRenderer.MeasureText("Focus the next",rows.Font).Width
         let liveMark,dimMark = strongest live matchFrom matchTo,strongest dimmed matchFrom matchTo
-        assertTrue (distance dimMark background<distance liveMark background) (sprintf "A dimmed row's match %A is as strong as a live row's %A" dimMark liveMark)
+        assertTrue (distance dimMark p.disabledText<40 && distance liveMark p.disabledText>=40) (sprintf "A dimmed row's match is %A, not the disabled grey %A as the rest of it (a live row's is %A)" dimMark p.disabledText liveMark)
         rowsForm.Close()
     // The palette's search box: no outline round it, only a line along its foot.
     do

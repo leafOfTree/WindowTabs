@@ -564,11 +564,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             let middle = (fits+tooLong)/2
                             if width (text.Substring(0,middle)+"…")<=room then fit middle tooLong else fit fits middle
                     text.Substring(0,fit 0 text.Length).TrimEnd()+"…"
-            // On a row that does nothing now, the match faded as its text is, so it leads no more
-            // than the rest of the row.
+            // On a row that does nothing now, the match in the row's own grey, as a menu's disabled
+            // item is all one grey: lit, it drew the eye to a row that cannot be taken.
             let marked =
-                if SystemInformation.HighContrast then SystemColors.Highlight
-                elif defaultArg dimmed false then Theme.blend 0.45 p.accent this.BackColor
+                if defaultArg dimmed false then color
+                elif SystemInformation.HighContrast then SystemColors.Highlight
                 else p.accent
             let inRun i = runs |> List.exists(fun (start,length) -> i>=start && i<start+length)
             let state = g.Save()
