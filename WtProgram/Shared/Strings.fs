@@ -631,7 +631,7 @@ module Strings =
                                             ja="フォーカスしているペインの分割の両側を同じ広さにします。"
                                             ar="يمنح نصفي التقسيم الذي يحتوي على الجزء المركّز المساحة نفسها." }
                               keywords=splitWords }
-        let splitTurn = { caption={ en="Turn the split"; zh="切换分屏方向"; ja="分割の向きを切り替え"; ar="تدوير التقسيم" }
+        let splitTurn = { caption={ en="Toggle split direction"; zh="切换分屏方向"; ja="分割の向きを切り替え"; ar="تدوير التقسيم" }
                           description={ en="Side by side becomes top and bottom, and back."
                                         zh="左右变为上下，再按一次变回。"
                                         ja="左右を上下に、またその逆に切り替えます。"
