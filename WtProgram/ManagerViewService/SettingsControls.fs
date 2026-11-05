@@ -1318,8 +1318,11 @@ type SettingsCombo(items:string[]) as this =
                         let tick = Rectangle(e.Bounds.Right-Dpi.scale 28,e.Bounds.Y,Dpi.scale 24,e.Bounds.Height)
                         let em = float32(Dpi.scale 12)
                         let box = RectangleF(float32 tick.X+(float32 tick.Width-em)/2.0f,float32 tick.Y+(float32 tick.Height-em)/2.0f,em,em)
-                        if not (UiFace.glyph e.Graphics 0xE73E box foreground) then
-                            TextRenderer.DrawText(e.Graphics,"✓",this.Font,tick,foreground,TextFormatFlags.VerticalCenter ||| TextFormatFlags.HorizontalCenter))
+                        // The chosen one's tick in the accent, as the search's match is: the
+                        // system's colours in high contrast.
+                        let ink = if SystemInformation.HighContrast then foreground else p.accentText
+                        if not (UiFace.glyph e.Graphics 0xE73E box ink) then
+                            TextRenderer.DrawText(e.Graphics,"✓",this.Font,tick,ink,TextFormatFlags.VerticalCenter ||| TextFormatFlags.HorizontalCenter))
             let finish commit =
                 let value = if list.SelectedIndex>=0 && list.SelectedIndex<shown.Count then shown.[list.SelectedIndex] else -1
                 window.Close()

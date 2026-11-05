@@ -614,12 +614,25 @@ let main() =
             use combo = new SettingsCombo(names,Font=SettingsUi.bodyFont(),Size=Size(Dpi.scale 120,Dpi.scale 32))
             combo.ItemColors <- [|Color.Gray;Color.Blue;Color.Navy;Color.Silver|]
             form.Controls.Add combo
+            combo.SelectedIndex <- 1
             match combo.CreateDropDown() with
             | Some window ->
                 let frame = (window.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame
                 let room = frame.List.ClientSize.Width-Dpi.scale 42-Dpi.scale 22
                 let longest = names |> Array.map(fun name -> TextRenderer.MeasureText(name,combo.Font).Width) |> Array.max
                 check (room>=longest) (sprintf "The longest choice has %dpx of the %dpx it needs" room longest)
+                // The chosen one's tick is in the accent, as a search's match is.
+                if not SystemInformation.HighContrast then
+                    let list = frame.List :> ListBox
+                    let row = list.GetItemRectangle(1)
+                    use image = new Bitmap(row.Right,row.Bottom)
+                    use g = Graphics.FromImage(image)
+                    let draw = typeof<ListBox>.GetMethod("OnDrawItem",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
+                    draw.Invoke(list,[|box (DrawItemEventArgs(g,combo.Font,row,1,DrawItemState.None))|]) |> ignore
+                    let p = SettingsColors.current()
+                    let distance (a:Color) (b:Color) = abs(int a.R-int b.R)+abs(int a.G-int b.G)+abs(int a.B-int b.B)
+                    let ink = [for y in row.Top..row.Bottom-1 do for x in row.Right-Dpi.scale 28..row.Right-1 -> image.GetPixel(x,y)] |> List.maxBy (distance p.hover)
+                    check (distance ink p.accentText<60) (sprintf "The chosen choice's tick is %A, not the accent %A" ink p.accentText)
                 window.Dispose()
             | None -> failwith "The drop-down did not open its list"
             form.Controls.Remove combo
