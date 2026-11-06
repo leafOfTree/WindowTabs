@@ -1424,8 +1424,11 @@ otepad.exe"]},
                         && conditionMenu.Choice.Value.SelectedIndex=(match saved().Head.field with AppOnly -> 0 | WindowTitle -> 1 | CommandLine -> 2 | WindowClass -> 3)
                         && conditionMenu.Choice.Value.ItemText(1).StartsWith(tr Strings.AppRules.windowTitle)
                         && conditionMenu.Choice.Value.ItemText(2).StartsWith(tr Strings.AppRules.commandLine)
-                        && conditionMenu.Choice.Value.ItemText(3).StartsWith(tr Strings.AppRules.windowClass))
-                       "Pressing a chip did not open its menu, the menu cannot remove the app, that is not set apart, the current choice is not marked, or the fields are out of order"
+                        && conditionMenu.Choice.Value.ItemText(3).StartsWith(tr Strings.AppRules.windowClass)
+                        && conditionMenu.Choice.Value.ItemText(2)=tr (Strings.AppRules.conditionChoice (tr Strings.AppRules.commandLine))
+                        && (conditionMenu.DropDown.Value.Items |> Seq.cast<ToolStripItem>
+                            |> Seq.exists(function :? ToolStripControlHost as host -> (host.Control :? Label) && host.Control.Text=tr Strings.AppRules.menuHeading | _ -> false)))
+                       "Pressing a chip did not open its menu under a heading, the menu cannot remove the app, that is not set apart, the current choice is not marked, or the fields are out of order"
             // Taken as from the list, so the current choice acts again.
             conditionMenu.Choice.Value.Choose index
         /// Drives the modal condition dialog once it opens, from a timer inside its loop; the

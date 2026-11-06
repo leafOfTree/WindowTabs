@@ -1344,6 +1344,8 @@ type SettingsCombo(items:string[]) as this =
     member val MaxRows : int option = None with get,set
     /// Choices a line is drawn above in the list, as a menu parts its items.
     member val SeparatorsBefore : int list = [] with get,set
+    /// A line over the list saying what the choices are, in small muted type, for a menu.
+    member val Heading : string option = None with get,set
     /// The first choice is a prompt, as "Choose a command…": shown closed, muted, while nothing
     /// is chosen, and left out of the list.
     member val PromptFirst = false with get,set
@@ -1464,6 +1466,16 @@ type SettingsCombo(items:string[]) as this =
                     finish false
                     this.Parent.SelectNextControl(this,not e.Shift,true,true,true) |> ignore
                     e.SuppressKeyPress <- true)
+            // A menu's heading, first, over the rows: what the choices are, not one of them.
+            let heading =
+                this.Heading |> Option.map(fun text ->
+                    let small = new Font(UiFace.small this.Font.FontFamily.Name,this.Font.Size*0.86f,FontStyle.Regular,this.Font.Unit)
+                    let label = new Label(Text=text,AutoSize=false,UseMnemonic=false,Font=small,BackColor=p.hover,ForeColor=p.muted,
+                                          TextAlign=ContentAlignment.MiddleLeft,Height=small.Height+Dpi.scale 10,Padding=Padding(Dpi.scale 12,Dpi.scale 2,Dpi.scale 12,0))
+                    label.Disposed.Add(fun _ -> small.Dispose())
+                    let host = new ToolStripControlHost(label,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty,BackColor=p.hover)
+                    window.Items.Add(host) |> ignore
+                    host)
             // A long list opens under a box that narrows it as one types; the keys that move
             // through the rows work from the box too.
             let search =
@@ -1511,7 +1523,9 @@ type SettingsCombo(items:string[]) as this =
             list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
             // As tall as all the choices, or as MaxRows of them, whatever a search leaves.
             let rows = match this.MaxRows with Some most -> min most shown.Count | None -> shown.Count
-            let boxHeight = match search with Some host -> host.Control.Height+Dpi.scale 4 | None -> 0
+            let searchHeight = match search with Some host -> host.Control.Height+Dpi.scale 4 | None -> 0
+            let headingHeight = match heading with Some host -> host.Control.Height | None -> 0
+            let boxHeight = searchHeight+headingHeight
             // What a row keeps beside its label, as the rows are drawn: the inset before it, the dot or
             // image, the room for the tick, and the scrollbar the frame keeps whether rows overflow or not.
             let chrome = Dpi.scale 42+(if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 then Dpi.scale 22 else 0)+frame.BarWidth+window.Padding.Horizontal
@@ -1521,11 +1535,11 @@ type SettingsCombo(items:string[]) as this =
             // the box by its own padding on each side. Lists that scroll or search open below,
             // where the rows and the box stay apart.
             let fits = rows*list.ItemHeight+window.Padding.Vertical+2<=area.Height-Dpi.scale 12
-            let overBox = this.DropDownAnchor.IsNone && search.IsNone && rows=shown.Count && fits && chosenRow>=0
+            let overBox = this.DropDownAnchor.IsNone && search.IsNone && heading.IsNone && rows=shown.Count && fits && chosenRow>=0
             let boxWidth = anchorBox.Width+(if overBox then window.Padding.Horizontal else 0)
             window.Size <- Size(min area.Width (max boxWidth (labelWidth+chrome)),
                                 min (area.Height-Dpi.scale 12) (rows*list.ItemHeight+boxHeight+window.Padding.Vertical+2))
-            search |> Option.iter(fun host -> host.Size <- Size(window.Width-window.Padding.Horizontal,host.Control.Height))
+            for host in Option.toList heading @ Option.toList search do host.Size <- Size(window.Width-window.Padding.Horizontal,host.Control.Height)
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical-boxHeight)
             frame.Size <- listHost.Size
             list.SelectedIndex <- max 0 (shown.IndexOf selected)
@@ -1556,11 +1570,11 @@ type SettingsCombo(items:string[]) as this =
         match this.CreateDropDown() with
         | Some window ->
             window.Show(window.Location)
-            // The search box has the keys where there is one, else the list.
-            match (window.Items.[0] :?> ToolStripControlHost).Control with
-            | :? SettingsSearchBox as field -> field.Controls.[0].Focus() |> ignore
-            | :? SettingsListFrame as frame -> frame.List.Focus() |> ignore
-            | _ -> ()
+            // The search box has the keys where there is one, else the list; a heading has none.
+            let hosted = window.Items |> Seq.cast<ToolStripItem> |> Seq.choose(function :? ToolStripControlHost as host -> Some host.Control | _ -> None) |> List.ofSeq
+            match hosted |> List.tryPick(function :? SettingsSearchBox as field -> Some(field.Controls.[0]) | _ -> None) with
+            | Some input -> input.Focus() |> ignore
+            | None -> hosted |> List.tryPick(function :? SettingsListFrame as frame -> Some frame.List | _ -> None) |> Option.iter(fun list -> list.Focus() |> ignore)
         | None -> ()
     override this.OnMouseDown(e) =
         match popup with

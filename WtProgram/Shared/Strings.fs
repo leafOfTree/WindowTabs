@@ -1028,9 +1028,8 @@ module Strings =
                                 zh="窗口程序启动时带的参数；用来区分共用同一个程序的应用，如 pythonw、java。"
                                 ja="ウィンドウのプログラムに起動時に渡された引数。pythonw や java など同じプログラムを共有するアプリを見分けます。"
                                 ar="الوسائط التي بدأ بها برنامج النافذة؛ تميز التطبيقات التي تشترك في برنامج واحد مثل pythonw أو java." }
-        /// After a field in the chip's menu whose value is the same in every window of the app open
-        /// now, so it tells none of them apart; it can still be chosen, for windows to come.
-        let sameForAll = { en="all the same now"; zh="当前都相同"; ja="今はすべて同じ"; ar="كلها متطابقة الآن" }
+        /// Over the chip's menu: what its choices decide.
+        let menuHeading = { en="Which windows join"; zh="收纳哪些窗口"; ja="含めるウィンドウ"; ar="أي النوافذ تنضم" }
         /// Over an empty list of command lines: the app's windows are open, with nothing after the program.
         let noArguments = { en="Its windows open now were started with no arguments."; zh="它当前打开的窗口启动时都没有带参数。"; ja="今開いているウィンドウは引数なしで起動されています。"; ar="نوافذه المفتوحة الآن بدأت بلا وسائط." }
         /// Over the values of the app's open windows, which a click puts in the pattern.
