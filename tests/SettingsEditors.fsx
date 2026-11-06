@@ -1420,9 +1420,11 @@ otepad.exe"]},
             pressChipPart "chipAt" tree.Roots.[1]
             assertTrue (conditionMenu.DropDown |> Option.exists(fun window -> window.Visible)
                         && conditionMenu.Choice.Value.ItemText(4)=tr Strings.AppRules.removeFromGroup
-                        && conditionMenu.Choice.Value.SeparatorsBefore=[4])
-                       "Pressing a chip did not open its menu, the menu cannot remove the app, or that is not set apart"
-            conditionMenu.Choice.Value.SelectedIndex <- index
+                        && conditionMenu.Choice.Value.SeparatorsBefore=[4]
+                        && conditionMenu.Choice.Value.SelectedIndex=(match saved().Head.field with AppOnly -> 0 | WindowTitle -> 1 | WindowClass -> 2 | CommandLine -> 3))
+                       "Pressing a chip did not open its menu, the menu cannot remove the app, that is not set apart, or the current choice is not marked"
+            // Taken as from the list, so the current choice acts again.
+            conditionMenu.Choice.Value.Choose index
         /// Drives the modal condition dialog once it opens, from a timer inside its loop; the
         /// driver must close it. Says whether it opened at all.
         let withDialog (drive:RuleConditionDialog -> unit) (act:unit -> unit) =

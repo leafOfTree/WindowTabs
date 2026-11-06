@@ -233,17 +233,18 @@ type ChipConditionMenu() =
     member _.DropDown = dropDown
     /// The index of the choice taken.
     member _.Picked = picked.Publish
-    /// Opens below a box on screen. No choice is marked as the current one: the chip says what it
-    /// takes already, and choosing that again opens its condition to change the pattern.
-    member _.Open(anchor:Rectangle, labels:string[], name:string, separatorsBefore:int list) =
+    /// Opens below a box on screen, the current choice marked; chosen again, it still acts, as
+    /// a condition's dialog opens to change the pattern.
+    member _.Open(anchor:Rectangle, labels:string[], name:string, separatorsBefore:int list, current:int) =
         retire()
         let next = SettingsUi.choice labels
         next.AccessibleName <- name
         next.SeparatorsBefore <- separatorsBefore
         next.DropDownAnchor <- Some anchor
         next.Visible <- false
+        next.SelectedIndex <- current
         owner.Controls.Add(next)
-        next.SelectedIndexChanged.Add(fun _ -> if next.SelectedIndex>=0 then picked.Trigger(next.SelectedIndex))
+        next.Chosen.Add(fun index -> if index>=0 then picked.Trigger index)
         choice <- Some next
         dropDown <- next.CreateDropDown() |> Option.map(fun window ->
             window.Show(window.Location)
@@ -583,7 +584,8 @@ type AppGroupingRulesView() as this =
                     menuRule <- Some rule
                     let labels = fields |> Array.map(fun field ->
                         if field=AppOnly then tr (RuleField.label field) else tr (Strings.AppRules.conditionChoice (tr (RuleField.label field))))
-                    conditionMenu.Open(tree.RectangleToScreen(box),Array.append labels [|tr Strings.AppRules.removeFromGroup|],tr Strings.AppRules.chipTip,[labels.Length])
+                    conditionMenu.Open(tree.RectangleToScreen(box),Array.append labels [|tr Strings.AppRules.removeFromGroup|],tr Strings.AppRules.chipTip,[labels.Length],
+                                       fields |> Array.findIndex ((=) rule.field))
                 | _ -> ()
             | _ -> ())
         conditionMenu.Picked.Add(fun index ->

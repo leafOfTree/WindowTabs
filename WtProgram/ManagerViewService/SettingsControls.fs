@@ -1243,6 +1243,8 @@ type SettingsCombo(items:string[]) as this =
     /// A copy, so SetItemText changes this control's labels only.
     let items = Array.copy items
     let changed = Event<EventArgs>()
+    /// A choice taken from the list, the one already chosen included.
+    let chosen = Event<int>()
     /// A search result's accent highlight, 1 to 0; see Flash.
     let mutable flash = 0.0
     let flashClock = Diagnostics.Stopwatch()
@@ -1299,6 +1301,14 @@ type SettingsCombo(items:string[]) as this =
                 this.Invalidate()
                 changed.Trigger(EventArgs.Empty)
     member _.SelectedIndexChanged = changed.Publish
+    /// A choice was taken from the open list, whether or not it was the chosen one already: for
+    /// a menu, whose current item does something again when chosen again.
+    member _.Chosen = chosen.Publish
+    /// Takes a choice as the open list would: closes it, chooses, and says so.
+    member this.Choose(index:int) =
+        popup |> Option.iter(fun window -> window.Close())
+        this.SelectedIndex <- index
+        chosen.Trigger index
     /// Images remain owned by the caller, as tree-list item icons do.
     member _.ItemImages
         with get() = Array.copy itemImages
@@ -1380,7 +1390,9 @@ type SettingsCombo(items:string[]) as this =
                     // highlight starting under it.
                     let parted = List.contains item this.SeparatorsBefore
                     if parted then
-                        use line = new Pen(p.border)
+                        // As the tree list draws a row's divider: the border alone sank into the list's fill.
+                        use line = new Pen(if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(110,p.muted))
+                        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.None
                         e.Graphics.DrawLine(line,e.Bounds.X+Dpi.scale 6,e.Bounds.Y+Dpi.scale 1,e.Bounds.Right-Dpi.scale 6,e.Bounds.Y+Dpi.scale 1)
                     // The chosen one keeps the fill too, as WinUI's list does, its bar beside it.
                     if active || item=selected then
@@ -1420,7 +1432,9 @@ type SettingsCombo(items:string[]) as this =
             let finish commit =
                 let value = if list.SelectedIndex>=0 && list.SelectedIndex<shown.Count then shown.[list.SelectedIndex] else -1
                 window.Close()
-                if commit && value>=0 then this.SelectedIndex <- value
+                if commit && value>=0 then
+                    this.SelectedIndex <- value
+                    chosen.Trigger value
                 if commit && not this.IsDisposed then this.Focus() |> ignore
             list.MouseMove.Add(fun e ->
                 let index = list.IndexFromPoint(e.Location)
