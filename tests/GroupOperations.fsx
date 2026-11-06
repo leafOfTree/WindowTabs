@@ -491,6 +491,23 @@ let main() =
                     onHelper(fun () -> OS().windowFromHwnd(source).move(Rect(Pt(60,60),Sz(900,600))))
                     pumpUntil(fun () -> onGroup(fun group -> group.placementBounds.width>=890 && group.isPlacementIdle))
                     let partner = handles |> List.take 2 |> List.find((<>) source)
+                    // Last used tab goes back to the tab left by a click, which takes the new tab
+                    // as active ahead of the foreground event, and from there returns.
+                    do
+                        let topIs hwnd = onGroup(fun group -> group.topWindow)=hwnd
+                        let waitTop hwnd what =
+                            let clock = Diagnostics.Stopwatch.StartNew()
+                            while not (topIs hwnd) && clock.ElapsedMilliseconds<3000L do Application.DoEvents(); Threading.Thread.Sleep(20)
+                            waitOperation()
+                            check (topIs hwnd) (sprintf "%s: source %A partner %A top %A active %A target %A" what source partner (onGroup(fun group -> group.topWindow)) (onGroup(fun group -> group.activeTabs)) (onGroup(fun group -> group.lastUsedTab)))
+                        onGroup(fun group -> group.tabActivate(Tab(partner),false))
+                        waitTop partner "The partner did not come to the front for the last used tab check"
+                        onGroup(fun group -> group.switchToLastActive false)
+                        waitTop source "Last used tab did not go back to the tab left by a click"
+                        onGroup(fun group -> group.switchToLastActive false)
+                        waitTop partner "Last used tab did not return to the tab it came from"
+                        onGroup(fun group -> group.switchToLastActive false)
+                        waitTop source "Last used tab did not go back a second time"
                     let gap = Dpi.scale SplitMetrics.gap
                     let paneRect (group:WindowGroup) side = (SplitGeometry.paneRect gap group.layoutFrame group.splitLayout.Value [side]).Value
                     let pair first second axis focused = {tree={axis=axis;ratio=0.5;first=Leaf first;second=Leaf second};focused=[focused]}

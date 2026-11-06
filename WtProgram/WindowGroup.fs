@@ -811,6 +811,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 leftTab <- Some(left,next,transitionClock.ElapsedMilliseconds)
                 leftOpener <- opener
                 previousActiveTab <- Some left
+            // No tab taken as active yet: the one on top was the one left.
+            | None,Some next ->
+                (match zorderCell.value.tryHead with Some top when top<>next -> previousActiveTab <- Some top | _ -> ())
             | _ -> ()
             lastActiveTab <- active
             let prev = foregroundCell.value
@@ -2691,10 +2694,20 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             |> Option.iter(fun index -> this.activateIndex(index, force))
 
     /// Back to the tab that was in front before this one; from there, the same key returns.
-    member this.switchToLastActive(force) =
+    /// The tab taken as active, and the one before it, as the tests see them.
+    member _.activeTabs = lastActiveTab,previousActiveTab
+
+    /// The tab Switch to last used tab goes to, if any: the tab before the one in front. The tab
+    /// in front is the foreground when it is a tab, else the group's top window, as when the
+    /// palette is in front.
+    member this.lastUsedTab =
         let order = this.ts.lorder.list |> List.map(fun(Tab(hwnd)) -> hwnd)
-        TabNavigation.lastActive order isOpen previousActiveTab this.os.foreground.hwnd
-        |> Option.iter(fun target -> this.tabActivate(Tab target, force))
+        let foreground = this.os.foreground.hwnd
+        let current = if List.contains foreground order then foreground else this.topWindow
+        TabNavigation.lastActive order isOpen previousActiveTab current
+
+    member this.switchToLastActive(force) =
+        this.lastUsedTab |> Option.iter(fun target -> this.tabActivate(Tab target, force))
 
     /// A plugin can retain its native owners until asynchronous shell registration finishes.
     member _.addExitPreparation(action:(unit -> unit) -> unit) = exitPreparations.Add action
@@ -2873,6 +2886,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if this.os.foreground.hwnd=hwnd then window.raise()
         // Raised just now over a strip it does not own: the strip goes back over it at once.
         this.liftUnownedStrip hwnd
+        // Taken as the active tab here, ahead of the foreground event, the tab left is still the
+        // one to go back to: the event finds nothing changed. With no tab taken as active yet,
+        // the one on top was the one left.
+        if this.windows.contains(hwnd) then
+            match lastActiveTab |> Option.orElse zorderCell.value.tryHead with
+            | Some left when left<>hwnd -> previousActiveTab <- Some left
+            | _ -> ()
         if this.os.foreground.hwnd=hwnd then lastActiveTab <- Some hwnd
         // The layout follows once the tab is in front: parking a split first re-placed every window
         // while the tab chosen was still under them, and a tab behind showed for a moment. Active,
