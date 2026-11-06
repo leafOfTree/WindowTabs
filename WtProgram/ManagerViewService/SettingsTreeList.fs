@@ -877,7 +877,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                                 use edge = new Pen(SystemColors.WindowText)
                                 g.DrawPath(edge,shape)
                             elif chip.Note<>"" then
-                                use edge = new Pen(Color.FromArgb(110,p.text),DashStyle=DashStyle.Dash)
+                                // As light as before, with gaps as long as the dashes, so the dashes
+                                // read as such at a glance rather than as a faint solid line.
+                                use edge = new Pen(Color.FromArgb(110,p.text),DashPattern=[|4.0f;3.0f|])
                                 g.DrawPath(edge,shape)
                             let mutable x = box.X+Dpi.scale 8
                             if not (isNull chip.Icon) then
