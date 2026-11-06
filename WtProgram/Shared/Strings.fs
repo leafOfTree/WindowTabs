@@ -986,10 +986,17 @@ module Strings =
         let newRule = { en="New rule"; zh="新规则"; ja="新しいルール"; ar="قاعدة جديدة" }
         let groupNameRequired = { en="Enter a group name."; zh="请填写组名。"; ja="グループ名を入力してください。"; ar="أدخل اسم المجموعة." }
         let groupNameExists = { en="A group with this name already exists."; zh="已有同名组，请使用其他名称。"; ja="同じ名前のグループが存在します。"; ar="توجد مجموعة بهذا الاسم بالفعل." }
-        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. Click an app to take only some of its windows, by title, window class or command line. Windows you group by dragging tabs together show here too."
-                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用会始终启用标签，不再出现在上面的列表里，也不再使用“自动分组”。点击应用可只收纳它的部分窗口：按标题、窗口类名或命令行。拖拽标签合并形成的窗口分组也会显示在这里。"
-                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。アプリをクリックすると、タイトル・ウィンドウ クラス・コマンド ラインで一部のウィンドウだけを対象にできます。タブをドラッグしてまとめたウィンドウのグループもここに表示されます。"
-                               ar="ضع نوافذ تطبيقات مختلفة في مجموعة واحدة ذات اسم. التطبيقات المضافة هنا تستخدم علامات التبويب دائمًا، وتُزال من القائمة أعلاه ولا تستخدم التجميع التلقائي. انقر تطبيقًا لضم بعض نوافذه فقط حسب العنوان أو فئة النافذة أو سطر الأوامر. كما تظهر هنا النوافذ التي تجمعها بسحب علامات التبويب فوق بعضها." }
+        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. Click an app to take only some of its windows, by title, window class or command line."
+                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用会始终启用标签，不再出现在上面的列表里，也不再使用“自动分组”。点击应用可只收纳它的部分窗口：按标题、窗口类名或命令行。"
+                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。アプリをクリックすると、タイトル・ウィンドウ クラス・コマンド ラインで一部のウィンドウだけを対象にできます。"
+                               ar="ضع نوافذ تطبيقات مختلفة في مجموعة واحدة ذات اسم. التطبيقات المضافة هنا تستخدم علامات التبويب دائمًا، وتُزال من القائمة أعلاه ولا تستخدم التجميع التلقائي. انقر تطبيقًا لضم بعض نوافذه فقط حسب العنوان أو فئة النافذة أو سطر الأوامر." }
+        /// The heading of the panel of groups made by dragging, with how many there are, and
+        /// what the panel is for on hover.
+        let handMadeHeading count = { en=sprintf "Groups made by dragging (%d)" count; zh=sprintf "拖拽形成的分组（%d）" count; ja=sprintf "ドラッグで作ったグループ（%d）" count; ar=sprintf "مجموعات أنشئت بالسحب (%d)" count }
+        let handMadeHelp = { en="Windows you grouped by dragging tabs together, kept after a restart. Ungroup forgets the group and takes its open windows apart."
+                             zh="拖拽标签合并形成的分组，重启后仍会恢复。“解除分组”会忘记该组并拆开它打开的窗口。"
+                             ja="タブをドラッグしてまとめたグループで、再起動後も保持されます。「グループを解除」はグループを忘れ、開いているウィンドウを分けます。"
+                             ar="نوافذ جمعتها بسحب علامات التبويب معًا، وتبقى بعد إعادة التشغيل. «إلغاء التجميع» ينسى المجموعة ويفصل نوافذها المفتوحة." }
         let application = { en="Application"; zh="应用"; ja="アプリ"; ar="التطبيق" }
         let chooseApplication = { en="Add an app"; zh="添加应用"; ja="アプリを追加"; ar="إضافة تطبيق" }
         /// Hover tips on a group's buttons.

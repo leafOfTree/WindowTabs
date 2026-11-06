@@ -42,9 +42,13 @@ for a rule that asks for it. Rules saved without a `field` are for the app's eve
 Names edit in place and save on Enter, on leaving the field or on a click anywhere
 outside it. Empty groups persist in `appGroupingTargets`. Adding an already-mapped
 app to another group moves its single mapping instead of creating competing rules.
-Groups made by dragging tabs follow, read only, behind an icon that names them on
-hover: open windows show their own icon, closed ones their app's icon in grey, and
-one button takes the group apart. The list says what goes in it while it is empty.
+A chip for some of an app's windows shows its condition under the app's name in small
+type, so the group reads at a glance. Groups made by dragging tabs are a panel of
+their own under the named groups, shown only while there are any and folded to its
+heading, which counts them, until opened (`handMadeGroupsOpen` in the settings file
+keeps that); their rows are read only, open windows showing their own icon, closed
+ones their app's icon in grey, and one button takes the group apart. The named
+groups' list says what goes in it while it is empty.
 
 Application identity is the case-insensitive executable filename, independent of
 its installation directory. App Rules and the application picker merge same-name

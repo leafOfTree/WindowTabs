@@ -233,6 +233,19 @@ type AppGroupingRulesView() as this =
     let addGroup = SettingsUi.button (tr Strings.AppRules.addGroup)
     let tree = new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn);TreeListColumn("",28,CheckColumn,Tip=tr Strings.AppRules.enabled);TreeListColumn("",58,ActionColumn)],RowHeight=36)
     let card = new Panel(Tag="surface",Padding=Padding(Dpi.scale 6))
+    /// Groups made by dragging tabs together, in a panel of their own under the named groups,
+    /// folded to its heading until opened; shown only while there are any.
+    let draggedHeader = new Panel(Height=Dpi.scale 36,Visible=false,Name="dragged-header",Cursor=Cursors.Hand)
+    let draggedCaption = new Label(AutoSize=true,Location=Point(0,Dpi.scale 8),Font=SettingsUi.subsectionFont(),UseMnemonic=false,Name="dragged-caption",Cursor=Cursors.Hand)
+    let draggedChevron = new Label(AutoSize=true,Font=SettingsUi.bodyFont(),Tag="muted",UseMnemonic=false,Name="dragged-toggle",Cursor=Cursors.Hand)
+    let draggedHelp = new SettingsHelpButton(tr Strings.AppRules.handMadeHelp,AccessibleName=tr Strings.SettingsWindow.howToUse,
+                                             Font=SettingsUi.bodyFont(),Name="dragged-help")
+    let dragged = new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn);TreeListColumn("",28,CheckColumn);TreeListColumn("",58,ActionColumn)],RowHeight=36,Name="dragged-groups")
+    let draggedCard = new Panel(Tag="surface",Padding=Padding(Dpi.scale 6),Visible=false,Name="dragged-card")
+    let mutable draggedOpen =
+        match Services.settings.root.["handMadeGroupsOpen"] with
+        | value when not (isNull value) && value.Type=JTokenType.Boolean -> value.Value<bool>()
+        | _ -> false
     let name = new TextBox(Name="group-name")
     let nameInput = new SettingsTextInput(name)
     let mutable addToGroup : (string * string -> unit) = ignore
@@ -266,17 +279,23 @@ type AppGroupingRulesView() as this =
         name.Text <- selectedGroup() |> Option.map(fun group -> group.name) |> Option.defaultValue ""
     /// Each named group's rules in the order of its chips, to remove the one whose x is pressed.
     let chipRules = Collections.Generic.Dictionary<string,AppGroupingRule list>()
+    /// The dragged groups' panel as folded or open: the heading says which, and the list shows only open.
+    let showDragged () =
+        draggedChevron.Text <- (if draggedOpen then "▾" else "▸")
+        draggedCard.Visible <- draggedHeader.Visible && draggedOpen
     let reload selection =
         rebuilding <- true
         try
             editing <- None
             tree.ClearRowEditor()
-            for row in tree.Roots do
-                for chip in row.Chips do
-                    if not(isNull chip.Icon) then chip.Icon.Dispose()
-            tree.Roots.Clear()
+            for list in [tree;dragged] do
+                for row in list.Roots do
+                    for chip in row.Chips do
+                        if not(isNull chip.Icon) then chip.Icon.Dispose()
+                list.Roots.Clear()
             chipRules.Clear()
             // One row a group, its apps in chips that add and remove; the Enabled box covers them all.
+            // A chip for some of an app's windows says which under the app's name.
             for group in groups do
                 let members = rules |> List.filter(fun rule -> rule.groupId=group.id)
                 let enabled = members |> List.filter(fun rule -> rule.enabled) |> List.length
@@ -284,16 +303,21 @@ type AppGroupingRulesView() as this =
                                        Checks=[|None;if members.IsEmpty then None else Some(enabled=members.Length)|],
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
                                        ChipAdd=true,Actions=Some [EditGlyph;DeleteGlyph],AlwaysShowActions=true,
-                                       ChipsDimmed=(not members.IsEmpty && enabled=0),ChipTip=tr Strings.AppRules.chipTip)
+                                       ChipsDimmed=(not members.IsEmpty && enabled=0),ChipTip=tr Strings.AppRules.chipTip,
+                                       ChipDetails=(members |> List.exists AppGroupingRules.isConditioned))
                 row.Chips <- members |> List.map(fun rule ->
                     { Faded=false; Note=describe rule; Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=true })
                 chipRules.[group.id] <- members
                 tree.Roots.Add(row)
-            // Groups made by dragging tabs, kept after a restart closes their windows: shown, not edited here,
-            // and taken apart in one go. A row is only its apps, which a name of its own (they cannot
-            // be renamed) would leave less room for; its icon says on hover what it is.
-            Services.program.handMadeGroups() |> List.iteri(fun index (id,members) ->
-                let row = TreeListItem("",Tag=HandMadeNode id,Glyph=TabsGlyph,SeparatorAbove=(index=0),IconTip=tr Strings.AppRules.handMadeGroups,
+            // Groups made by dragging tabs, kept after a restart closes their windows: shown in their
+            // own panel, not edited here, and taken apart in one go. A row is only its apps, which a
+            // name of its own (they cannot be renamed) would leave less room for.
+            let handMade = Services.program.handMadeGroups()
+            draggedCaption.Text <- tr (Strings.AppRules.handMadeHeading handMade.Length)
+            draggedHeader.Visible <- not handMade.IsEmpty
+            showDragged()
+            handMade |> List.iter(fun (id,members) ->
+                let row = TreeListItem("",Tag=HandMadeNode id,Glyph=TabsGlyph,IconTip=tr Strings.AppRules.handMadeGroups,
                                        Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true,ChipColumns=3)
                 row.Chips <- members |> List.map(fun (app,title,hwnd,kept) ->
                     // An open window's own icon; a closed one's app icon in grey, as another of its
@@ -323,8 +347,9 @@ type AppGroupingRulesView() as this =
                     // A closed window greyed; an open one it cannot take back after a restart says so.
                     { Faded=(hwnd=IntPtr.Zero); Note=(if hwnd<>IntPtr.Zero && not kept then tr Strings.AppRules.notKept else "")
                       Text=(if String.IsNullOrWhiteSpace title then key else title); Icon=Option.toObj icon; Removable=false })
-                tree.Roots.Add(row))
+                dragged.Roots.Add(row))
             tree.Rebuild()
+            dragged.Rebuild()
             tree.SelectedItem <- tree.Roots
                                  |> Seq.tryFind(fun row -> selection=Some(row.Tag :?> GroupApplicationNode)) |> Option.toObj
             updateEditor()
@@ -459,19 +484,39 @@ type AppGroupingRulesView() as this =
                 reload (Some(GroupNode group.id)))
         this.fitToRows()
         tree.RowsChanged.Add(fun _ -> this.fitToRows())
+        dragged.RowsChanged.Add(fun _ -> this.fitToRows())
         addGroup.Anchor <- AnchorStyles.Top ||| AnchorStyles.Right
         header.Controls.AddRange([|caption :> Control;help;addGroup|])
         caption.SizeChanged.Add(fun _ -> help.Location <- Point(caption.Right+Dpi.scale 10,caption.Top-Dpi.scale 2))
         help.Location <- Point(caption.Right+Dpi.scale 10,caption.Top-Dpi.scale 2)
         header.Resize.Add(fun _ -> addGroup.Location<-Point(max 0 (header.Width-addGroup.Width),0))
+        // The dragged groups' heading: the name with its count, the chevron that folds the panel,
+        // and what the panel is for on hover. A press anywhere on the heading folds or opens it.
+        draggedHeader.Controls.AddRange([|draggedCaption :> Control;draggedChevron;draggedHelp|])
+        let placeDraggedHeading () =
+            draggedChevron.Location <- Point(draggedCaption.Right+Dpi.scale 6,draggedCaption.Top+(draggedCaption.Height-draggedChevron.Height)/2)
+            draggedHelp.Location <- Point(draggedChevron.Right+Dpi.scale 8,draggedCaption.Top-Dpi.scale 2)
+        draggedCaption.SizeChanged.Add(fun _ -> placeDraggedHeading())
+        draggedChevron.SizeChanged.Add(fun _ -> placeDraggedHeading())
+        let toggleDragged () = this.DraggedOpen <- not draggedOpen
+        for control in [draggedHeader :> Control;draggedCaption;draggedChevron] do control.Click.Add(fun _ -> toggleDragged())
+        dragged.RowActions <- [NoGlyph;UngroupGlyph]
+        dragged.ExpandOnDoubleClick <- false
+        dragged.SoftHighlight <- true
+        dragged.ShowHeader <- false
+        dragged.GlyphTips <- Map.ofList [UngroupGlyph,tr Strings.AppRules.ungroup]
+        dragged.ActionInvoked.Add(fun (item,action) ->
+            match item.Tag :?> GroupApplicationNode,action with
+            | HandMadeNode id,1 ->
+                Services.program.ungroupHandMade id
+                reload None
+            | _ -> ())
         tree.RowActions <- [EditGlyph;DeleteGlyph]
         tree.ExpandOnDoubleClick <- false
         tree.SoftHighlight <- true
         tree.EmptyText <- tr Strings.AppRules.noGroups
         // Only names and buttons: a heading row would just say "Name".
         tree.ShowHeader <- false
-        // Rename and delete read at a glance; ungroup needs saying.
-        tree.GlyphTips <- Map.ofList [UngroupGlyph,tr Strings.AppRules.ungroup]
         tree.ChipRemoveTip <- tr Strings.AppRules.removeFromGroup
         tree.ChipAddTip <- tr Strings.AppRules.chooseApplication
         tree.SelectionChanged.Add(fun _ ->
@@ -484,12 +529,8 @@ type AppGroupingRulesView() as this =
         tree.ItemActivated.Add(fun _ -> beginEdit())
         tree.ActionInvoked.Add(fun (item,action) ->
             match item.Tag :?> GroupApplicationNode,action with
-            | HandMadeNode id,1 ->
-                Services.program.ungroupHandMade id
-                reload None
-            | HandMadeNode _,_ -> ()
-            | _,0 -> beginEdit()
-            | _,1 -> delete()
+            | GroupNode _,0 -> beginEdit()
+            | GroupNode _,1 -> delete()
             | _ -> ())
         // The "+" after a group's apps lists the apps that can join it.
         tree.ChipAddInvoked.Add(fun item ->
@@ -626,44 +667,65 @@ type AppGroupingRulesView() as this =
             reload (Some(GroupNode group.id))
             beginEdit())
         nameInput.Visible <- false
-        tree.Tag <- "surface"
-        tree.Dock <- DockStyle.Fill
-        card.Controls.Add(tree)
-        card.Paint.Add(fun e ->
-            let palette = SettingsColors.current()
-            e.Graphics.Clear(this.BackColor)
-            e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect card.Width card.Height) (SettingsShapes.overlayRadius())
-            use fill = new SolidBrush(palette.surface)
-            use border = new Pen(palette.border)
-            e.Graphics.FillPath(fill,shape)
-            e.Graphics.DrawPath(border,shape))
-        card.Resize.Add(fun _ -> card.Invalidate())
-        this.Controls.AddRange([|header :> Control;card;condition;status;nameInput|])
+        for list,panel in [tree,card;dragged,draggedCard] do
+            list.Tag <- "surface"
+            list.Dock <- DockStyle.Fill
+            panel.Controls.Add(list)
+            panel.Paint.Add(fun e ->
+                let palette = SettingsColors.current()
+                e.Graphics.Clear(this.BackColor)
+                e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                use shape = SettingsShapes.rounded (SettingsShapes.outlineRect panel.Width panel.Height) (SettingsShapes.overlayRadius())
+                use fill = new SolidBrush(palette.surface)
+                use border = new Pen(palette.border)
+                e.Graphics.FillPath(fill,shape)
+                e.Graphics.DrawPath(border,shape))
+            panel.Resize.Add(fun _ -> panel.Invalidate())
+        this.Controls.AddRange([|header :> Control;card;condition;status;draggedHeader;draggedCard;nameInput|])
         status.TextChanged.Add(fun _ -> this.PerformLayout())
-        condition.VisibleChanged.Add(fun _ -> this.fitToRows(); this.PerformLayout())
+        for control in [condition;draggedHeader;draggedCard] do control.VisibleChanged.Add(fun _ -> this.fitToRows(); this.PerformLayout())
         this.Disposed.Add(fun _ ->
             nameInput.Dispose()
             (addMenu :> IDisposable).Dispose()
-            for row in tree.Roots do
-                for chip in row.Chips do
-                    if not(isNull chip.Icon) then chip.Icon.Dispose())
+            for list in [tree;dragged] do
+                for row in list.Roots do
+                    for chip in row.Chips do
+                        if not(isNull chip.Icon) then chip.Icon.Dispose())
         this.Resize.Add(fun _ -> this.PerformLayout())
         // Apps grouped before a group turned their tabs on, whose tabs were turned off since.
         for rule in rules do
             if rule.enabled && not (Services.filter.getIsTabbingEnabledForProcess rule.processPath) then
                 Services.filter.setIsTabbingEnabledForProcess rule.processPath true
         reload None
-    /// Only as tall as its rows need, from one row up to six; more rows scroll.
+    /// The dragged groups' panel's room: its heading, and its list up to six rows, while shown.
+    member private this.draggedHeights =
+        let gap = Dpi.scale 8
+        (if draggedHeader.Visible then gap+Dpi.scale 36 else 0),
+        (if draggedCard.Visible then gap+min (Dpi.scale 244) (2*Dpi.scale 6+dragged.ContentHeight) else 0)
+    /// Only as tall as its rows need, from one row up to six; more rows scroll. The dragged
+    /// groups' panel adds its own room under that.
     member private this.fitToRows() =
         if not(isNull header) then
             let rows = Dpi.scale tree.RowHeight
             let around = Dpi.scale 36+Dpi.scale 8+2*Dpi.scale 6+(if status.Text="" then 0 else Dpi.scale 28)+(if condition.Visible then Dpi.scale 40 else 0)
             let wanted = around+tree.ContentHeight
-            let height = max (around+rows) (min (Dpi.scale 244) wanted)
+            let heading,list = this.draggedHeights
+            let height = max (around+rows) (min (Dpi.scale 244) wanted)+heading+list
             if this.Height<>height then this.Height <- height
     member _.Changed = changed.Publish
     member _.AddMenu = addMenu
+    /// Whether the dragged groups' panel shows its list; kept in the settings file.
+    member this.DraggedOpen
+        with get() = draggedOpen
+        and set(value) =
+            if draggedOpen<>value then
+                draggedOpen <- value
+                let root = Services.settings.root
+                root.["handMadeGroupsOpen"] <- JValue(value)
+                Services.settings.root <- root
+            showDragged()
+            this.fitToRows()
+            this.PerformLayout()
     member _.Reload() =
         groups <- Services.settings.getValue("appGroupingTargets") :?> AppGroupingTarget list
         rules <- Services.settings.getValue("appGroupingRules") :?> AppGroupingRule list
@@ -677,8 +739,12 @@ type AppGroupingRulesView() as this =
             let top = header.Bottom+gap
             let statusHeight = if status.Text="" then 0 else Dpi.scale 28
             let conditionHeight = if condition.Visible then Dpi.scale 40 else 0
+            let heading,list = this.draggedHeights
             // As tall as the section leaves it: a fixed minimum ran past a one-row section's bottom
             // and cut off its rounded corners there.
-            card.Bounds<-Rectangle(0,top,width,max 1 (this.Height-top-statusHeight-conditionHeight))
+            card.Bounds<-Rectangle(0,top,width,max 1 (this.Height-top-statusHeight-conditionHeight-heading-list))
             condition.Bounds<-Rectangle(0,card.Bottom,width,conditionHeight)
             status.Bounds<-Rectangle(0,condition.Bottom,width,statusHeight)
+            if draggedHeader.Visible then
+                draggedHeader.Bounds<-Rectangle(0,status.Bottom+gap,width,Dpi.scale 36)
+                if draggedCard.Visible then draggedCard.Bounds<-Rectangle(0,draggedHeader.Bottom+gap,width,max 1 (list-gap))

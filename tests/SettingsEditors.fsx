@@ -1286,7 +1286,10 @@ otepad.exe"]},
         let groupingCaption = descendants groupView |> Seq.find(fun control -> control.Name="grouping-caption")
         assertTrue (groupingCaption.Font.Size < SettingsUi.sectionFont().Size && not groupingCaption.Font.Bold)
                    "Groups across apps has a heading as large as the page's"
-        let tree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
+        let tree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list when list.Name<>"dragged-groups" -> Some list | _ -> None)
+        let draggedTree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list when list.Name="dragged-groups" -> Some list | _ -> None)
+        let draggedHeader = descendants groupView |> Seq.find(fun control -> control.Name="dragged-header")
+        let draggedCard = descendants groupView |> Seq.find(fun control -> control.Name="dragged-card")
         let saved() = settingValues.["appGroupingRules"] :?> AppGroupingRule list
         let targets() = settingValues.["appGroupingTargets"] :?> AppGroupingTarget list
         let name = descendants groupView |> Seq.pick(function :? TextBox as text when text.Name="group-name" -> Some text | _ -> None)
@@ -1346,7 +1349,7 @@ otepad.exe"]},
         Application.DoEvents()
         assertTrue (targets().Head.name="Group A2" && not name.Parent.Visible) "A press outside the name field did not finish the name"
         rename "Group A"
-        let clickAction (item:TreeListItem) action =
+        let clickActionIn (tree:SettingsTreeList) (item:TreeListItem) action =
             // The list may be shorter than its rows: scroll the row into view and find where it is now.
             tree.EnsureVisible(item)
             let rowTop = [0..tree.Height-1] |> List.find(fun y -> tree.ItemAt(Point(Dpi.scale 20,y)) |> Option.exists(fun row -> obj.ReferenceEquals(row,item)))
@@ -1362,6 +1365,7 @@ otepad.exe"]},
             let tip = typeof<SettingsTreeList>.GetField("tooltipText",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree) :?> string
             send "OnMouseDown"
             tip
+        let clickAction item action = clickActionIn tree item action
         /// Presses the part of a row's chips that a hit test finds, wherever the list drew it.
         let pressChipPart hitTest (item:TreeListItem) =
             tree.EnsureVisible(item)
@@ -1490,7 +1494,7 @@ otepad.exe"]},
         form.PerformLayout()
         Application.DoEvents()
         assertTrue (not tree.ShowHeader && tree.ItemAt(Point(Dpi.scale 20,Dpi.scale 4)).IsSome) "Groups across apps still opens with a heading row"
-        assertTrue (groupView.Height<=Dpi.scale 244 && groupView.Bottom<=view.control.ClientSize.Height)
+        assertTrue (groupView.Height<=Dpi.scale (244+44) && groupView.Bottom<=view.control.ClientSize.Height)
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
         // Groups made by dragging tabs show after the named ones, read only, and come apart in one go.
         // Each row is only its apps: they cannot be renamed, and a name of their own left less room;
@@ -1508,17 +1512,26 @@ otepad.exe"]},
             handMade.Value <- [4712,[Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe"),"Closed notes",IntPtr.Zero,true
                                      "NOT-RUNNING-APP.EXE","",IntPtr.Zero,true]]
             groupView.Reload()
-            let row = tree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
+            let row = draggedTree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
             assertTrue (row.Chips |> List.map(fun chip -> chip.Text)=["Closed notes";"NOT-RUNNING-APP.EXE"]
                         && row.Chips |> List.forall(fun chip -> not(isNull chip.Icon) && isGrey chip.Icon))
                        "A closed window of an app not running had no icon, or not a grey one"
             handMade.Value <- dragged
         menu.UpdateApplications [Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe")]
         groupView.Reload()
-        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
-        assertTrue (handMadeRow.SeparatorAbove && handMadeRow.IconTip=tr Strings.AppRules.handMadeGroups
-                    && tree.Roots |> Seq.forall(fun row -> row.Text<>tr Strings.AppRules.handMadeGroups))
-                   "Dragged groups are not set apart, have a heading row, or their icon does not say what they are"
+        let handMadeRow = draggedTree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
+        // In a panel of their own under the named groups, folded to its heading until opened,
+        // the heading counting them; nothing of them is in the named groups' list.
+        assertTrue (draggedHeader.Visible && not draggedCard.Visible && not groupView.DraggedOpen
+                    && (descendants draggedHeader |> Seq.exists(fun control -> control.Name="dragged-caption" && control.Text=tr (Strings.AppRules.handMadeHeading 1)))
+                    && tree.Roots |> Seq.forall(fun row -> row.Glyph<>TabsGlyph))
+                   "Dragged groups are not in a folded panel of their own with a counted heading"
+        groupView.DraggedOpen <- true
+        Application.DoEvents()
+        assertTrue (draggedCard.Visible && draggedCard.Top>=draggedHeader.Bottom && draggedCard.Bottom<=groupView.Height)
+                   (sprintf "Opening the dragged groups did not show their list under the heading: card %A in %d" draggedCard.Bounds groupView.Height)
+        assertTrue (not handMadeRow.SeparatorAbove && handMadeRow.IconTip=tr Strings.AppRules.handMadeGroups)
+                   "A dragged group's row is set apart by a line, or its icon does not say what it is"
         assertTrue (handMadeRow.Text="" && handMadeRow.Checks |> Array.forall Option.isNone
                     && handMadeRow.Chips |> List.map(fun chip -> chip.Text)=["Notes - Notepad";"Downloads"]
                     && handMadeRow.Chips |> List.forall(fun chip -> not chip.Removable && not(isNull chip.Icon))
@@ -1534,15 +1547,15 @@ otepad.exe"]},
         let longTitle = String.replicate 12 "Long window title "
         let kept = handMadeRow.Chips
         handMadeRow.Chips <- [{ Text=longTitle; Icon=null; Removable=false; Faded=false; Note="" }]
-        tree.Rebuild()
-        tree.EnsureVisible(handMadeRow)
-        let rowY = [0..tree.Height-1] |> List.find(fun y -> tree.ItemAt(Point(Dpi.scale 20,y)) |> Option.exists(fun row -> obj.ReferenceEquals(row,handMadeRow)))
-                   |> fun top -> top+Dpi.scale (tree.RowHeight/2)
+        draggedTree.Rebuild()
+        draggedTree.EnsureVisible(handMadeRow)
+        let rowY = [0..draggedTree.Height-1] |> List.find(fun y -> draggedTree.ItemAt(Point(Dpi.scale 20,y)) |> Option.exists(fun row -> obj.ReferenceEquals(row,handMadeRow)))
+                   |> fun top -> top+Dpi.scale (draggedTree.RowHeight/2)
         let tipAt x =
             let mouse = new MouseEventArgs(MouseButtons.None,0,x,rowY,0)
-            typeof<SettingsTreeList>.GetMethod("OnMouseMove",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
-            typeof<SettingsTreeList>.GetField("tooltipText",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree) :?> string
-        assertTrue ([0..4..tree.Width-1] |> List.exists(fun x -> tipAt x=longTitle)) "A chip cut short did not show its whole text on hover"
+            typeof<SettingsTreeList>.GetMethod("OnMouseMove",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(draggedTree,[|box mouse|]) |> ignore
+            typeof<SettingsTreeList>.GetField("tooltipText",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(draggedTree) :?> string
+        assertTrue ([0..4..draggedTree.Width-1] |> List.exists(fun x -> tipAt x=longTitle)) "A chip cut short did not show its whole text on hover"
         // Its icon says what the row is on hover and stays as it is: it cannot be pressed, so it
         // does not light up as the row buttons do.
         let iconX = [0..2..Dpi.scale 80] |> List.tryFind(fun x -> tipAt x=tr Strings.AppRules.handMadeGroups)
@@ -1550,26 +1563,26 @@ otepad.exe"]},
         do
             let snapshot x =
                 tipAt x |> ignore
-                let image = new Bitmap(tree.Width,tree.Height)
-                tree.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                let image = new Bitmap(draggedTree.Width,draggedTree.Height)
+                draggedTree.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
                 image
             use away = snapshot 1
             use over = snapshot iconX.Value
             let unchanged =
-                [max 0 (rowY-Dpi.scale 10)..min (tree.Height-1) (rowY+Dpi.scale 10)] |> List.forall(fun y ->
-                    [0..min (tree.Width-1) (iconX.Value+Dpi.scale 20)] |> List.forall(fun x -> away.GetPixel(x,y)=over.GetPixel(x,y)))
+                [max 0 (rowY-Dpi.scale 10)..min (draggedTree.Height-1) (rowY+Dpi.scale 10)] |> List.forall(fun y ->
+                    [0..min (draggedTree.Width-1) (iconX.Value+Dpi.scale 20)] |> List.forall(fun x -> away.GetPixel(x,y)=over.GetPixel(x,y)))
             assertTrue unchanged "A dragged group's icon lit up on hover, as if it could be pressed"
         // With no name, its chips start where the names of the other rows start.
         do
             let layout = typeof<SettingsTreeList>.GetMethod("chipLayout",BindingFlags.Instance ||| BindingFlags.NonPublic)
             let name = typeof<SettingsTreeList>.GetMethod("nameLayout",BindingFlags.Instance ||| BindingFlags.NonPublic)
-            let _,laid,_,_ = layout.Invoke(tree,[|box handMadeRow;box 0;box 0|]) :?> (Rectangle * (int * Rectangle * Rectangle option) list * Rectangle option * int)
+            let _,laid,_,_ = layout.Invoke(draggedTree,[|box handMadeRow;box 0;box 0|]) :?> (Rectangle * (int * Rectangle * Rectangle option) list * Rectangle option * int)
             let _,named = name.Invoke(tree,[|box tree.Roots.[0];box 0;box 0|]) :?> (Rectangle * Rectangle)
             let _,first,_ = laid.Head
             assertTrue (first.X=named.X) (sprintf "A dragged group's chips start at %d, names at %d" first.X named.X)
             // Three to a line, one width, filling it, however short their titles.
             handMadeRow.Chips <- [for i in 1..6 -> { Text=string i; Icon=null; Removable=false; Faded=false; Note="" }]
-            let _,laid,_,lines = layout.Invoke(tree,[|box handMadeRow;box 0;box 0|]) :?> (Rectangle * (int * Rectangle * Rectangle option) list * Rectangle option * int)
+            let _,laid,_,lines = layout.Invoke(draggedTree,[|box handMadeRow;box 0;box 0|]) :?> (Rectangle * (int * Rectangle * Rectangle option) list * Rectangle option * int)
             let boxes = laid |> List.map(fun (_,box,_) -> box)
             let widths = boxes |> List.map(fun box -> box.Width) |> List.distinct
             assertTrue (lines=2 && widths.Length=1 && boxes.[2].Y=boxes.[0].Y && boxes.[3].Y>boxes.[0].Y && boxes.[3].X=boxes.[0].X
@@ -1577,16 +1590,16 @@ otepad.exe"]},
                        (sprintf "A dragged group's chips are not three to a line filling it: %A, names end at %d" boxes named.Right)
         tipAt 1 |> ignore
         handMadeRow.Chips <- kept
-        tree.Rebuild()
+        draggedTree.Rebuild()
         // Chips that do not fit wrap onto more lines and the row grows; none are hidden behind a count.
-        let oneLine = tree.ContentHeight
+        let oneLine = draggedTree.ContentHeight
         let shown = handMadeRow.Chips
         handMadeRow.Chips <- [for i in 1..12 -> { Text=sprintf "Window title %d" i; Icon=null; Removable=false; Faded=false; Note="" }]
-        tree.Rebuild()
-        let wrapped = tree.ContentHeight
+        draggedTree.Rebuild()
+        let wrapped = draggedTree.ContentHeight
         handMadeRow.Chips <- shown
-        tree.Rebuild()
-        assertTrue (wrapped>=oneLine+2*Dpi.scale 24 && tree.ContentHeight=oneLine)
+        draggedTree.Rebuild()
+        assertTrue (wrapped>=oneLine+2*Dpi.scale 24 && draggedTree.ContentHeight=oneLine)
                    (sprintf "Chips that do not fit did not wrap: %d for one line, %d with twelve, %d again" oneLine wrapped tree.ContentHeight)
         use image = new Bitmap(form.Width,form.Height)
         form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
@@ -1611,9 +1624,9 @@ otepad.exe"]},
         key tree Keys.Delete
         assertTrue (saved().IsEmpty && targets().Length=1) "Deleting a group left its application mappings behind"
         // Taking a group made by hand apart forgets it, through the program, and drops its row.
-        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
+        let handMadeRow = draggedTree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
         // The button said what it does while the pointer was on it.
-        let tip = clickAction handMadeRow 1
+        let tip = clickActionIn draggedTree handMadeRow 1
         assertTrue (tip=tr Strings.AppRules.ungroup) (sprintf "The ungroup button has no hover tip: %A" tip)
         // A one-word tip sits in a bubble its own size, not one widened to a window's minimum or
         // taller than its one line.
@@ -1622,8 +1635,8 @@ otepad.exe"]},
         let bubbles = Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun form -> form.GetType().Name="SettingsHelpPopup") |> Seq.map(fun form -> form.Size) |> List.ofSeq
         assertTrue (bubbles |> List.exists(fun size -> size.Width<=tipWidth+2 && size.Height<=tipHeight+2))
                    (sprintf "The ungroup tip's bubble is larger than its text: %A for %dx%d" bubbles tipWidth tipHeight)
-        assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Glyph<>TabsGlyph))
-                   "Ungrouping a group made by hand did not forget it or kept its row"
+        assertTrue (List.ofSeq ungrouped=[4711] && draggedTree.Roots.Count=0 && not draggedHeader.Visible)
+                   "Ungrouping a group made by hand did not forget it, kept its row, or left its empty panel up"
         form.Close()
         rules.Value <- filter
     printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording, grouping rule editors and light/dark renders."

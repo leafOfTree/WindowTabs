@@ -97,6 +97,8 @@ type TreeListItem(text:string) =
     member val ChipColumns = 0 with get,set
     /// Said on hover over a chip of this row that has no note of its own, for chips a press opens.
     member val ChipTip = "" with get,set
+    /// Chips two lines tall, each chip's note under its text in small type rather than on hover.
+    member val ChipDetails = false with get,set
     member val AlwaysShowActions = false with get,set
     member _.Children = children :> IReadOnlyList<TreeListItem>
     member this.Add(child:TreeListItem) = child.Parent <- this; children.Add(child); child
@@ -232,14 +234,17 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// The top of a shown row in client coordinates.
     member private this.rowTop(index:int) = this.headerHeight+this.tops.[index]-offset
     member private this.rowSpan(index:int) = this.tops.[index+1]-this.tops.[index]
-    /// One line, or as many as its chips need.
+    /// One line, or as many as its chips need; taller by a line of small type for chips with
+    /// their notes under their text.
     member private this.itemHeight(item:TreeListItem, level:int) =
         if item.Chips.IsEmpty && not item.ChipAdd then this.rowHeight
         else
             let _,_,_,lines = this.chipLayout(item,level,0)
-            this.rowHeight+(lines-1)*this.chipPitch
+            this.rowHeight+(this.chipHeightOf item-this.chipHeight)+(lines-1)*this.chipPitchOf item
     member private this.chipHeight = this.rowHeight-Dpi.scale 12
-    member private this.chipPitch = this.chipHeight+Dpi.scale 6
+    member private this.detailFont = SettingsUi.font (SettingsUi.smallFamily()) 8.5f FontStyle.Regular
+    member private this.chipHeightOf(item:TreeListItem) = this.chipHeight+(if item.ChipDetails then this.detailFont.Height else 0)
+    member private this.chipPitchOf(item:TreeListItem) = this.chipHeightOf item+Dpi.scale 6
 
     /// Recomputes the visible rows after items, expansion or roots change.
     member this.Rebuild() =
@@ -397,8 +402,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine
         let measure (text:string) = TextRenderer.MeasureText(text,this.Font,Size(Int32.MaxValue,this.rowHeight),flags).Width
         let nameWidth = min (measure item.Text) (min (bounds.Width/4) (Dpi.scale 130))
-        let height = this.chipHeight
-        let firstY = top+(this.rowHeight-height)/2
+        let height = this.chipHeightOf item
+        let firstY = top+(this.rowHeight-this.chipHeight)/2
         let pad,gap,icon,close = Dpi.scale 8,Dpi.scale 6,Dpi.scale 16,Dpi.scale 14
         // A row without a name starts its chips where the names of the rows around it start.
         let left = if item.Text="" then bounds.X else bounds.X+nameWidth+Dpi.scale 12
@@ -413,7 +418,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             if x>left && x+width>right then
                 x <- left
                 line <- line+1
-            let box = Rectangle(x,firstY+line*this.chipPitch,width,height)
+            let box = Rectangle(x,firstY+line*this.chipPitchOf item,width,height)
             x <- x+width+gap
             box
         let laid =
@@ -726,6 +731,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     | true,"" -> Some(chip.Text,box)
                     | true,note -> Some(chip.Text+Environment.NewLine+note,box)
                     | false,"" -> if item.ChipTip="" then None else Some(item.ChipTip,box)
+                    // A note shown under the text is not said again on hover.
+                    | false,_ when item.ChipDetails -> if item.ChipTip="" then None else Some(item.ChipTip,box)
                     | false,note -> Some(note,box))
                 |> Option.defaultValue ("",around)
             | None,Some(index,(item,level)) when e.X < (this.columnBounds).[0].Right ->
@@ -900,7 +907,15 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             let chipText =
                                 if SystemInformation.HighContrast then (if item.ChipsDimmed || chip.Faded then SystemColors.GrayText else SystemColors.WindowText)
                                 elif item.ChipsDimmed || chip.Faded then p.muted else p.text
-                            TextRenderer.DrawText(g,chip.Text,this.Font,Rectangle(x,box.Y,max 1 (textRight-x),box.Height),chipText,flags)
+                            if item.ChipDetails && chip.Note<>"" then
+                                // The note under the text, in small muted type.
+                                let line,small = this.Font.Height,this.detailFont.Height
+                                let top = box.Y+(box.Height-line-small)/2
+                                TextRenderer.DrawText(g,chip.Text,this.Font,Rectangle(x,top,max 1 (textRight-x),line),chipText,flags)
+                                let noteColor = if SystemInformation.HighContrast then chipText elif item.ChipsDimmed || chip.Faded then p.muted else p.muted
+                                TextRenderer.DrawText(g,chip.Note,this.detailFont,Rectangle(x,top+line,max 1 (textRight-x),small),noteColor,flags)
+                            else
+                                TextRenderer.DrawText(g,chip.Text,this.Font,Rectangle(x,box.Y,max 1 (textRight-x),box.Height),chipText,flags)
                             closeBox |> Option.iter(fun close ->
                                 let pointed = hoveredChip |> Option.exists(fun (row,i) -> Object.ReferenceEquals(row,item) && i=chipIndex)
                                 if pointed then
