@@ -37,7 +37,7 @@ module RuleField =
     let serialize = function AppOnly -> "" | WindowTitle -> "title" | WindowClass -> "class" | CommandLine -> "commandLine"
     let parse = function "" -> Some AppOnly | "title" -> Some WindowTitle | "class" -> Some WindowClass | "commandLine" -> Some CommandLine | _ -> None
     let label = function
-        | AppOnly -> Strings.AppRules.applicationOnly
+        | AppOnly -> Strings.AppRules.allWindows
         | WindowTitle -> Strings.AppRules.windowTitle
         | WindowClass -> Strings.AppRules.windowClass
         | CommandLine -> Strings.AppRules.commandLine

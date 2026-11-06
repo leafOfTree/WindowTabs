@@ -1292,10 +1292,6 @@ otepad.exe"]},
         let draggedCard = descendants groupView |> Seq.find(fun control -> control.Name="dragged-card")
         let saved() = settingValues.["appGroupingRules"] :?> AppGroupingRule list
         let targets() = settingValues.["appGroupingTargets"] :?> AppGroupingTarget list
-        let name = descendants groupView |> Seq.pick(function :? TextBox as text when text.Name="group-name" -> Some text | _ -> None)
-        let rename target =
-            name.Text <- target
-            typeof<TextBox>.GetMethod("OnLeave",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(name,[|box EventArgs.Empty|]) |> ignore
         // With no groups the list is a single row tall, not a large empty box.
         do
             let dragged = handMade.Value
@@ -1316,39 +1312,21 @@ otepad.exe"]},
             empty.DrawToBitmap(emptyImage,Rectangle(Point.Empty,emptyImage.Size))
             emptyImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-empty-%A.png" mode))
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
-        assertTrue (tree.RowActions=[EditGlyph;DeleteGlyph] && obj.ReferenceEquals(name.Parent.Parent,tree) && name.Parent.Visible)
-                   "Adding a group did not start editing its name directly in the row"
-        assertTrue (name.Text=tr (Strings.AppRules.newGroup 1) && name.Text.Length<=8) (sprintf "A new group is not named short and numbered: %s" name.Text)
-        // A group's name is short: its field takes half the name cell, not all of it.
-        assertTrue (name.Parent.Width<=tree.ClientSize.Width/2) (sprintf "The group name field is %d wide in a list %d wide" name.Parent.Width tree.ClientSize.Width)
-        // In a selected row the name field and the application drop-down keep a fill of their own,
-        // as the Browse button does, instead of vanishing into the row's colour.
+        // A group is numbered by its place, with no name of its own to edit: one button, delete.
+        assertTrue (tree.RowActions=[DeleteGlyph] && tree.Roots.Count=1 && tree.Roots.[0].Text=tr (Strings.AppRules.newGroup 1)
+                    && descendants groupView |> Seq.forall(fun control -> control.Name<>"group-name"))
+                   (sprintf "A new group is not numbered, or can be renamed: %s" tree.Roots.[0].Text)
         let palette = SettingsColors.current()
-        let field = name.Parent :?> SettingsInputFrame
-        assertTrue (field.BackColor.ToArgb()=palette.surface.ToArgb() && name.BackColor.ToArgb()=palette.surface.ToArgb())
-                   "The row's name field took the row's colour"
+        // The application drop-down keeps a fill of its own in a selected row, as the Browse
+        // button does, instead of vanishing into the row's colour.
         let hoveredDropDown,_ = SettingsShapes.neutralColors palette true false
         assertTrue (SystemInformation.HighContrast || abs(int hoveredDropDown.R-int palette.selection.R) >= 6)
                    "A hovered drop-down is close to the colour of a selected row"
         assertTrue (tree.Parent.Width=groupView.ClientSize.Width && tree.Tag=box "surface") "Grouping rules still use a split list and editor layout"
         assertTrue (descendants groupView |> Seq.forall(fun control -> control.Name<>"group-target")) "A separate target selector remains above the grouping rows"
-        rename "Group A"
         let groupA = targets().Head.id
-        assertTrue (targets().Length=1 && saved().IsEmpty && tree.Roots.[0].Text="Group A") "An empty group root was not saved and renamed"
-        key tree Keys.Enter
-        name.Text <- "Cancelled rename"
-        key name Keys.Escape
-        assertTrue (targets().Head.name="Group A" && not name.Parent.Visible) "Escape saved a cancelled group name or left the row editor open"
-        // A press on the page outside the field, which takes no focus, still finishes the name.
-        key tree Keys.Enter
-        name.Text <- "Group A2"
-        WinUserApi.PostMessage(groupingCaption.Handle,0x201,IntPtr(1),IntPtr.Zero) |> ignore
-        let pressClock = Diagnostics.Stopwatch.StartNew()
-        while name.Parent.Visible && pressClock.ElapsedMilliseconds<2000L do Application.DoEvents(); Threading.Thread.Sleep(10)
-        WinUserApi.PostMessage(groupingCaption.Handle,0x202,IntPtr.Zero,IntPtr.Zero) |> ignore
-        Application.DoEvents()
-        assertTrue (targets().Head.name="Group A2" && not name.Parent.Visible) "A press outside the name field did not finish the name"
-        rename "Group A"
+        assertTrue (targets().Length=1 && saved().IsEmpty && targets().Head.name=Localization.plain (Strings.AppRules.newGroup 1))
+                   "An empty group was not saved under its number"
         let clickActionIn (tree:SettingsTreeList) (item:TreeListItem) action =
             // The list may be shorter than its rows: scroll the row into view and find where it is now.
             tree.EnsureVisible(item)
@@ -1425,13 +1403,12 @@ otepad.exe"]},
         // tabs could be turned off and contradict the group.
         while (mapped()).IsSome && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
         assertTrue ((mapped()).IsNone && rules.Value.getIsTabbingEnabledForProcess selectedPath) "An app added to a group stayed in App rules or has no tabs"
-        rename "Group Alpha"
-        assertTrue (saved().Head.groupId=groupA && saved().Head.groupName="Group Alpha") "Renaming a group changed its identity or left application captions stale"
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
-        rename "Group B"
+        assertTrue (tree.Roots.Count=2 && tree.Roots.[1].Text=tr (Strings.AppRules.newGroup 2) && targets().[1].name=Localization.plain (Strings.AppRules.newGroup 2))
+                   "A second group is not numbered after the first"
         clickAdd tree.Roots.[1]
         pick selectedPath
-        assertTrue (saved().Length=1 && saved().Head.groupName="Group B" && tree.Roots.[0].Chips.IsEmpty && tree.Roots.[1].Chips.Length=1)
+        assertTrue (saved().Length=1 && saved().Head.groupId=targets().[1].id && saved().Head.groupName=targets().[1].name && tree.Roots.[0].Chips.IsEmpty && tree.Roots.[1].Chips.Length=1)
                    (sprintf "Moving an application to another group created duplicate grouping rules: %A chips %d/%d roots %d"
                         (saved() |> List.map(fun rule -> rule.groupName,IO.Path.GetFileName rule.processPath)) tree.Roots.[0].Chips.Length tree.Roots.[1].Chips.Length
                         tree.Roots.Count)
@@ -1601,9 +1578,11 @@ otepad.exe"]},
             let _,laid,_,lines = layout.Invoke(draggedTree,[|box handMadeRow;box 0;box 0|]) :?> (Rectangle * (int * Rectangle * Rectangle option) list * Rectangle option * int)
             let boxes = laid |> List.map(fun (_,box,_) -> box)
             let widths = boxes |> List.map(fun box -> box.Width) |> List.distinct
+            // Up to its own name cell's end: its list keeps room for two buttons, the named one for one.
+            let _,ownCell = name.Invoke(draggedTree,[|box handMadeRow;box 0;box 0|]) :?> (Rectangle * Rectangle)
             assertTrue (lines=2 && widths.Length=1 && boxes.[2].Y=boxes.[0].Y && boxes.[3].Y>boxes.[0].Y && boxes.[3].X=boxes.[0].X
-                        && named.Right-boxes.[2].Right < Dpi.scale 6+3)
-                       (sprintf "A dragged group's chips are not three to a line filling it: %A, names end at %d" boxes named.Right)
+                        && ownCell.Right-boxes.[2].Right < Dpi.scale 6+3)
+                       (sprintf "A dragged group's chips are not three to a line filling it: %A, names end at %d" boxes ownCell.Right)
         tipAt 1 |> ignore
         handMadeRow.Chips <- kept
         draggedTree.Rebuild()
@@ -1636,7 +1615,15 @@ otepad.exe"]},
         assertTrue (tree.Roots |> Seq.filter(fun row -> row.Glyph<>TabsGlyph) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
         clickAdd tree.Roots.[1]
         pick selectedPath
-        tree.SelectedItem <- tree.Roots.[1]
+        // Deleting the first group closes the numbers up: the second becomes Group 1, with its app.
+        tree.SelectedItem <- tree.Roots.[0]
+        key tree Keys.Delete
+        assertTrue (saved().Length=1 && targets().Length=1 && tree.Roots.Count=1 && tree.Roots.[0].Text=tr (Strings.AppRules.newGroup 1)
+                    && targets().Head.name=Localization.plain (Strings.AppRules.newGroup 1) && saved().Head.groupName=targets().Head.name
+                    && tree.Roots.[0].Chips.Length=1)
+                   (sprintf "Deleting the first group did not renumber the next or lost its app: %A" (targets() |> List.map(fun target -> target.name)))
+        (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
+        tree.SelectedItem <- tree.Roots.[0]
         key tree Keys.Delete
         assertTrue (saved().IsEmpty && targets().Length=1) "Deleting a group left its application mappings behind"
         // Taking a group made by hand apart forgets it, through the program, and drops its row.

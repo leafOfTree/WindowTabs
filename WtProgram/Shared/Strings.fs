@@ -984,8 +984,6 @@ module Strings =
         let newGroup number = { en=sprintf "Group %d" number; zh=sprintf "组 %d" number; ja=sprintf "グループ %d" number; ar=sprintf "المجموعة %d" number }
         let selectRule = { en="Select a group or rule to edit here. Changes save automatically."; zh="选中组或规则即可在此编辑，修改会自动保存。"; ja="グループかルールを選択して編集します。変更は自動保存されます。"; ar="حدد مجموعة أو قاعدة لتحريرها هنا. تُحفظ التغييرات تلقائيًا." }
         let newRule = { en="New rule"; zh="新规则"; ja="新しいルール"; ar="قاعدة جديدة" }
-        let groupNameRequired = { en="Enter a group name."; zh="请填写组名。"; ja="グループ名を入力してください。"; ar="أدخل اسم المجموعة." }
-        let groupNameExists = { en="A group with this name already exists."; zh="已有同名组，请使用其他名称。"; ja="同じ名前のグループが存在します。"; ar="توجد مجموعة بهذا الاسم بالفعل." }
         let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. Click an app to take only some of its windows, by title, window class or command line, or to remove it."
                                zh="把不同应用的窗口放进同一个命名组。加入这里的应用会始终启用标签，不再出现在上面的列表里，也不再使用“自动分组”。点击应用可只收纳它的部分窗口（按标题、窗口类名或命令行），或将其移除。"
                                ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。アプリをクリックすると、タイトル・ウィンドウ クラス・コマンド ラインで一部のウィンドウだけを対象にしたり、外したりできます。"
@@ -1004,14 +1002,14 @@ module Strings =
         let removeFromGroup = { en="Remove from group"; zh="从分组中移除"; ja="グループから外す"; ar="إزالة من المجموعة" }
         let browseApplication = { en="Browse…"; zh="浏览…"; ja="参照…"; ar="استعراض…" }
         let applicationFiles = { en="Applications (*.exe)|*.exe"; zh="应用程序 (*.exe)|*.exe"; ja="アプリ (*.exe)|*.exe"; ar="التطبيقات (*.exe)|*.exe" }
-        let applicationOnly = { en="Application only"; zh="仅按应用"; ja="アプリのみ"; ar="التطبيق فقط" }
+        let allWindows = { en="All windows"; zh="全部窗口"; ja="すべてのウィンドウ"; ar="كل النوافذ" }
         let targetGroup = { en="Target group"; zh="目标组"; ja="宛先グループ"; ar="المجموعة المستهدفة" }
         let chooseGroup = { en="Existing group"; zh="选择已有组"; ja="既存のグループ"; ar="مجموعة موجودة" }
         let enabled = { en="Enabled"; zh="启用"; ja="有効"; ar="ممكّن" }
         let addRule = { en="Add rule"; zh="添加规则"; ja="ルールを追加"; ar="إضافة قاعدة" }
         let invalidRule = { en="Invalid grouping rule"; zh="分组规则无效"; ja="無効なグループ化ルール"; ar="قاعدة التجميع غير صالحة" }
         let requiredFields = { en="Choose an application and enter a target group."; zh="请选择应用并填写目标组。"; ja="アプリを選択して宛先グループを入力してください。"; ar="اختر تطبيقًا وأدخل المجموعة المستهدفة." }
-        let requiredTitle = { en="Enter what to match, or choose Application only."; zh="请填写匹配内容，或选择“仅按应用”。"; ja="一致させる内容を入力するか「アプリのみ」を選択してください。"; ar="أدخل ما تريد مطابقته، أو اختر «التطبيق فقط»." }
+        let requiredTitle = { en="Enter what to match, or choose All windows."; zh="请填写匹配内容，或选择“全部窗口”。"; ja="一致させる内容を入力するか「すべてのウィンドウ」を選択してください。"; ar="أدخل ما تريد مطابقته، أو اختر «كل النوافذ»." }
         let invalidPattern details = { en="The pattern cannot be used: " + details; zh="无法使用这个模式：" + details; ja="このパターンは使えません: " + details; ar="تعذر استخدام هذا النمط: " + details }
         /// What a rule can look at beside the app, as the condition's first choice.
         let windowTitle = { en="Window title"; zh="窗口标题"; ja="ウィンドウのタイトル"; ar="عنوان النافذة" }

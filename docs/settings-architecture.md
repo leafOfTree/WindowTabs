@@ -27,11 +27,12 @@ minimal defaults from `SettingsCatalog`; explicit legacy auto-hide settings reta
 their behavior. App auto-grouping and workspaces start empty and run only when chosen.
 
 App Rules places the new-app default at the top right, the running apps below, and
-Groups across apps underneath, as tall as its rows up to six. Each named group is one
-row: its name (Group 1, Group 2… when added), its apps as chips that wrap onto more
-lines, a "+" after them that opens a list of running apps with Browse… last, its
-Enabled box beside the rename and delete buttons, and its chips dimmed while it is
-off. A cut-off chip says its whole name on hover. A chip is a menu, with an arrow
+Groups across apps underneath, as tall as its rows up to six. Each group is one row:
+numbered by its place (Group 1, Group 2…, closed up when one is deleted, and the stored
+names kept at that on save), its apps as chips that wrap onto more lines, a "+" after
+them that opens a list of running apps with Browse… last, its Enabled box beside the
+delete button, and its chips dimmed while it is off. A cut-off chip says its whole name
+on hover. A chip is a menu, with an arrow
 after its name: which of the app's windows the group takes, all (`AppOnly`) or those
 whose title, window class or command line matches a pattern (exact, starts or ends
 with, contains or a regular expression, ignoring case), which opens the condition's
@@ -39,8 +40,7 @@ controls below the list; and, last, removing the app. Such a chip has a dashed e
 before the app's rule for all of them, and leaves the app in the list above with its
 own Auto-group; the command line is read from the process (`ProcessCommandLine`) only
 for a rule that asks for it. Rules saved without a `field` are for the app's every window.
-Names edit in place and save on Enter, on leaving the field or on a click anywhere
-outside it. Empty groups persist in `appGroupingTargets`. Adding an already-mapped
+Empty groups persist in `appGroupingTargets`. Adding an already-mapped
 app to another group moves its single mapping instead of creating competing rules.
 A chip for some of an app's windows shows its condition under the app's name in small
 type, so the group reads at a glance. Groups made by dragging tabs are a panel of
