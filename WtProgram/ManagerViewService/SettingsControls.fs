@@ -1304,15 +1304,11 @@ type SettingsCombo(items:string[]) as this =
     /// A choice was taken from the open list, whether or not it was the chosen one already: for
     /// a menu, whose current item does something again when chosen again.
     member _.Chosen = chosen.Publish
-    /// Takes a choice as the open list would: closes it, chooses, and says so; a choice that
-    /// cannot be taken now is left, as the list leaves it.
+    /// Takes a choice as the open list would: closes it, chooses, and says so.
     member this.Choose(index:int) =
-        if not (List.contains index this.DisabledItems) then
-            popup |> Option.iter(fun window -> window.Close())
-            this.SelectedIndex <- index
-            chosen.Trigger index
-    /// Choices shown but not to be taken now, in the disabled grey.
-    member val DisabledItems : int list = [] with get,set
+        popup |> Option.iter(fun window -> window.Close())
+        this.SelectedIndex <- index
+        chosen.Trigger index
     /// Images remain owned by the caller, as tree-list item icons do.
     member _.ItemImages
         with get() = Array.copy itemImages
@@ -1388,11 +1384,8 @@ type SettingsCombo(items:string[]) as this =
                     let item = shown.[e.Index]
                     use background = new SolidBrush(p.hover)
                     e.Graphics.FillRectangle(background,e.Bounds)
-                    // A choice that cannot be taken now is drawn in the disabled grey and never lit.
-                    let disabled = List.contains item this.DisabledItems
-                    let active = not disabled &&
-                                 (e.Index=hovered ||
-                                  (keyboardNavigation && hovered<0 && (e.State &&& DrawItemState.Selected)<>enum 0))
+                    let active = e.Index=hovered ||
+                                 (keyboardNavigation && hovered<0 && (e.State &&& DrawItemState.Selected)<>enum 0)
                     // A line across the top of a row that starts a part of its own, the row's
                     // highlight starting under it.
                     let parted = List.contains item this.SeparatorsBefore
@@ -1408,9 +1401,7 @@ type SettingsCombo(items:string[]) as this =
                         use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 (e.Bounds.Y+inset),float32 e.Bounds.Width,float32 (e.Bounds.Height-inset))) (SettingsShapes.controlRadius())
                         use brush = new SolidBrush(if active || SystemInformation.HighContrast then p.selection else Color.FromArgb(170,p.selection))
                         e.Graphics.FillPath(brush,shape)
-                    let foreground =
-                        if disabled then (if SystemInformation.HighContrast then SystemColors.GrayText else p.disabledText)
-                        elif active && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
+                    let foreground = if active && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
                     let offset = drawDot e.Graphics e.Bounds item
                     let rect = Rectangle(e.Bounds.X+Dpi.scale 12+offset,e.Bounds.Y,e.Bounds.Width-Dpi.scale 42-offset,e.Bounds.Height)
                     let text = items.[item]
@@ -1441,7 +1432,7 @@ type SettingsCombo(items:string[]) as this =
             let finish commit =
                 let value = if list.SelectedIndex>=0 && list.SelectedIndex<shown.Count then shown.[list.SelectedIndex] else -1
                 window.Close()
-                if commit && value>=0 && not (List.contains value this.DisabledItems) then
+                if commit && value>=0 then
                     this.SelectedIndex <- value
                     chosen.Trigger value
                 if commit && not this.IsDisposed then this.Focus() |> ignore
@@ -1460,8 +1451,7 @@ type SettingsCombo(items:string[]) as this =
                 invalidateRow previous)
             list.MouseClick.Add(fun e ->
                 let index = list.IndexFromPoint(e.Location)
-                // A press on a choice that cannot be taken does nothing, the list staying open.
-                if e.Button=MouseButtons.Left && index>=0 && index<shown.Count && not (List.contains shown.[index] this.DisabledItems) then
+                if e.Button=MouseButtons.Left && index>=0 then
                     list.SelectedIndex <- index
                     finish true)
             list.KeyDown.Add(fun e ->

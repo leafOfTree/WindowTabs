@@ -235,12 +235,11 @@ type ChipConditionMenu() =
     member _.Picked = picked.Publish
     /// Opens below a box on screen, the current choice marked; chosen again, it still acts, as
     /// a condition's dialog opens to change the pattern.
-    member _.Open(anchor:Rectangle, labels:string[], name:string, separatorsBefore:int list, current:int, disabled:int list) =
+    member _.Open(anchor:Rectangle, labels:string[], name:string, separatorsBefore:int list, current:int) =
         retire()
         let next = SettingsUi.choice labels
         next.AccessibleName <- name
         next.SeparatorsBefore <- separatorsBefore
-        next.DisabledItems <- disabled
         next.DropDownAnchor <- Some anchor
         next.Visible <- false
         next.SelectedIndex <- current
@@ -540,7 +539,8 @@ type AppGroupingRulesView() as this =
             |> List.ofArray
         with _ -> []
     /// A field that tells none of the app's open windows apart, its value the same in each of
-    /// two or more; one window alone says nothing of the windows to come.
+    /// two or more; one window alone says nothing of the windows to come. Said in the menu,
+    /// not enforced: a rule may be set for windows to come.
     let tellsNoneApart (rule:AppGroupingRule) (field:RuleField) =
         field<>AppOnly &&
         (let values = valuesOf rule field in values.Length>=2 && (List.distinct values).Length<=1)
@@ -649,16 +649,14 @@ type AppGroupingRulesView() as this =
                 | true,members when index<members.Length ->
                     let rule = members.[index]
                     menuRule <- Some rule
-                    // A field the same in every open window is greyed and says so: it would tell
-                    // none of them apart.
-                    let same = fields |> Array.filter(tellsNoneApart rule) |> Array.toList
+                    // A field the same in every open window says so, as it tells none of them
+                    // apart; it can still be chosen, for the windows to come.
                     let labels = fields |> Array.map(fun field ->
                         if field=AppOnly then tr (RuleField.label field)
-                        elif List.contains field same then sprintf "%s (%s)" (tr (Strings.AppRules.conditionChoice (tr (RuleField.label field)))) (tr Strings.AppRules.sameForAll)
+                        elif tellsNoneApart rule field then sprintf "%s (%s)" (tr (Strings.AppRules.conditionChoice (tr (RuleField.label field)))) (tr Strings.AppRules.sameForAll)
                         else tr (Strings.AppRules.conditionChoice (tr (RuleField.label field))))
                     conditionMenu.Open(tree.RectangleToScreen(box),Array.append labels [|tr Strings.AppRules.removeFromGroup|],tr Strings.AppRules.chipTip,[labels.Length],
-                                       fields |> Array.findIndex ((=) rule.field),
-                                       same |> List.map(fun field -> fields |> Array.findIndex ((=) field)))
+                                       fields |> Array.findIndex ((=) rule.field))
                 | _ -> ()
             | _ -> ())
         conditionMenu.Picked.Add(fun index ->

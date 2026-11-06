@@ -1445,15 +1445,6 @@ otepad.exe"]},
             act()
             driven
         let press (button:IButtonControl) = (button :?> Button).PerformClick()
-        // A choice greyed in a list is not taken, from the list or in code.
-        do
-            use greyed = SettingsUi.choice [|"a";"b";"c"|]
-            greyed.DisabledItems <- [1]
-            let mutable taken = []
-            greyed.Chosen.Add(fun index -> taken <- index::taken)
-            greyed.Choose 1
-            greyed.Choose 2
-            assertTrue (taken=[2] && greyed.SelectedIndex=2) "A greyed choice was taken, or an open one was not"
         // No tip on hover: the heading's (i) says what the chips do.
         assertTrue (tree.Roots.[1].ChipMenu && tree.Roots.[1].ChipTip=""
                     && descendants groupView |> Seq.forall(fun control -> control.Name<>"rule-condition"))

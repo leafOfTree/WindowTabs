@@ -38,8 +38,8 @@ whose title, command line or window class, in that order, matches a pattern (exa
 starts or ends with, contains or a regular expression, ignoring case), asked for in a small dialog
 (`RuleConditionDialog`) that says what the field is, lists the field's values in the
 app's windows open now for a click to take, and refuses a pattern it cannot use (a
-field whose value is the same in each of two or more open windows is greyed in the
-menu, as it tells none apart); and, set apart last,
+field whose value is the same in each of two or more open windows says so in the
+menu, as it tells none apart now, but can still be chosen for windows to come); and, set apart last,
 removing the app. Such a chip has a dashed edge. A rule for some windows comes
 before the app's rule for all of them, and leaves the app in the list above with its
 own Auto-group; the command line is read from the process (`ProcessCommandLine`) only
