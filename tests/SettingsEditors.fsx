@@ -1442,9 +1442,10 @@ otepad.exe"]},
             act()
             driven
         let press (button:IButtonControl) = (button :?> Button).PerformClick()
-        assertTrue (tree.Roots.[1].ChipMenu && tree.Roots.[1].ChipTip=tr Strings.AppRules.chipTip
+        // No tip on hover: the heading's (i) says what the chips do.
+        assertTrue (tree.Roots.[1].ChipMenu && tree.Roots.[1].ChipTip=""
                     && descendants groupView |> Seq.forall(fun control -> control.Name<>"rule-condition"))
-                   "A group's chip is not a menu, does not say what it is for, or a condition editor sits under the list"
+                   "A group's chip is not a menu, says something on hover, or a condition editor sits under the list"
         assertTrue (not (withDialog ignore (fun () -> chooseCondition 0)) && saved().Head.field=AppOnly)
                    "Choosing the whole app for a chip that takes it already opened a dialog or changed something"
         // A field opens its dialog ready for a pattern, which OK asks for before it closes.

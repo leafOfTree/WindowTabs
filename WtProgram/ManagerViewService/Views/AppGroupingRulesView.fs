@@ -393,7 +393,7 @@ type AppGroupingRulesView() as this =
             chipRules.Clear()
             // One row a group, in order and with no name, its apps in chips that are menus; the
             // Enabled box covers them all. A chip for some of an app's windows says which under
-            // the app's name.
+            // the app's name. No tip on hover: the heading's (i) says what the chips do.
             for group in groups do
                 let members = rules |> List.filter(fun rule -> rule.groupId=group.id)
                 let enabled = members |> List.filter(fun rule -> rule.enabled) |> List.length
@@ -401,7 +401,7 @@ type AppGroupingRulesView() as this =
                                        Checks=[|None;if members.IsEmpty then None else Some(enabled=members.Length)|],
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
                                        ChipAdd=true,Actions=Some [DeleteGlyph],AlwaysShowActions=true,
-                                       ChipsDimmed=(not members.IsEmpty && enabled=0),ChipMenu=true,ChipTip=tr Strings.AppRules.chipTip,
+                                       ChipsDimmed=(not members.IsEmpty && enabled=0),ChipMenu=true,
                                        ChipDetails=(members |> List.exists AppGroupingRules.isConditioned))
                 row.Chips <- members |> List.map(fun rule ->
                     { Faded=false; Note=describe rule; Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=false })

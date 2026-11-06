@@ -1015,7 +1015,7 @@ module Strings =
         let windowTitle = { en="Window title"; zh="窗口标题"; ja="ウィンドウのタイトル"; ar="عنوان النافذة" }
         let windowClass = { en="Window class"; zh="窗口类名"; ja="ウィンドウ クラス"; ar="فئة النافذة" }
         let commandLine = { en="Command line"; zh="命令行"; ja="コマンド ライン"; ar="سطر الأوامر" }
-        /// Over an app's chip in a named group.
+        /// What an app's chip menu is, for assistive technology; nothing is said on hover.
         let chipTip = { en="Which of the app's windows join: all, or those whose title, window class or command line matches; or remove the app"
                         zh="该应用的哪些窗口加入：全部，或标题、窗口类名或命令行匹配的窗口；或移除该应用"
                         ja="このアプリのどのウィンドウを含めるか：すべて、またはタイトル・ウィンドウ クラス・コマンド ラインが一致するもの。またはアプリを外す"
