@@ -469,11 +469,12 @@ let main() =
     let handMade = ref (draggedTogether())
     let windowKeys : WindowShortcut list ref = ref []
     let ungrouped = Collections.Generic.List<int>()
+    let regrouped = Collections.Generic.List<string>()
     Services.register<IProgram>({new IProgram with
         member _.version = "test"
         member _.isFirstRun = false
         member _.refresh() = ()
-        member _.regroupApplications _ = ()
+        member _.regroupApplications paths = regrouped.AddRange paths
         member _.shutdown() = ()
         member _.setWindowNameOverride _ = ()
         member _.getWindowNameOverride _ = None
@@ -1465,8 +1466,11 @@ otepad.exe"]},
         assertTrue (not conditionPanel.Visible) "Choosing another row left the condition open"
         // The group's box turns all its apps on or off.
         tree.SelectedItem <- tree.Roots.[1]
+        regrouped.Clear()
         typeof<SettingsTreeList>.GetMethod("toggleCheck",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(tree,[|box tree.SelectedItem;box 1|]) |> ignore
         assertTrue (not(saved().Head.enabled)) "The group's checkbox did not save its apps as disabled"
+        // Turned off, the app's windows leave the group at once, as they join it when a rule is added.
+        assertTrue (regrouped |> Seq.exists(fun path -> AppIdentity.same path selectedPath)) "Turning a group off did not regroup its apps' windows"
         // Turned off, the group's apps look it: muted, with grey icons.
         assertTrue (tree.Roots.[1].ChipsDimmed && not tree.Roots.[0].ChipsDimmed) "A turned-off group's apps do not look turned off"
         // The box has no column heading of its own: it sits by the buttons and names itself on hover.

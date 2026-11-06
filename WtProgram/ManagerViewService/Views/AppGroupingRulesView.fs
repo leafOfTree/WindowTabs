@@ -345,13 +345,15 @@ type AppGroupingRulesView() as this =
         root.["autoGroupingPaths"] <- JArray(AppGroupingRules.withoutAutoGrouping rules automatic)
         Services.settings.root <- root
         previous |> Option.iter(fun before ->
-            // An app whose rule changed, in what it takes or where to, has its windows grouped again.
+            // An app whose rule changed, in what it takes or where to, has its windows grouped
+            // again; so has one whose rule was removed or turned off, so its windows leave the
+            // group at once rather than at the next restart.
             let same (old:AppGroupingRule) (rule:AppGroupingRule) =
-                old.id=rule.id && old.enabled && old.processPath=rule.processPath && old.groupId=rule.groupId
+                old.id=rule.id && old.enabled && rule.enabled && old.processPath=rule.processPath && old.groupId=rule.groupId
                 && old.field=rule.field && old.title=rule.title && old.matchType=rule.matchType
-            rules |> List.filter(fun rule -> rule.enabled && not(before |> List.exists(fun old -> same old rule)))
-            |> List.map(fun rule -> rule.processPath)
-            |> Services.program.regroupApplications)
+            let changed = rules |> List.filter(fun rule -> rule.enabled && not(before |> List.exists(fun old -> same old rule)))
+            let gone = before |> List.filter(fun old -> old.enabled && not(rules |> List.exists(fun rule -> same old rule)))
+            changed@gone |> List.map(fun rule -> rule.processPath) |> Services.program.regroupApplications)
         Services.program.refresh()
         changed.Trigger(EventArgs.Empty)
     let commitName() =
@@ -433,10 +435,11 @@ type AppGroupingRulesView() as this =
     let delete() =
         match selected() with
         | Some(GroupNode id) ->
+            let previous = rules
             groups <- groups |> List.filter(fun group -> group.id<>id)
             rules <- rules |> List.filter(fun rule -> rule.groupId<>id)
             closeCondition()
-            save None
+            save (Some previous)
             reload None
         | Some(HandMadeNode _) | None -> ()
     do
@@ -504,9 +507,10 @@ type AppGroupingRulesView() as this =
                 match chipRules.TryGetValue id with
                 | true,members when index<members.Length ->
                     let removed = members.[index]
+                    let previous = rules
                     rules <- rules |> List.filter(fun rule -> rule.id<>removed.id)
                     if conditionRule=Some removed.id then closeCondition()
-                    save None
+                    save (Some previous)
                     reload (Some(GroupNode id))
                 | _ -> ()
             | _ -> ())
