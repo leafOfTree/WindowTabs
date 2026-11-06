@@ -825,6 +825,8 @@ module Strings =
         let closeOnSave = { en="Close on save"; zh="保存时关闭"; ja="保存時に閉じる"; ar="إغلاق عند الحفظ" }
         /// A window in the bin, kept open after all: back among those with no group.
         let keepOpen = { en="Keep open"; zh="保留，不关闭"; ja="閉じない"; ar="إبقاؤها مفتوحة" }
+        /// The tab menu's first item: the window itself to the front.
+        let goToWindow = { en="Go to window"; zh="切换到此窗口"; ja="このウィンドウへ"; ar="الانتقال إلى النافذة" }
         let expandRow = { en="Expand"; zh="展开"; ja="展開"; ar="توسيع" }
         let collapseRow = { en="Collapse"; zh="折叠"; ja="折りたたむ"; ar="طي" }
         /// In the loose row while no window is on its own: what the row is for.

@@ -496,6 +496,7 @@ let main() =
         // Shortcuts the test never set, such as the unbound split-view keys, read as none.
         member _.getHotKey key = match hotKeys.TryGetValue key with | true,value -> value | _ -> 0
         member _.newTab _ = ()
+        member _.activateWindow _ = ()
         member _.suspendTabMonitoring() = ()
         member _.resumeTabMonitoring() = ()
         member _.llMouse = mouse.Publish

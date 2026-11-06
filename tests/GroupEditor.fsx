@@ -505,14 +505,14 @@ let main() =
                 let moveTo hwnd = editor.TabMenu hwnd |> List.tryPick(function CmiPopUp p when p.text=tr Strings.GroupEditor.moveTo -> Some p.items.list | _ -> None) |> Option.defaultValue []
                 let row = editor.Draft.groups |> List.findIndex(fun g -> g.tabs.Length>1)
                 let x = (editor.Draft.groups.[row]).tabs.Head
-                check (texts (editor.TabMenu x)=[tr Strings.GroupEditor.moveTo;tr Strings.GroupEditor.newGroup;tr Strings.GroupEditor.closeOnSave] && not (texts (moveTo x) |> List.contains (tr Strings.GroupEditor.newGroup)))
-                      (sprintf "A row tab's menu is not Move to, New group, Close on save: %A / %A" (texts (editor.TabMenu x)) (texts (moveTo x)))
+                check (texts (editor.TabMenu x)=[tr Strings.GroupEditor.goToWindow;tr Strings.GroupEditor.moveTo;tr Strings.GroupEditor.newGroup;tr Strings.GroupEditor.closeOnSave] && not (texts (moveTo x) |> List.contains (tr Strings.GroupEditor.newGroup)))
+                      (sprintf "A row tab's menu is not Go to window, Move to, New group, Close on save: %A / %A" (texts (editor.TabMenu x)) (texts (moveTo x)))
                 // A window in no group has the same, and comes back among them from the bin.
-                check (texts (editor.TabMenu e)=[tr Strings.GroupEditor.moveTo;tr Strings.GroupEditor.newGroup;tr Strings.GroupEditor.closeOnSave])
+                check (texts (editor.TabMenu e)=[tr Strings.GroupEditor.goToWindow;tr Strings.GroupEditor.moveTo;tr Strings.GroupEditor.newGroup;tr Strings.GroupEditor.closeOnSave])
                       (sprintf "The menu of a window in no group is not Move to (ending in New group), Close on save: %A" (texts (editor.TabMenu e)))
                 click e (tr Strings.GroupEditor.closeOnSave)
                 check (editor.Draft.closing=[e] && editor.Draft.loose=[f]) (sprintf "Close on save from the menu did not put the window in the bin: %A" editor.Draft)
-                check (texts (editor.TabMenu e)=[tr Strings.GroupEditor.keepOpen;tr Strings.GroupEditor.moveTo]) (sprintf "A binned window's menu is not Keep open, Move to: %A" (texts (editor.TabMenu e)))
+                check (texts (editor.TabMenu e)=[tr Strings.GroupEditor.goToWindow;tr Strings.GroupEditor.keepOpen;tr Strings.GroupEditor.moveTo]) (sprintf "A binned window's menu is not Go to window, Keep open, Move to: %A" (texts (editor.TabMenu e)))
                 click e (tr Strings.GroupEditor.keepOpen)
                 check (editor.Draft.closing.IsEmpty && List.sort editor.Draft.loose=List.sort [e;f]) (sprintf "Keep open did not put the window back among those in no group: %A" editor.Draft)
                 // A row's tab kept open from the bin gets a row of its own; a tab alone in its row
@@ -952,6 +952,7 @@ let main() =
             member _.setHotKey _ _ = true
             member _.getHotKey _ = 0
             member _.newTab _ = ()
+            member _.activateWindow _ = ()
             member _.suspendTabMonitoring() = suspended.Value <- suspended.Value+1
             member _.resumeTabMonitoring() = suspended.Value <- suspended.Value-1
             member _.llMouse = mouse.Publish

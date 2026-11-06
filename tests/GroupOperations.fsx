@@ -395,6 +395,7 @@ let main() =
             member _.setHotKey _ _ = true
             member _.getHotKey key = if key="newTab" then 1614 elif key="closeTab" then SettingsCatalog.shortcutDefault "closeTab" else 0
             member _.newTab hwnd = newTabRequests.Enqueue(hwnd)
+            member _.activateWindow _ = ()
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish

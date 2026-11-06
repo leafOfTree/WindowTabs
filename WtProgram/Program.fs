@@ -1546,6 +1546,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 registered
 
         member x.newTab hwnd = this.openNewTab hwnd
+        member x.activateWindow hwnd = this.activateWindow hwnd
 
         member x.llMouse = llMouseEvent.Publish
 

@@ -102,6 +102,7 @@ let main() =
             member _.setHotKey key code = if code=heldElsewhere then false else (hotKeys.[key] <- code; true)
             member _.getHotKey key = match hotKeys.TryGetValue key with | true,code -> code | _ -> SettingsCatalog.shortcutDefault key
             member _.newTab hwnd = calls.Enqueue(sprintf "newTab %d" hwnd)
+            member _.activateWindow _ = ()
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish

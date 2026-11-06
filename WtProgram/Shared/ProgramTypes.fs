@@ -186,6 +186,8 @@ type IProgram =
     abstract member getHotKey: string -> int
     /// Starts the tab's program again. Posted to the UI thread; returns before the work runs.
     abstract member newTab : IntPtr -> unit
+    /// Brings the window to the front, through its group when it has one. Posted to the UI thread.
+    abstract member activateWindow : IntPtr -> unit
     abstract member suspendTabMonitoring : unit -> unit
     abstract member resumeTabMonitoring : unit -> unit
     abstract member llMouse : IEvent<int32 * IntPtr>

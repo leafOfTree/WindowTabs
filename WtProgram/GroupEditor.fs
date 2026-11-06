@@ -1481,12 +1481,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let newGroup = if alone then [] else [ regular (tr Strings.GroupEditor.newGroup) (fun () -> takeOut hwnd) ]
         let moveTo = if rows.IsEmpty then [] else [ CmiPopUp({ text=tr Strings.GroupEditor.moveTo; image=None; items=List2(rows) }) ]
         let close = [ CmiSeparator; regular (tr Strings.GroupEditor.closeOnSave) (fun () -> slid (fun () -> moved (DesktopDraft.moveToClosing hwnd current) hwnd)) ]
+        // The window itself first: to see which one the tab is, the editor staying up behind it.
+        let goTo = [ regular (tr Strings.GroupEditor.goToWindow) (fun () -> Services.program.activateWindow hwnd); CmiSeparator ]
         List2(
             match place with
             | InGroup _ ->
-                moveTo @ newGroup @ (if inPane then [ regular (tr Strings.GroupEditor.leavePane) (fun () -> leavePane hwnd) ] else []) @ close
-            | Loose -> moveTo @ newGroup @ close
-            | Closing -> [ regular (tr Strings.GroupEditor.keepOpen) (fun () -> keepOpen hwnd) ] @ moveTo
+                goTo @ moveTo @ newGroup @ (if inPane then [ regular (tr Strings.GroupEditor.leavePane) (fun () -> leavePane hwnd) ] else []) @ close
+            | Loose -> goTo @ moveTo @ newGroup @ close
+            | Closing -> goTo @ [ regular (tr Strings.GroupEditor.keepOpen) (fun () -> keepOpen hwnd) ] @ moveTo
             | Nowhere -> [])
 
     /// The row scrolled into sight, when the rows are taller than the popup shows.
