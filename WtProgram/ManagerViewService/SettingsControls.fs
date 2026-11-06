@@ -491,6 +491,42 @@ type SettingsHelpButton(text:string) as this =
         this.AccessibleDescription <- text
         this.Click.Add(fun _ -> hover.Show())
 
+/// A chevron beside a heading that folds or opens the panel under it: pointing down while
+/// open, right while folded, as the tree list draws its expanders.
+type SettingsExpanderButton() as this =
+    inherit Button()
+    let mutable opened = false
+    do
+        this.Size <- Size(Dpi.scale 24,Dpi.scale 24)
+        this.FlatStyle <- FlatStyle.Flat
+        this.FlatAppearance.BorderSize <- 0
+        this.Cursor <- Cursors.Hand
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+    /// Whether the panel is open, which way the chevron points.
+    member _.Open
+        with get() = opened
+        and set(value) =
+            if opened<>value then
+                opened <- value
+                this.Invalidate()
+    override this.OnPaint(e) =
+        let p = SettingsColors.current()
+        e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
+        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        let color = if this.Focused || this.ClientRectangle.Contains(this.PointToClient(Control.MousePosition)) then p.text else p.muted
+        let cx,cy = float32 this.Width/2.0f,float32 this.Height/2.0f
+        let em = float32(Dpi.scale 12)
+        if not (UiFace.glyph e.Graphics (if opened then 0xE70D else 0xE76C) (RectangleF(cx-em/2.0f,cy-em/2.0f,em,em)) color) then
+            let s = float32(Dpi.scale 4)
+            use pen = new Pen(color,1.5f)
+            let points =
+                if opened then [|PointF(cx-s,cy-s/2.0f);PointF(cx,cy+s/2.0f);PointF(cx+s,cy-s/2.0f)|]
+                else [|PointF(cx-s/2.0f,cy-s);PointF(cx+s/2.0f,cy);PointF(cx-s/2.0f,cy+s)|]
+            e.Graphics.DrawLines(pen,points)
+        if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32 this.Height/2.0f) p
+    override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
+    override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
+
 /// A round arrow beside a section heading that resets the section; hovering says what it resets,
 /// `help` in more words where its name alone does not. Dimmed while there is nothing to reset.
 type SettingsResetButton(text:string, ?help:string) as this =

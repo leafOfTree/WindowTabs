@@ -1435,36 +1435,51 @@ otepad.exe"]},
                    (sprintf "Moving an application to another group created duplicate grouping rules: %A chips %d/%d roots %d"
                         (saved() |> List.map(fun rule -> rule.groupName,IO.Path.GetFileName rule.processPath)) tree.Roots.[0].Chips.Length tree.Roots.[1].Chips.Length
                         tree.Roots.Count)
-        // A chip opens, below the list, which of the app's windows the group takes: all, or those
-        // whose title, window class or command line matches.
+        // A chip's arrow opens a menu of which of the app's windows the group takes: all, or those
+        // whose title, window class or command line matches, whose condition opens below the list.
         let conditionPanel = descendants groupView |> Seq.find(fun control -> control.Name="rule-condition")
         let fieldChoice = descendants groupView |> Seq.pick(function :? SettingsCombo as combo when combo.Name="rule-field" -> Some combo | _ -> None)
         let methodChoice = descendants groupView |> Seq.pick(function :? SettingsCombo as combo when combo.Name="rule-method" -> Some combo | _ -> None)
         let patternBox = descendants groupView |> Seq.pick(function :? TextBox as text when text.Name="rule-pattern" -> Some text | _ -> None)
         let statusLabel = descendants groupView |> Seq.find(fun control -> control.Name="grouping-status")
-        assertTrue (tree.Roots.[1].ChipTip=tr Strings.AppRules.chipTip && not conditionPanel.Visible) "A group's chip does not say it opens, or the condition shows unasked"
+        let conditionMenu = groupView.ConditionMenu
+        let chooseCondition index =
+            pressChipPart "chipMenuAt" tree.Roots.[1]
+            assertTrue (conditionMenu.DropDown |> Option.exists(fun window -> window.Visible)) "A chip's arrow did not open its menu"
+            conditionMenu.Choice.Value.SelectedIndex <- index
+        assertTrue (tree.Roots.[1].ChipMenu && tree.Roots.[1].ChipTip=tr Strings.AppRules.chipTip && not conditionPanel.Visible)
+                   "A group's chip has no arrow, the arrow does not say what it is for, or the condition shows unasked"
+        // Pressing the chip itself only chooses the row.
+        tree.SelectedItem <- tree.Roots.[0]
         pressChipPart "chipAt" tree.Roots.[1]
-        assertTrue (conditionPanel.Visible && fieldChoice.SelectedIndex=0 && not patternBox.Parent.Visible && conditionPanel.Bottom<=groupView.ClientSize.Height)
-                   (sprintf "Pressing a chip did not open its condition set to the whole app: shown %b field %d" conditionPanel.Visible fieldChoice.SelectedIndex)
-        fieldChoice.SelectedIndex <- 1
-        assertTrue (patternBox.Parent.Visible && methodChoice.Visible && saved().Head.field=AppOnly && statusLabel.Text=tr Strings.AppRules.requiredTitle)
-                   "Choosing a field saved an empty condition, hid its pattern, or did not ask for one"
+        assertTrue (Object.ReferenceEquals(tree.SelectedItem,tree.Roots.[1]) && not conditionPanel.Visible && conditionMenu.DropDown.IsNone)
+                   "Pressing a chip opened something rather than choosing its row"
+        chooseCondition 0
+        assertTrue (not conditionPanel.Visible && saved().Head.field=AppOnly) "Choosing the whole app for a chip that takes it already opened or changed something"
+        chooseCondition 1
+        assertTrue (conditionPanel.Visible && fieldChoice.SelectedIndex=1 && patternBox.Parent.Visible && methodChoice.Visible && patternBox.Text=""
+                    && saved().Head.field=AppOnly && statusLabel.Text=tr Strings.AppRules.requiredTitle && conditionPanel.Bottom<=groupView.ClientSize.Height)
+                   (sprintf "Choosing a field did not open its condition asking for a pattern: shown %b field %d" conditionPanel.Visible fieldChoice.SelectedIndex)
         patternBox.Text <- "Anki"
         key patternBox Keys.Enter
         assertTrue (saved().Length=1 && saved().Head.field=WindowTitle && saved().Head.title="Anki" && saved().Head.matchType=3
                     && tree.Roots.[1].Chips.Head.Note<>"" && not conditionPanel.Visible && statusLabel.Text="")
                    (sprintf "A title condition was not saved from the chip: %A" (saved() |> List.map(fun rule -> rule.field,rule.title,rule.matchType)))
-        // The condition comes back as saved; a pattern that cannot be compiled is refused and said.
-        pressChipPart "chipAt" tree.Roots.[1]
-        assertTrue (fieldChoice.SelectedIndex=1 && methodChoice.SelectedIndex=3 && patternBox.Text="Anki") "A chip's condition did not come back as saved"
+        // The field it has comes back as saved; a pattern that cannot be compiled is refused and said.
+        chooseCondition 1
+        assertTrue (fieldChoice.SelectedIndex=1 && methodChoice.SelectedIndex=3 && patternBox.Text="Anki" && statusLabel.Text="") "A chip's condition did not come back as saved"
         patternBox.Text <- "("
         methodChoice.SelectedIndex <- 4
         assertTrue (saved().Head.matchType=3 && saved().Head.title="Anki" && statusLabel.Text<>"") "A pattern that cannot be compiled was saved, or nothing said so"
         key patternBox Keys.Escape
         assertTrue (not conditionPanel.Visible && saved().Head.title="Anki" && statusLabel.Text="") "Escape did not leave the condition as it was"
-        pressChipPart "chipAt" tree.Roots.[1]
-        fieldChoice.SelectedIndex <- 0
-        assertTrue (saved().Head.field=AppOnly && saved().Head.title="" && saved().Head.matchType= -1 && tree.Roots.[1].Chips.Head.Note="")
+        // Another field starts afresh, the saved condition kept until a pattern is entered.
+        chooseCondition 2
+        assertTrue (conditionPanel.Visible && fieldChoice.SelectedIndex=2 && patternBox.Text="" && saved().Head.field=WindowTitle && saved().Head.title="Anki")
+                   "Choosing another field kept the old pattern or changed the rule before one was entered"
+        key patternBox Keys.Escape
+        chooseCondition 0
+        assertTrue (saved().Head.field=AppOnly && saved().Head.title="" && saved().Head.matchType= -1 && tree.Roots.[1].Chips.Head.Note="" && not conditionPanel.Visible)
                    "Back to the whole app did not clear the condition"
         tree.SelectedItem <- tree.Roots.[0]
         assertTrue (not conditionPanel.Visible) "Choosing another row left the condition open"
@@ -1526,9 +1541,12 @@ otepad.exe"]},
                     && (descendants draggedHeader |> Seq.exists(fun control -> control.Name="dragged-caption" && control.Text=tr (Strings.AppRules.handMadeHeading 1)))
                     && tree.Roots |> Seq.forall(fun row -> row.Glyph<>TabsGlyph))
                    "Dragged groups are not in a folded panel of their own with a counted heading"
+        // The heading's chevron is a button of its own, pointing the way the panel is.
+        let draggedToggle = descendants draggedHeader |> Seq.pick(function :? SettingsExpanderButton as button when button.Name="dragged-toggle" -> Some button | _ -> None)
+        assertTrue (not draggedToggle.Open) "The folded panel's chevron points as if it were open"
         groupView.DraggedOpen <- true
         Application.DoEvents()
-        assertTrue (draggedCard.Visible && draggedCard.Top>=draggedHeader.Bottom && draggedCard.Bottom<=groupView.Height)
+        assertTrue (draggedCard.Visible && draggedToggle.Open && draggedCard.Top>=draggedHeader.Bottom && draggedCard.Bottom<=groupView.Height)
                    (sprintf "Opening the dragged groups did not show their list under the heading: card %A in %d" draggedCard.Bounds groupView.Height)
         assertTrue (not handMadeRow.SeparatorAbove && handMadeRow.IconTip=tr Strings.AppRules.handMadeGroups)
                    "A dragged group's row is set apart by a line, or its icon does not say what it is"

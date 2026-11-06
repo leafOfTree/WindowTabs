@@ -32,10 +32,10 @@ row: its name (Group 1, Group 2… when added), its apps as chips that wrap onto
 lines, a "+" after them that opens a list of running apps with Browse… last, its
 Enabled box beside the rename and delete buttons, and its chips dimmed while it is
 off. A chip's × removes that app; a cut-off chip says its whole name on hover.
-Pressing a chip opens, below the list, which of the app's windows the group takes:
-all (`AppOnly`), or those whose title, window class or command line matches a pattern
-(exact, starts or ends with, contains or a regular expression, ignoring case). Such a
-chip has a dashed edge and says its condition on hover. A rule for some windows comes
+The arrow on a chip opens a menu of which of the app's windows the group takes: all
+(`AppOnly`), or those whose title, window class or command line matches a pattern
+(exact, starts or ends with, contains or a regular expression, ignoring case), which
+opens the condition's controls below the list. Such a chip has a dashed edge. A rule for some windows comes
 before the app's rule for all of them, and leaves the app in the list above with its
 own Auto-group; the command line is read from the process (`ProcessCommandLine`) only
 for a rule that asks for it. Rules saved without a `field` are for the app's every window.

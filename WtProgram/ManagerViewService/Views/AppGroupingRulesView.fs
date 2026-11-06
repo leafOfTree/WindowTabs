@@ -215,6 +215,43 @@ type GroupingApplicationMenu() as this =
             (scanner :> IDisposable).Dispose()
             retire()
 
+/// Which of an app's windows its chip takes, in a drop-down that opens from the arrow on the
+/// chip: all of them, or those whose title, window class or command line matches.
+type ChipConditionMenu() =
+    /// Holds the hidden drop-down control; set once the page is built.
+    let mutable owner : Control = null
+    let mutable choice : SettingsCombo option = None
+    let mutable dropDown : ToolStripDropDown option = None
+    let picked = Event<int>()
+    let retire() =
+        choice |> Option.iter(fun previous -> owner.Controls.Remove(previous); previous.Dispose())
+        choice <- None
+        dropDown <- None
+    member _.Owner with set(control:Control) = owner <- control
+    member _.Choice = choice
+    /// The list last opened.
+    member _.DropDown = dropDown
+    /// The index of the choice taken.
+    member _.Picked = picked.Publish
+    /// Opens below a box on screen. No choice is marked as the current one: the chip says what it
+    /// takes already, and choosing that again opens its condition to change the pattern.
+    member _.Open(anchor:Rectangle, labels:string[], name:string) =
+        retire()
+        let next = SettingsUi.choice labels
+        next.AccessibleName <- name
+        next.DropDownAnchor <- Some anchor
+        next.Visible <- false
+        owner.Controls.Add(next)
+        next.SelectedIndexChanged.Add(fun _ -> if next.SelectedIndex>=0 then picked.Trigger(next.SelectedIndex))
+        choice <- Some next
+        dropDown <- next.CreateDropDown() |> Option.map(fun window ->
+            window.Show(window.Location)
+            let frame = (window.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame
+            frame.List.Focus() |> ignore
+            window :> ToolStripDropDown)
+    interface IDisposable with
+        member _.Dispose() = retire()
+
 /// A named group, or a group made by dragging tabs.
 type private GroupApplicationNode = GroupNode of string | HandMadeNode of int
 
@@ -237,7 +274,7 @@ type AppGroupingRulesView() as this =
     /// folded to its heading until opened; shown only while there are any.
     let draggedHeader = new Panel(Height=Dpi.scale 36,Visible=false,Name="dragged-header",Cursor=Cursors.Hand)
     let draggedCaption = new Label(AutoSize=true,Location=Point(0,Dpi.scale 8),Font=SettingsUi.subsectionFont(),UseMnemonic=false,Name="dragged-caption",Cursor=Cursors.Hand)
-    let draggedChevron = new Label(AutoSize=true,Font=SettingsUi.bodyFont(),Tag="muted",UseMnemonic=false,Name="dragged-toggle",Cursor=Cursors.Hand)
+    let draggedChevron = new SettingsExpanderButton(Name="dragged-toggle")
     let draggedHelp = new SettingsHelpButton(tr Strings.AppRules.handMadeHelp,AccessibleName=tr Strings.SettingsWindow.howToUse,
                                              Font=SettingsUi.bodyFont(),Name="dragged-help")
     let dragged = new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn);TreeListColumn("",28,CheckColumn);TreeListColumn("",58,ActionColumn)],RowHeight=36,Name="dragged-groups")
@@ -250,6 +287,9 @@ type AppGroupingRulesView() as this =
     let nameInput = new SettingsTextInput(name)
     let mutable addToGroup : (string * string -> unit) = ignore
     let addMenu = new GroupingApplicationMenu()
+    let conditionMenu = new ChipConditionMenu()
+    /// The rule whose chip's arrow opened the condition menu.
+    let mutable menuRule : AppGroupingRule option = None
     let mutable editing : GroupApplicationNode option = None
     /// The group whose "+" opened the app list.
     let mutable pickingFor : string option = None
@@ -281,7 +321,7 @@ type AppGroupingRulesView() as this =
     let chipRules = Collections.Generic.Dictionary<string,AppGroupingRule list>()
     /// The dragged groups' panel as folded or open: the heading says which, and the list shows only open.
     let showDragged () =
-        draggedChevron.Text <- (if draggedOpen then "▾" else "▸")
+        draggedChevron.Open <- draggedOpen
         draggedCard.Visible <- draggedHeader.Visible && draggedOpen
     let reload selection =
         rebuilding <- true
@@ -303,7 +343,7 @@ type AppGroupingRulesView() as this =
                                        Checks=[|None;if members.IsEmpty then None else Some(enabled=members.Length)|],
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
                                        ChipAdd=true,Actions=Some [EditGlyph;DeleteGlyph],AlwaysShowActions=true,
-                                       ChipsDimmed=(not members.IsEmpty && enabled=0),ChipTip=tr Strings.AppRules.chipTip,
+                                       ChipsDimmed=(not members.IsEmpty && enabled=0),ChipMenu=true,ChipTip=tr Strings.AppRules.chipTip,
                                        ChipDetails=(members |> List.exists AppGroupingRules.isConditioned))
                 row.Chips <- members |> List.map(fun rule ->
                     { Faded=false; Note=describe rule; Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=true })
@@ -314,6 +354,7 @@ type AppGroupingRulesView() as this =
             // name of its own (they cannot be renamed) would leave less room for.
             let handMade = Services.program.handMadeGroups()
             draggedCaption.Text <- tr (Strings.AppRules.handMadeHeading handMade.Length)
+            draggedChevron.AccessibleName <- draggedCaption.Text
             draggedHeader.Visible <- not handMade.IsEmpty
             showDragged()
             handMade |> List.iter(fun (id,members) ->
@@ -416,23 +457,25 @@ type AppGroupingRulesView() as this =
         status.Text <- ""
         this.PerformLayout()
     let indexOfField field = fields |> Array.findIndex ((=) field)
-    /// Opens a chip's condition below the list, set to what its rule says.
-    let showCondition (rule:AppGroupingRule) =
+    /// Opens a chip's condition below the list, on a field: with the rule's own method and
+    /// pattern when that is the field it has, else ready for a pattern, which it asks for.
+    let showCondition (rule:AppGroupingRule) (field:RuleField) =
         rebuilding <- true
         try
             conditionRule <- Some rule.id
             conditionCaption.Text <- tr (Strings.AppRules.conditionFor (ApplicationNames.label rule.processPath) rule.groupName)
-            let conditioned = AppGroupingRules.isConditioned rule
-            fieldChoice.SelectedIndex <- indexOfField rule.field
-            methodChoice.SelectedIndex <- (if conditioned then max 0 (min 4 rule.matchType) else 3)
-            pattern.Text <- (if conditioned then rule.title else "")
+            let kept = AppGroupingRules.isConditioned rule && rule.field=field
+            let conditioned = field<>AppOnly
+            fieldChoice.SelectedIndex <- indexOfField field
+            methodChoice.SelectedIndex <- (if kept then max 0 (min 4 rule.matchType) else 3)
+            pattern.Text <- (if kept then rule.title else "")
             methodChoice.Visible <- conditioned
             patternInput.Visible <- conditioned
             condition.Visible <- true
-            status.Text <- ""
+            status.Text <- (if conditioned && not kept then tr Strings.AppRules.requiredTitle else "")
         finally rebuilding <- false
         this.PerformLayout()
-        if AppGroupingRules.isConditioned rule then
+        if field<>AppOnly then
             pattern.Focus() |> ignore
             pattern.SelectAll()
     /// Keeps what the condition's controls say, or says why not; true when the rule is as shown.
@@ -457,6 +500,18 @@ type AppGroupingRulesView() as this =
                     save (Some previous)
                     reload (Some(GroupNode rule.groupId))
                 true
+    /// What the arrow's menu chose for a chip: the app's every window, kept at once, or a field
+    /// to match on, whose condition opens below the list.
+    let pickCondition (rule:AppGroupingRule) index =
+        let field = fields.[max 0 (min (fields.Length-1) index)]
+        if field<>AppOnly then showCondition rule field
+        elif AppGroupingRules.isConditioned rule then
+            let previous = rules
+            rules <- rules |> List.map(fun other -> if other.id=rule.id then {other with field=AppOnly;title="";matchType= -1} else other)
+            closeCondition()
+            save (Some previous)
+            reload (Some(GroupNode rule.groupId))
+        else closeCondition()
     let delete() =
         match selected() with
         | Some(GroupNode id) ->
@@ -469,6 +524,7 @@ type AppGroupingRulesView() as this =
         | Some(HandMadeNode _) | None -> ()
     do
         addMenu.Owner <- this
+        conditionMenu.Owner <- this
         addToGroup <- fun (groupId,path) ->
             groups |> List.tryFind(fun group -> group.id=groupId) |> Option.iter(fun group ->
                 let previous = rules
@@ -494,10 +550,9 @@ type AppGroupingRulesView() as this =
         // and what the panel is for on hover. A press anywhere on the heading folds or opens it.
         draggedHeader.Controls.AddRange([|draggedCaption :> Control;draggedChevron;draggedHelp|])
         let placeDraggedHeading () =
-            draggedChevron.Location <- Point(draggedCaption.Right+Dpi.scale 6,draggedCaption.Top+(draggedCaption.Height-draggedChevron.Height)/2)
-            draggedHelp.Location <- Point(draggedChevron.Right+Dpi.scale 8,draggedCaption.Top-Dpi.scale 2)
+            draggedChevron.Location <- Point(draggedCaption.Right+Dpi.scale 4,draggedCaption.Top+(draggedCaption.Height-draggedChevron.Height)/2)
+            draggedHelp.Location <- Point(draggedChevron.Right+Dpi.scale 4,draggedCaption.Top-Dpi.scale 2)
         draggedCaption.SizeChanged.Add(fun _ -> placeDraggedHeading())
-        draggedChevron.SizeChanged.Add(fun _ -> placeDraggedHeading())
         let toggleDragged () = this.DraggedOpen <- not draggedOpen
         for control in [draggedHeader :> Control;draggedCaption;draggedChevron] do control.Click.Add(fun _ -> toggleDragged())
         dragged.RowActions <- [NoGlyph;UngroupGlyph]
@@ -555,14 +610,21 @@ type AppGroupingRulesView() as this =
                     reload (Some(GroupNode id))
                 | _ -> ()
             | _ -> ())
-        // A chip opens which of its app's windows the group takes.
+        // A chip's arrow opens a menu of which of its app's windows the group takes: all, or
+        // those a field matches, whose condition then opens below the list.
         tree.ChipInvoked.Add(fun (item,index) ->
-            match item.Tag :?> GroupApplicationNode with
-            | GroupNode id ->
+            match item.Tag :?> GroupApplicationNode,tree.ChipMenuBounds(item,index) with
+            | GroupNode id,Some box ->
                 match chipRules.TryGetValue id with
-                | true,members when index<members.Length -> showCondition members.[index]
+                | true,members when index<members.Length ->
+                    let rule = members.[index]
+                    menuRule <- Some rule
+                    let labels = fields |> Array.map(fun field ->
+                        if field=AppOnly then tr (RuleField.label field) else tr (Strings.AppRules.conditionChoice (tr (RuleField.label field))))
+                    conditionMenu.Open(tree.RectangleToScreen(box),labels,tr Strings.AppRules.chipTip)
                 | _ -> ()
             | _ -> ())
+        conditionMenu.Picked.Add(fun index -> menuRule |> Option.iter(fun rule -> pickCondition rule index))
         fieldChoice.SelectedIndexChanged.Add(fun _ ->
             if not rebuilding then
                 let conditioned = fields.[max 0 fieldChoice.SelectedIndex]<>AppOnly
@@ -687,6 +749,7 @@ type AppGroupingRulesView() as this =
         this.Disposed.Add(fun _ ->
             nameInput.Dispose()
             (addMenu :> IDisposable).Dispose()
+            (conditionMenu :> IDisposable).Dispose()
             for list in [tree;dragged] do
                 for row in list.Roots do
                     for chip in row.Chips do
@@ -714,6 +777,7 @@ type AppGroupingRulesView() as this =
             if this.Height<>height then this.Height <- height
     member _.Changed = changed.Publish
     member _.AddMenu = addMenu
+    member _.ConditionMenu = conditionMenu
     /// Whether the dragged groups' panel shows its list; kept in the settings file.
     member this.DraggedOpen
         with get() = draggedOpen
