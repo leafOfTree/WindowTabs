@@ -509,7 +509,18 @@ type TabStripDecorator(group:WindowGroup) as this =
         // In a split, the same commands as a divider's menu, the direction switched by one item
         // as there; with none, they would all be greyed out, so they are left out.
         let splitItems = SplitMenu.items group.layout (fun command -> group.execute(command,current=top))
+        // The clicked tab with the one after it, as the command does for the tab in front, so it
+        // takes no choosing; greyed with no other tab to take.
+        let splitWithNextItem =
+            let shortcut = SettingsShortcut.text (Services.program.getHotKey "splitWithNext")
+            CmiRegular({
+                text = tr Strings.Commands.splitWithNext.caption + (if shortcut = "" then "" else "\t" + shortcut)
+                image = None
+                flags = grayed((group.splitPartner hwnd).IsNone)
+                click = fun () -> group.splitWithNextOf hwnd
+            })
         let splitMenu = CmiPopUp({text=tr Strings.TabMenu.split;image=None;items=List2([
+            yield splitWithNextItem
             yield pickItem Strings.TabMenu.splitPickRight SideBySide Second
             yield pickItem Strings.TabMenu.splitPickLeft SideBySide First
             yield pickItem Strings.TabMenu.splitPickAbove Stacked First

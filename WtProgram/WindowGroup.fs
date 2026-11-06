@@ -1551,21 +1551,25 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if this.windows.contains chosen then this.dropTab(chosen,drop,beside)
             else Services.desktop.adoptBeside(this.ts.hwnd,chosen,drop,beside)
 
-    /// The tab in front side by side with the tab after it in the strip, on its right; the last
-    /// tab takes the one before it. In a split, the next tab not yet in a pane joins the focused
-    /// one, so the command needs no list where the strip's order already says which window.
-    member this.splitWithNext() =
-        if not isDestroyed.value && not this.isEmpty then
-            let top = this.topWindow
-            let inPane hwnd = match groupLayout with Split s -> (SplitView.pathOf hwnd s).IsSome | _ -> false
-            let order = this.lorder.list |> List.filter WinUserApi.IsWindow
-            match List.tryFindIndex ((=) top) order with
-            | Some index ->
-                let upTo,after = List.splitAt (index+1) order
-                (after @ List.rev (List.take index upTo))
-                |> List.tryFind(fun hwnd -> hwnd<>top && not (inPane hwnd))
-                |> Option.iter(fun partner -> this.placeBeside(top,partner,SideBySide,Second))
-            | None -> ()
+    /// The tab a tab splits with: the one after it in the strip, or for the last tab the one
+    /// before it. In a split, the next tab not yet in a pane, so the command needs no list where
+    /// the strip's order already says which window. None for a tab with no other tab to take.
+    member this.splitPartner(tab:IntPtr) =
+        if isDestroyed.value || this.isEmpty then None else
+        let inPane hwnd = match groupLayout with Split s -> (SplitView.pathOf hwnd s).IsSome | _ -> false
+        let order = this.lorder.list |> List.filter WinUserApi.IsWindow
+        match List.tryFindIndex ((=) tab) order with
+        | Some index ->
+            let upTo,after = List.splitAt (index+1) order
+            (after @ List.rev (List.take index upTo)) |> List.tryFind(fun hwnd -> hwnd<>tab && not (inPane hwnd))
+        | None -> None
+
+    /// A tab side by side with its partner, on its right.
+    member this.splitWithNextOf(tab:IntPtr) =
+        this.splitPartner tab |> Option.iter(fun partner -> this.placeBeside(tab,partner,SideBySide,Second))
+
+    /// The tab in front with its partner, for the command.
+    member this.splitWithNext() = if not isDestroyed.value && not this.isEmpty then this.splitWithNextOf this.topWindow
 
     /// What the list for a split offers: every window on this desktop but the tab it goes beside.
     member this.splitCandidates(beside:IntPtr) =

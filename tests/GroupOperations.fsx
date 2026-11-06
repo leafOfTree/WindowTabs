@@ -1541,6 +1541,22 @@ let main() =
                 check (List.head alone = Localization.tr Strings.TabMenu.newTab + "\tCtrl+Alt+N") "The tab menu does not start with New tab and its shortcut"
                 // Closing the tab has a shortcut of its own, Ctrl+Alt+W, shown beside Close.
                 check (List.contains (Localization.tr Strings.TabMenu.close + "\tCtrl+Alt+W") alone) "Close does not show its shortcut in the tab menu"
+                // Split view starts with the clicked tab's neighbour, needing no choice; it is
+                // greyed only for a tab with no other tab to take.
+                let splitFirst hwnd = onGroup(fun group ->
+                    let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
+                                    |> fun field -> field.GetValue(group.ts)
+                    let images = ResizeArray<Img>()
+                    try
+                        let items = decorator.GetType().GetMethod("contextMenu",flags).Invoke(decorator,[|box hwnd;box images|]) :?> List2<ContextMenuItem>
+                        items.list |> List.pick(function CmiPopUp popup when popup.text=Localization.tr Strings.TabMenu.split -> Some popup.items.list | _ -> None)
+                        |> List.head |> function CmiRegular item -> item | _ -> failwith "Split view does not start with a command"
+                    finally for image in images do image.bitmap.Dispose())
+                check (let item = splitFirst handles.Head in
+                       item.text.StartsWith(Localization.tr Strings.Commands.splitWithNext.caption) && not (List.contains MenuFlags.MF_GRAYED item.flags.list))
+                      "Split view does not start with Split with the next tab, or greys it out beside another tab"
+                check (onGroup(fun group -> group.splitPartner handles.Head=Some handles.[1] && group.splitPartner (List.last handles)=Some handles.[handles.Length-2]))
+                      "The tab's split partner is not the next tab, or the one before for the last tab"
                 // Icons only is one switch under one name, ticked while it is on.
                 let iconsOnlyTicked() =
                     menu handles.Head |> List.tryFind(fun item -> item.text=Localization.tr Strings.TabMenu.showIconsOnly)
