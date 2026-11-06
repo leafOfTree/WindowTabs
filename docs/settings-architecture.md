@@ -27,9 +27,9 @@ minimal defaults from `SettingsCatalog`; explicit legacy auto-hide settings reta
 their behavior. App auto-grouping and workspaces start empty and run only when chosen.
 
 App Rules places the new-app default at the top right, the running apps below, and
-Groups across apps underneath, as tall as its rows up to six. Each group is one row:
-numbered by its place (Group 1, Group 2…, closed up when one is deleted, and the stored
-names kept at that on save), its apps as chips that wrap onto more lines, a "+" after
+Groups across apps underneath, as tall as its rows up to six. Each group is one row
+with no name (the settings file numbers them by their place, Group 1, Group 2…, closed
+up when one is deleted): its apps as chips that wrap onto more lines, a "+" after
 them that opens a list of running apps with Browse… last, its Enabled box beside the
 delete button, and its chips dimmed while it is off. A cut-off chip says its whole name
 on hover. A chip is a menu, with an arrow

@@ -307,10 +307,8 @@ type AppGroupingRulesView() as this =
         if not (AppGroupingRules.isConditioned rule) then ""
         else tr (Strings.AppRules.conditionNote (tr (RuleField.label rule.field)) (tr WindowTitleMatcher.labels.[max 0 (min 4 rule.matchType)]) rule.title)
     let selected() = if isNull tree.SelectedItem then None else Some(tree.SelectedItem.Tag :?> GroupApplicationNode)
-    /// Groups are numbered by their place: Group 1, Group 2…, which a deletion closes up.
-    let groupLabel index = tr (Strings.AppRules.newGroup (index+1))
-    let labelOf groupId = groups |> List.tryFindIndex(fun group -> group.id=groupId) |> Option.map groupLabel |> Option.defaultValue ""
-    /// Keeps the stored names at what the rows say, for what reads the settings file.
+    /// Groups show in order with no name; the settings file numbers them by their place, Group 1,
+    /// Group 2…, which a deletion closes up.
     let renumber() =
         groups <- groups |> List.mapi(fun index group -> {group with name=Localization.plain (Strings.AppRules.newGroup (index+1))})
         rules <- rules |> List.map(fun rule ->
@@ -332,13 +330,13 @@ type AppGroupingRulesView() as this =
                         if not(isNull chip.Icon) then chip.Icon.Dispose()
                 list.Roots.Clear()
             chipRules.Clear()
-            // One row a group, numbered by its place, its apps in chips that are menus; the
+            // One row a group, in order and with no name, its apps in chips that are menus; the
             // Enabled box covers them all. A chip for some of an app's windows says which under
             // the app's name.
-            groups |> List.iteri(fun index group ->
+            for group in groups do
                 let members = rules |> List.filter(fun rule -> rule.groupId=group.id)
                 let enabled = members |> List.filter(fun rule -> rule.enabled) |> List.length
-                let row = TreeListItem(groupLabel index,Tag=GroupNode group.id,Glyph=GroupGlyph,
+                let row = TreeListItem("",Tag=GroupNode group.id,Glyph=GroupGlyph,
                                        Checks=[|None;if members.IsEmpty then None else Some(enabled=members.Length)|],
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
                                        ChipAdd=true,Actions=Some [DeleteGlyph],AlwaysShowActions=true,
@@ -347,7 +345,7 @@ type AppGroupingRulesView() as this =
                 row.Chips <- members |> List.map(fun rule ->
                     { Faded=false; Note=describe rule; Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=false })
                 chipRules.[group.id] <- members
-                tree.Roots.Add(row))
+                tree.Roots.Add(row)
             // Groups made by dragging tabs, kept after a restart closes their windows: shown in their
             // own panel, not edited here, and taken apart in one go. A row is only its apps, which a
             // name of its own (they cannot be renamed) would leave less room for.
@@ -434,7 +432,7 @@ type AppGroupingRulesView() as this =
         rebuilding <- true
         try
             conditionRule <- Some rule.id
-            conditionCaption.Text <- tr (Strings.AppRules.conditionFor (ApplicationNames.label rule.processPath) (labelOf rule.groupId))
+            conditionCaption.Text <- tr (Strings.AppRules.conditionFor (ApplicationNames.label rule.processPath))
             let kept = AppGroupingRules.isConditioned rule && rule.field=field
             let conditioned = field<>AppOnly
             fieldChoice.SelectedIndex <- indexOfField field

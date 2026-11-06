@@ -1022,8 +1022,8 @@ module Strings =
                         ar="أي نوافذ التطبيق تنضم: كلها، أو التي يطابق عنوانها أو فئتها أو سطر أوامرها؛ أو إزالة التطبيق" }
         /// The arrow's menu: a field to match on, which opens the condition's controls.
         let conditionChoice field = { en=field+"…"; zh=field+"…"; ja=field+"…"; ar=field+"…" }
-        /// Before the condition's controls: the app and the group its chip is in.
-        let conditionFor app group = { en=sprintf "%s in %s:" app group; zh=sprintf "%s · %s："app group; ja=sprintf "%s（%s）：" app group; ar=sprintf "%s في %s:" app group }
+        /// Before the condition's controls: the app whose chip opened them, in the chosen row.
+        let conditionFor app = { en=sprintf "%s:" app; zh=sprintf "%s：" app; ja=sprintf "%s：" app; ar=sprintf "%s:" app }
         /// Said on hover over a chip that takes only some of its app's windows.
         let conditionNote field (method:string) pattern =
             { en=sprintf "%s %s “%s”" field (method.ToLowerInvariant()) pattern; zh=sprintf "%s %s “%s”" field method pattern

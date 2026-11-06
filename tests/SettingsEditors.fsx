@@ -1312,10 +1312,10 @@ otepad.exe"]},
             empty.DrawToBitmap(emptyImage,Rectangle(Point.Empty,emptyImage.Size))
             emptyImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-empty-%A.png" mode))
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
-        // A group is numbered by its place, with no name of its own to edit: one button, delete.
-        assertTrue (tree.RowActions=[DeleteGlyph] && tree.Roots.Count=1 && tree.Roots.[0].Text=tr (Strings.AppRules.newGroup 1)
+        // A group has no name: its row is its apps in order, with one button, delete.
+        assertTrue (tree.RowActions=[DeleteGlyph] && tree.Roots.Count=1 && tree.Roots.[0].Text=""
                     && descendants groupView |> Seq.forall(fun control -> control.Name<>"group-name"))
-                   (sprintf "A new group is not numbered, or can be renamed: %s" tree.Roots.[0].Text)
+                   (sprintf "A new group has a name, or can be renamed: %s" tree.Roots.[0].Text)
         let palette = SettingsColors.current()
         // The application drop-down keeps a fill of its own in a selected row, as the Browse
         // button does, instead of vanishing into the row's colour.
@@ -1404,8 +1404,8 @@ otepad.exe"]},
         while (mapped()).IsSome && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
         assertTrue ((mapped()).IsNone && rules.Value.getIsTabbingEnabledForProcess selectedPath) "An app added to a group stayed in App rules or has no tabs"
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
-        assertTrue (tree.Roots.Count=2 && tree.Roots.[1].Text=tr (Strings.AppRules.newGroup 2) && targets().[1].name=Localization.plain (Strings.AppRules.newGroup 2))
-                   "A second group is not numbered after the first"
+        assertTrue (tree.Roots.Count=2 && tree.Roots.[1].Text="" && targets().[1].name=Localization.plain (Strings.AppRules.newGroup 2))
+                   "A second group is not stored numbered after the first"
         clickAdd tree.Roots.[1]
         pick selectedPath
         assertTrue (saved().Length=1 && saved().Head.groupId=targets().[1].id && saved().Head.groupName=targets().[1].name && tree.Roots.[0].Chips.IsEmpty && tree.Roots.[1].Chips.Length=1)
@@ -1618,7 +1618,7 @@ otepad.exe"]},
         // Deleting the first group closes the numbers up: the second becomes Group 1, with its app.
         tree.SelectedItem <- tree.Roots.[0]
         key tree Keys.Delete
-        assertTrue (saved().Length=1 && targets().Length=1 && tree.Roots.Count=1 && tree.Roots.[0].Text=tr (Strings.AppRules.newGroup 1)
+        assertTrue (saved().Length=1 && targets().Length=1 && tree.Roots.Count=1
                     && targets().Head.name=Localization.plain (Strings.AppRules.newGroup 1) && saved().Head.groupName=targets().Head.name
                     && tree.Roots.[0].Chips.Length=1)
                    (sprintf "Deleting the first group did not renumber the next or lost its app: %A" (targets() |> List.map(fun target -> target.name)))
