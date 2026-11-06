@@ -1453,7 +1453,9 @@ otepad.exe"]},
         // click putting one in the pattern.
         let opened =
             withDialog (fun dialog ->
-                assertTrue (dialog.Method.SelectedIndex=3 && dialog.Pattern.Text="" && dialog.Text=tr (Strings.AppRules.conditionFor (IO.Path.GetFileName selectedPath) (tr Strings.AppRules.windowTitle))
+                // Contains, the usual way, is offered first and starts chosen.
+                assertTrue (dialog.MatchType=3 && dialog.Method.SelectedIndex=0 && dialog.Method.ItemText(0)=tr Strings.Workspaces.contains
+                            && dialog.Pattern.Text="" && dialog.Text=tr (Strings.AppRules.conditionFor (IO.Path.GetFileName selectedPath) (tr Strings.AppRules.windowTitle))
                             && dialog.Hint.Text=tr Strings.AppRules.windowTitleHint)
                            (sprintf "The condition dialog did not open ready for a pattern, or does not say what the field is: %s" dialog.Text)
                 let heading = descendants dialog |> Seq.find(fun control -> control.Name="rule-examples-heading")
@@ -1475,9 +1477,10 @@ otepad.exe"]},
         // said, and Cancel leaves the rule as it was.
         let opened =
             withDialog (fun dialog ->
-                assertTrue (dialog.Method.SelectedIndex=3 && dialog.Pattern.Text="Anki" && dialog.Status.Text="") "A chip's condition did not come back as saved"
+                assertTrue (dialog.MatchType=3 && dialog.Pattern.Text="Anki" && dialog.Status.Text="") "A chip's condition did not come back as saved"
                 dialog.Pattern.Text <- "("
                 dialog.Method.SelectedIndex <- 4
+                assertTrue (dialog.MatchType=4) "The last way offered is not the regular expression"
                 press dialog.AcceptButton
                 assertTrue (dialog.Visible && dialog.Status.Text<>"" && saved().Head.matchType=3 && saved().Head.title="Anki")
                            "A pattern that cannot be compiled was saved, or nothing said so"
@@ -1486,7 +1489,7 @@ otepad.exe"]},
         // Another field starts afresh, the saved condition kept while the dialog is cancelled.
         let opened =
             withDialog (fun dialog ->
-                assertTrue (dialog.Pattern.Text="" && dialog.Method.SelectedIndex=3) "Choosing another field kept the old pattern"
+                assertTrue (dialog.Pattern.Text="" && dialog.MatchType=3) "Choosing another field kept the old pattern"
                 press dialog.CancelButton) (fun () -> chooseCondition 2)
         assertTrue (opened && saved().Head.field=WindowTitle && saved().Head.title="Anki") "Cancelling another field's dialog changed the rule"
         chooseCondition 0

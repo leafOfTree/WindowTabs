@@ -260,7 +260,10 @@ type ChipConditionMenu() =
 /// rather than on the field's name. Cancel, or Escape, leaves the rule as it was.
 type RuleConditionDialog(title:string, field:string, hint:string, examples:string list, matchType:int, pattern:string, problem:int -> string -> string option) as this =
     inherit Form()
-    let methodChoice = SettingsUi.choice (WindowTitleMatcher.labels |> Array.map tr)
+    /// The ways to match in the order offered, Contains first as the usual one; a rule keeps
+    /// the way's own number.
+    let ways = [|3;0;1;2;4|]
+    let methodChoice = SettingsUi.choice (ways |> Array.map(fun way -> tr WindowTitleMatcher.labels.[way]))
     let patternBox = new TextBox(Name="rule-pattern")
     let patternInput = new SettingsTextInput(patternBox)
     let width = Dpi.scale 440
@@ -269,8 +272,12 @@ type RuleConditionDialog(title:string, field:string, hint:string, examples:strin
     /// One label a value, the whole value as its text, cut short on screen to the dialog's width.
     let exampleLabels =
         examples |> List.map(fun value ->
-            new Label(Text=value,AutoSize=false,AutoEllipsis=true,UseMnemonic=false,Cursor=Cursors.Hand,Tag="muted",
+            new Label(Text=value,AutoSize=false,AutoEllipsis=true,UseMnemonic=false,Cursor=Cursors.Hand,Tag="link",
                       Size=Size(width,SettingsUi.bodyFont().Height+Dpi.scale 6),TextAlign=ContentAlignment.MiddleLeft,Margin=Padding.Empty))
+    /// The values in the accent, as links are, which the theme's pass over the labels does not give.
+    let colourExamples() =
+        let p = SettingsColors.current()
+        for label in exampleLabels do label.ForeColor <- (if SystemInformation.HighContrast then SystemColors.HotTrack else p.accentText)
     do
         this.Text <- title
         this.Font <- SettingsUi.bodyFont()
@@ -282,43 +289,43 @@ type RuleConditionDialog(title:string, field:string, hint:string, examples:strin
         this.StartPosition <- FormStartPosition.CenterParent
         this.AutoSize <- true
         this.AutoSizeMode <- AutoSizeMode.GrowAndShrink
-        let layout = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=2,RowCount=7,
+        let layout = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,RowCount=8,
                                           Padding=Padding(Dpi.scale 24,Dpi.scale 20,Dpi.scale 24,Dpi.scale 20))
         layout.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
-        layout.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
-        let span (control:Control) row =
-            layout.Controls.Add(control,0,row)
-            layout.SetColumnSpan(control,2)
-        // The field and what it is, above its method and pattern: "Window title" / contains / Anki.
+        let row (control:Control) index = layout.Controls.Add(control,0,index)
+        // The field and what it is, above its method and, on a line of its own so a long one
+        // fits, the pattern: "Window title" / contains / Anki.
         let caption = new Label(Text=field,AutoSize=true,UseMnemonic=false,Font=SettingsUi.subsectionFont(),Margin=Padding(0,0,0,Dpi.scale 4))
-        span caption 0
-        span hintLabel 1
+        row caption 0
+        row hintLabel 1
         methodChoice.Name <- "rule-method"
-        methodChoice.SelectedIndex <- max 0 (min 4 matchType)
+        methodChoice.SelectedIndex <- ways |> Array.tryFindIndex ((=) matchType) |> Option.defaultValue 0
         methodChoice.FitToItems()
-        methodChoice.Margin <- Padding(0,0,Dpi.scale 8,0)
+        methodChoice.Margin <- Padding(0,0,0,Dpi.scale 8)
         patternBox.Text <- pattern
-        patternInput.Size <- Size(max (Dpi.scale 200) (width-methodChoice.Width-Dpi.scale 8),methodChoice.Height)
+        patternInput.Size <- Size(width,methodChoice.Height)
         patternInput.Margin <- Padding.Empty
-        layout.Controls.Add(methodChoice,0,2)
-        layout.Controls.Add(patternInput,1,2)
+        row methodChoice 2
+        row patternInput 3
         // The field's values in the app's windows open now, each put in the pattern by a click.
-        span (new Label(Text=tr (if examples.IsEmpty then Strings.AppRules.noOpenWindows else Strings.AppRules.openWindowsNow),
-                        AutoSize=true,UseMnemonic=false,Tag="muted",Name="rule-examples-heading",MaximumSize=Size(width,0),Margin=Padding(0,Dpi.scale 14,0,Dpi.scale 4))) 3
+        row (new Label(Text=tr (if examples.IsEmpty then Strings.AppRules.noOpenWindows else Strings.AppRules.openWindowsNow),
+                       AutoSize=true,UseMnemonic=false,Tag="muted",Name="rule-examples-heading",MaximumSize=Size(width,0),Margin=Padding(0,Dpi.scale 14,0,Dpi.scale 4))) 4
         let exampleList = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.TopDown,
                                               WrapContents=false,Margin=Padding.Empty,Name="rule-examples")
+        let plain = SettingsUi.bodyFont()
+        let underlined = SettingsUi.font plain.FontFamily.Name plain.SizeInPoints FontStyle.Underline
         for label in exampleLabels do
-            // Lit as text while pointed at, as a link is; the value goes in whole, cut or not.
-            label.MouseEnter.Add(fun _ -> label.ForeColor <- (SettingsColors.current()).text)
-            label.MouseLeave.Add(fun _ -> label.ForeColor <- (SettingsColors.current()).description)
+            // Underlined while pointed at, as a link is; the value goes in whole, cut or not.
+            label.MouseEnter.Add(fun _ -> label.Font <- underlined)
+            label.MouseLeave.Add(fun _ -> label.Font <- plain)
             label.Click.Add(fun _ ->
                 patternBox.Text <- label.Text
                 status.Text <- ""
                 patternBox.Focus() |> ignore
                 patternBox.SelectAll())
             exampleList.Controls.Add(label)
-        span exampleList 4
-        span status 5
+        row exampleList 5
+        row status 6
         let buttons = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
                                           FlowDirection=FlowDirection.RightToLeft,Anchor=AnchorStyles.Right,Margin=Padding(0,Dpi.scale 20,0,0))
         let ok = SettingsUi.button (tr Strings.Common.ok)
@@ -329,11 +336,11 @@ type RuleConditionDialog(title:string, field:string, hint:string, examples:strin
         cancel.Margin <- Padding(0,0,Dpi.scale 8,0)
         buttons.Controls.Add(ok)
         buttons.Controls.Add(cancel)
-        span buttons 6
+        row buttons 7
         this.Controls.Add(layout)
         // A pattern that cannot be used is said under it and the dialog stays.
         ok.Click.Add(fun _ ->
-            match problem methodChoice.SelectedIndex (patternBox.Text.Trim()) with
+            match problem this.MatchType (patternBox.Text.Trim()) with
             | Some text ->
                 status.Text <- text
                 patternBox.Focus() |> ignore
@@ -341,15 +348,15 @@ type RuleConditionDialog(title:string, field:string, hint:string, examples:strin
         this.AcceptButton <- ok
         this.CancelButton <- cancel
         this.Shown.Add(fun _ -> patternBox.Focus() |> ignore; patternBox.SelectAll())
-        ThemeBinding.watch this (fun () -> SettingsUi.apply this)
+        ThemeBinding.watch this (fun () -> SettingsUi.apply this; colourExamples())
     member _.Method = methodChoice
     member _.Pattern = patternBox
     member _.Status = status
     member _.Hint = hintLabel
     /// The values listed, one label each, in the order given.
     member _.Examples = exampleLabels
-    /// What was chosen, once OK is pressed.
-    member _.MatchType = methodChoice.SelectedIndex
+    /// The way to match chosen, by its own number, once OK is pressed.
+    member _.MatchType = ways.[max 0 methodChoice.SelectedIndex]
     member _.PatternText = patternBox.Text.Trim()
 
 /// A named group, or a group made by dragging tabs.
