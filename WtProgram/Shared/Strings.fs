@@ -986,10 +986,10 @@ module Strings =
         let newRule = { en="New rule"; zh="新规则"; ja="新しいルール"; ar="قاعدة جديدة" }
         let groupNameRequired = { en="Enter a group name."; zh="请填写组名。"; ja="グループ名を入力してください。"; ar="أدخل اسم المجموعة." }
         let groupNameExists = { en="A group with this name already exists."; zh="已有同名组，请使用其他名称。"; ja="同じ名前のグループが存在します。"; ar="توجد مجموعة بهذا الاسم بالفعل." }
-        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. An app's arrow takes only some of its windows, by title, window class or command line."
-                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用会始终启用标签，不再出现在上面的列表里，也不再使用“自动分组”。应用旁的箭头可只收纳它的部分窗口：按标题、窗口类名或命令行。"
-                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。アプリの矢印から、タイトル・ウィンドウ クラス・コマンド ラインで一部のウィンドウだけを対象にできます。"
-                               ar="ضع نوافذ تطبيقات مختلفة في مجموعة واحدة ذات اسم. التطبيقات المضافة هنا تستخدم علامات التبويب دائمًا، وتُزال من القائمة أعلاه ولا تستخدم التجميع التلقائي. سهم التطبيق يضم بعض نوافذه فقط حسب العنوان أو فئة النافذة أو سطر الأوامر." }
+        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. Click an app to take only some of its windows, by title, window class or command line, or to remove it."
+                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用会始终启用标签，不再出现在上面的列表里，也不再使用“自动分组”。点击应用可只收纳它的部分窗口（按标题、窗口类名或命令行），或将其移除。"
+                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。アプリをクリックすると、タイトル・ウィンドウ クラス・コマンド ラインで一部のウィンドウだけを対象にしたり、外したりできます。"
+                               ar="ضع نوافذ تطبيقات مختلفة في مجموعة واحدة ذات اسم. التطبيقات المضافة هنا تستخدم علامات التبويب دائمًا، وتُزال من القائمة أعلاه ولا تستخدم التجميع التلقائي. انقر تطبيقًا لضم بعض نوافذه فقط حسب العنوان أو فئة النافذة أو سطر الأوامر، أو لإزالته." }
         /// The heading of the panel of groups made by dragging, with how many there are, and
         /// what the panel is for on hover.
         let handMadeHeading count = { en=sprintf "Groups made by dragging (%d)" count; zh=sprintf "拖拽形成的分组（%d）" count; ja=sprintf "ドラッグで作ったグループ（%d）" count; ar=sprintf "مجموعات أنشئت بالسحب (%d)" count }
@@ -1018,10 +1018,10 @@ module Strings =
         let windowClass = { en="Window class"; zh="窗口类名"; ja="ウィンドウ クラス"; ar="فئة النافذة" }
         let commandLine = { en="Command line"; zh="命令行"; ja="コマンド ライン"; ar="سطر الأوامر" }
         /// Over an app's chip in a named group.
-        let chipTip = { en="Which of the app's windows join: all, or those whose title, window class or command line matches"
-                        zh="该应用的哪些窗口加入：全部，或标题、窗口类名或命令行匹配的窗口"
-                        ja="このアプリのどのウィンドウを含めるか：すべて、またはタイトル・ウィンドウ クラス・コマンド ラインが一致するもの"
-                        ar="أي نوافذ التطبيق تنضم: كلها، أو التي يطابق عنوانها أو فئتها أو سطر أوامرها" }
+        let chipTip = { en="Which of the app's windows join: all, or those whose title, window class or command line matches; or remove the app"
+                        zh="该应用的哪些窗口加入：全部，或标题、窗口类名或命令行匹配的窗口；或移除该应用"
+                        ja="このアプリのどのウィンドウを含めるか：すべて、またはタイトル・ウィンドウ クラス・コマンド ラインが一致するもの。またはアプリを外す"
+                        ar="أي نوافذ التطبيق تنضم: كلها، أو التي يطابق عنوانها أو فئتها أو سطر أوامرها؛ أو إزالة التطبيق" }
         /// The arrow's menu: a field to match on, which opens the condition's controls.
         let conditionChoice field = { en=field+"…"; zh=field+"…"; ja=field+"…"; ar=field+"…" }
         /// Before the condition's controls: the app and the group its chip is in.

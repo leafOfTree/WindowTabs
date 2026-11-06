@@ -346,7 +346,7 @@ type AppGroupingRulesView() as this =
                                        ChipsDimmed=(not members.IsEmpty && enabled=0),ChipMenu=true,ChipTip=tr Strings.AppRules.chipTip,
                                        ChipDetails=(members |> List.exists AppGroupingRules.isConditioned))
                 row.Chips <- members |> List.map(fun rule ->
-                    { Faded=false; Note=describe rule; Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=true })
+                    { Faded=false; Note=describe rule; Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=false })
                 chipRules.[group.id] <- members
                 tree.Roots.Add(row)
             // Groups made by dragging tabs, kept after a restart closes their windows: shown in their
@@ -572,7 +572,6 @@ type AppGroupingRulesView() as this =
         tree.EmptyText <- tr Strings.AppRules.noGroups
         // Only names and buttons: a heading row would just say "Name".
         tree.ShowHeader <- false
-        tree.ChipRemoveTip <- tr Strings.AppRules.removeFromGroup
         tree.ChipAddTip <- tr Strings.AppRules.chooseApplication
         tree.SelectionChanged.Add(fun _ ->
             if not rebuilding then
@@ -597,21 +596,8 @@ type AppGroupingRulesView() as this =
                 addMenu.Open(tree.RectangleToScreen(box),members)
             | _ -> ())
         addMenu.Picked.Add(fun path -> pickingFor |> Option.iter(fun id -> addToGroup(id,path)))
-        tree.ChipRemoved.Add(fun (item,index) ->
-            match item.Tag :?> GroupApplicationNode with
-            | GroupNode id ->
-                match chipRules.TryGetValue id with
-                | true,members when index<members.Length ->
-                    let removed = members.[index]
-                    let previous = rules
-                    rules <- rules |> List.filter(fun rule -> rule.id<>removed.id)
-                    if conditionRule=Some removed.id then closeCondition()
-                    save (Some previous)
-                    reload (Some(GroupNode id))
-                | _ -> ()
-            | _ -> ())
-        // A chip's arrow opens a menu of which of its app's windows the group takes: all, or
-        // those a field matches, whose condition then opens below the list.
+        // A chip is a menu of which of its app's windows the group takes: all, or those a field
+        // matches, whose condition then opens below the list; and, last, leaving the group.
         tree.ChipInvoked.Add(fun (item,index) ->
             match item.Tag :?> GroupApplicationNode,tree.ChipMenuBounds(item,index) with
             | GroupNode id,Some box ->
@@ -621,10 +607,18 @@ type AppGroupingRulesView() as this =
                     menuRule <- Some rule
                     let labels = fields |> Array.map(fun field ->
                         if field=AppOnly then tr (RuleField.label field) else tr (Strings.AppRules.conditionChoice (tr (RuleField.label field))))
-                    conditionMenu.Open(tree.RectangleToScreen(box),labels,tr Strings.AppRules.chipTip)
+                    conditionMenu.Open(tree.RectangleToScreen(box),Array.append labels [|tr Strings.AppRules.removeFromGroup|],tr Strings.AppRules.chipTip)
                 | _ -> ()
             | _ -> ())
-        conditionMenu.Picked.Add(fun index -> menuRule |> Option.iter(fun rule -> pickCondition rule index))
+        conditionMenu.Picked.Add(fun index ->
+            menuRule |> Option.iter(fun rule ->
+                if index<fields.Length then pickCondition rule index
+                else
+                    let previous = rules
+                    rules <- rules |> List.filter(fun other -> other.id<>rule.id)
+                    if conditionRule=Some rule.id then closeCondition()
+                    save (Some previous)
+                    reload (Some(GroupNode rule.groupId))))
         fieldChoice.SelectedIndexChanged.Add(fun _ ->
             if not rebuilding then
                 let conditioned = fields.[max 0 fieldChoice.SelectedIndex]<>AppOnly

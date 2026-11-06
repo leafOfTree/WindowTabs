@@ -63,7 +63,7 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
   reach of **Close others** and **Close all**, across restarts.
 - **App rules:** choose which running apps get tabs and which group automatically.
   Under **Groups across apps**, create named groups so windows of different apps join
-  one group; an app's arrow there takes only the windows whose title, window class or
+  one group; an app's menu there takes only the windows whose title, window class or
   command line matches, as for apps that run under pythonw.exe or java.exe. Groups made
   by dragging tabs are remembered and listed in a panel of their own below.
 - **Split view:** show two or more of a group's windows side by side or stacked, as in a

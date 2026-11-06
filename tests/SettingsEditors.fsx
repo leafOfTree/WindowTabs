@@ -1409,7 +1409,7 @@ otepad.exe"]},
         pick selectedPath
         // One row a group: its apps are chips after its name, not rows beneath it.
         assertTrue (saved().Length=1 && saved().Head.processPath=selectedPath && saved().Head.groupId=groupA && saved().Head.matchType= -1
-                    && tree.Roots.[0].Children.Count=0 && tree.Roots.[0].Chips.Length=1 && tree.Roots.[0].Chips.Head.Removable
+                    && tree.Roots.[0].Children.Count=0 && tree.Roots.[0].Chips.Length=1 && tree.Roots.[0].ChipMenu && not tree.Roots.[0].Chips.Head.Removable
                     && tree.Roots.[0].Chips.Head.Text=IO.Path.GetFileName selectedPath)
                    "An app was not added to its group as a chip on the group's row"
         clickAdd tree.Roots.[0]
@@ -1435,8 +1435,9 @@ otepad.exe"]},
                    (sprintf "Moving an application to another group created duplicate grouping rules: %A chips %d/%d roots %d"
                         (saved() |> List.map(fun rule -> rule.groupName,IO.Path.GetFileName rule.processPath)) tree.Roots.[0].Chips.Length tree.Roots.[1].Chips.Length
                         tree.Roots.Count)
-        // A chip's arrow opens a menu of which of the app's windows the group takes: all, or those
-        // whose title, window class or command line matches, whose condition opens below the list.
+        // A chip is a menu of which of the app's windows the group takes: all, or those whose
+        // title, window class or command line matches, whose condition opens below the list;
+        // and of leaving the group.
         let conditionPanel = descendants groupView |> Seq.find(fun control -> control.Name="rule-condition")
         let fieldChoice = descendants groupView |> Seq.pick(function :? SettingsCombo as combo when combo.Name="rule-field" -> Some combo | _ -> None)
         let methodChoice = descendants groupView |> Seq.pick(function :? SettingsCombo as combo when combo.Name="rule-method" -> Some combo | _ -> None)
@@ -1444,16 +1445,13 @@ otepad.exe"]},
         let statusLabel = descendants groupView |> Seq.find(fun control -> control.Name="grouping-status")
         let conditionMenu = groupView.ConditionMenu
         let chooseCondition index =
-            pressChipPart "chipMenuAt" tree.Roots.[1]
-            assertTrue (conditionMenu.DropDown |> Option.exists(fun window -> window.Visible)) "A chip's arrow did not open its menu"
+            pressChipPart "chipAt" tree.Roots.[1]
+            assertTrue (conditionMenu.DropDown |> Option.exists(fun window -> window.Visible)
+                        && conditionMenu.Choice.Value.ItemText(4)=tr Strings.AppRules.removeFromGroup)
+                       "Pressing a chip did not open its menu, or the menu cannot remove the app"
             conditionMenu.Choice.Value.SelectedIndex <- index
         assertTrue (tree.Roots.[1].ChipMenu && tree.Roots.[1].ChipTip=tr Strings.AppRules.chipTip && not conditionPanel.Visible)
-                   "A group's chip has no arrow, the arrow does not say what it is for, or the condition shows unasked"
-        // Pressing the chip itself only chooses the row.
-        tree.SelectedItem <- tree.Roots.[0]
-        pressChipPart "chipAt" tree.Roots.[1]
-        assertTrue (Object.ReferenceEquals(tree.SelectedItem,tree.Roots.[1]) && not conditionPanel.Visible && conditionMenu.DropDown.IsNone)
-                   "Pressing a chip opened something rather than choosing its row"
+                   "A group's chip is not a menu, does not say what it is for, or the condition shows unasked"
         chooseCondition 0
         assertTrue (not conditionPanel.Visible && saved().Head.field=AppOnly) "Choosing the whole app for a chip that takes it already opened or changed something"
         chooseCondition 1
@@ -1631,8 +1629,8 @@ otepad.exe"]},
             window.Close())
         Application.DoEvents()
         tree.Focus() |> ignore
-        // An app leaves its group by the x on its chip.
-        pressChipPart "chipCloseAt" tree.Roots.[1]
+        // An app leaves its group from its chip's menu.
+        chooseCondition 4
         assertTrue (saved().IsEmpty && targets().Length=2) "Removing an app's chip deleted the group or kept the app"
         groupView.Reload()
         assertTrue (tree.Roots |> Seq.filter(fun row -> row.Glyph<>TabsGlyph) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
