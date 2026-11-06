@@ -1448,11 +1448,21 @@ otepad.exe"]},
                    "A group's chip is not a menu, says something on hover, or a condition editor sits under the list"
         assertTrue (not (withDialog ignore (fun () -> chooseCondition 0)) && saved().Head.field=AppOnly)
                    "Choosing the whole app for a chip that takes it already opened a dialog or changed something"
-        // A field opens its dialog ready for a pattern, which OK asks for before it closes.
+        // A field opens its dialog ready for a pattern, which OK asks for before it closes. The
+        // dialog says what the field is and lists its values in the app's open windows, a
+        // click putting one in the pattern.
         let opened =
             withDialog (fun dialog ->
-                assertTrue (dialog.Method.SelectedIndex=3 && dialog.Pattern.Text="" && dialog.Text=tr (Strings.AppRules.conditionFor (IO.Path.GetFileName selectedPath) (tr Strings.AppRules.windowTitle)))
-                           (sprintf "The condition dialog did not open ready for a pattern: %s" dialog.Text)
+                assertTrue (dialog.Method.SelectedIndex=3 && dialog.Pattern.Text="" && dialog.Text=tr (Strings.AppRules.conditionFor (IO.Path.GetFileName selectedPath) (tr Strings.AppRules.windowTitle))
+                            && dialog.Hint.Text=tr Strings.AppRules.windowTitleHint)
+                           (sprintf "The condition dialog did not open ready for a pattern, or does not say what the field is: %s" dialog.Text)
+                let heading = descendants dialog |> Seq.find(fun control -> control.Name="rule-examples-heading")
+                assertTrue (heading.Text=tr (if dialog.Examples.IsEmpty then Strings.AppRules.noOpenWindows else Strings.AppRules.openWindowsNow))
+                           "The dialog does not say whose values it lists, or that there are none"
+                dialog.Examples |> List.tryHead |> Option.iter(fun example ->
+                    typeof<Label>.GetMethod("OnClick",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(example,[|box EventArgs.Empty|]) |> ignore
+                    assertTrue (dialog.Pattern.Text=example.Text && example.Text<>"") "Clicking a listed value did not put it in the pattern"
+                    dialog.Pattern.Text <- "")
                 press dialog.AcceptButton
                 assertTrue (dialog.Visible && dialog.Status.Text=tr Strings.AppRules.requiredTitle && saved().Head.field=AppOnly)
                            "OK with no pattern closed the dialog, saved, or did not ask for one"

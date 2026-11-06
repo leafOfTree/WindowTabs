@@ -41,6 +41,12 @@ module RuleField =
         | WindowTitle -> Strings.AppRules.windowTitle
         | WindowClass -> Strings.AppRules.windowClass
         | CommandLine -> Strings.AppRules.commandLine
+    /// What the field is and when to match on it, in a line.
+    let hint = function
+        | AppOnly -> Strings.AppRules.allWindows
+        | WindowTitle -> Strings.AppRules.windowTitleHint
+        | WindowClass -> Strings.AppRules.windowClassHint
+        | CommandLine -> Strings.AppRules.commandLineHint
 
 module AppGroupingRules =
     /// A rule for some of an app's windows, rather than for the app.

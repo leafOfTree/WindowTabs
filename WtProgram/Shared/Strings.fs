@@ -1015,6 +1015,22 @@ module Strings =
         let windowTitle = { en="Window title"; zh="窗口标题"; ja="ウィンドウのタイトル"; ar="عنوان النافذة" }
         let windowClass = { en="Window class"; zh="窗口类名"; ja="ウィンドウ クラス"; ar="فئة النافذة" }
         let commandLine = { en="Command line"; zh="命令行"; ja="コマンド ライン"; ar="سطر الأوامر" }
+        /// What each field is and when to match on it, under the condition dialog's heading.
+        let windowTitleHint = { en="The text in the title bar; it changes with what the window shows."
+                                zh="标题栏里的文字，会随窗口内容变化。"
+                                ja="タイトル バーの文字。表示内容によって変わります。"
+                                ar="النص في شريط العنوان؛ يتغير مع ما تعرضه النافذة." }
+        let windowClassHint = { en="The window's internal type name; it stays the same across restarts, so it suits windows whose titles change."
+                                zh="窗口的内部类型名，重启后也不变；标题经常变化时用它。"
+                                ja="ウィンドウ内部の種類名。再起動しても変わらないので、タイトルがよく変わるウィンドウに向きます。"
+                                ar="اسم النوع الداخلي للنافذة؛ يبقى كما هو بعد إعادة التشغيل، فيناسب النوافذ التي يتغير عنوانها." }
+        let commandLineHint = { en="How the window's process was started; it tells apart apps that share one program, such as pythonw or java."
+                                zh="窗口进程的启动命令；用来区分共用同一个程序的应用，如 pythonw、java。"
+                                ja="ウィンドウのプロセスの起動コマンド。pythonw や java など同じプログラムを共有するアプリを見分けます。"
+                                ar="كيف بدأت عملية النافذة؛ يميز التطبيقات التي تشترك في برنامج واحد مثل pythonw أو java." }
+        /// Over the values of the app's open windows, which a click puts in the pattern.
+        let openWindowsNow = { en="From the app's windows open now, to click:"; zh="该应用当前打开的窗口，点击填入："; ja="このアプリで今開いているウィンドウ（クリックで入力）："; ar="من نوافذ التطبيق المفتوحة الآن، انقر للإدخال:" }
+        let noOpenWindows = { en="The app has no window open now."; zh="该应用现在没有打开的窗口。"; ja="このアプリのウィンドウは今開いていません。"; ar="لا توجد نافذة مفتوحة لهذا التطبيق الآن." }
         /// What an app's chip menu is, for assistive technology; nothing is said on hover.
         let chipTip = { en="Which of the app's windows join: all, or those whose title, window class or command line matches; or remove the app"
                         zh="该应用的哪些窗口加入：全部，或标题、窗口类名或命令行匹配的窗口；或移除该应用"

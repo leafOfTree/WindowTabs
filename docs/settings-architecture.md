@@ -36,7 +36,8 @@ on hover. A chip is a menu, with an arrow
 after its name: which of the app's windows the group takes, all (`AppOnly`) or those
 whose title, window class or command line matches a pattern (exact, starts or ends
 with, contains or a regular expression, ignoring case), asked for in a small dialog
-(`RuleConditionDialog`) that refuses a pattern it cannot use; and, set apart last,
+(`RuleConditionDialog`) that says what the field is, lists the field's values in the
+app's windows open now for a click to take, and refuses a pattern it cannot use; and, set apart last,
 removing the app. Such a chip has a dashed edge. A rule for some windows comes
 before the app's rule for all of them, and leaves the app in the list above with its
 own Auto-group; the command line is read from the process (`ProcessCommandLine`) only

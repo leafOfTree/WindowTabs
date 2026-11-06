@@ -255,13 +255,22 @@ type ChipConditionMenu() =
         member _.Dispose() = retire()
 
 /// Asks for a chip's condition on a field: how it is matched and against what, checked before
-/// it is kept. Cancel, or Escape, leaves the rule as it was.
-type RuleConditionDialog(title:string, field:string, matchType:int, pattern:string, problem:int -> string -> string option) as this =
+/// it is kept. A line says what the field is, and the field's values in the app's windows open
+/// now are listed, a click putting one in the pattern, so the choice is made on what is there
+/// rather than on the field's name. Cancel, or Escape, leaves the rule as it was.
+type RuleConditionDialog(title:string, field:string, hint:string, examples:string list, matchType:int, pattern:string, problem:int -> string -> string option) as this =
     inherit Form()
     let methodChoice = SettingsUi.choice (WindowTitleMatcher.labels |> Array.map tr)
     let patternBox = new TextBox(Name="rule-pattern")
     let patternInput = new SettingsTextInput(patternBox)
-    let status = new Label(AutoSize=true,UseMnemonic=false,Tag="muted",Name="rule-status",MaximumSize=Size(Dpi.scale 420,0),Margin=Padding(0,Dpi.scale 8,0,0))
+    let width = Dpi.scale 440
+    let hintLabel = new Label(Text=hint,AutoSize=true,UseMnemonic=false,Tag="muted",Name="rule-hint",MaximumSize=Size(width,0),Margin=Padding(0,0,0,Dpi.scale 12))
+    let status = new Label(AutoSize=true,UseMnemonic=false,Tag="muted",Name="rule-status",MaximumSize=Size(width,0),Margin=Padding(0,Dpi.scale 8,0,0))
+    /// One label a value, the whole value as its text, cut short on screen to the dialog's width.
+    let exampleLabels =
+        examples |> List.map(fun value ->
+            new Label(Text=value,AutoSize=false,AutoEllipsis=true,UseMnemonic=false,Cursor=Cursors.Hand,Tag="muted",
+                      Size=Size(width,SettingsUi.bodyFont().Height+Dpi.scale 6),TextAlign=ContentAlignment.MiddleLeft,Margin=Padding.Empty))
     do
         this.Text <- title
         this.Font <- SettingsUi.bodyFont()
@@ -273,25 +282,43 @@ type RuleConditionDialog(title:string, field:string, matchType:int, pattern:stri
         this.StartPosition <- FormStartPosition.CenterParent
         this.AutoSize <- true
         this.AutoSizeMode <- AutoSizeMode.GrowAndShrink
-        let layout = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=2,RowCount=4,
+        let layout = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=2,RowCount=7,
                                           Padding=Padding(Dpi.scale 24,Dpi.scale 20,Dpi.scale 24,Dpi.scale 20))
         layout.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
         layout.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
-        // The field above its method and pattern: "Window title" / contains / Anki.
-        let caption = new Label(Text=field,AutoSize=true,UseMnemonic=false,Font=SettingsUi.subsectionFont(),Margin=Padding(0,0,0,Dpi.scale 12))
-        layout.Controls.Add(caption,0,0)
-        layout.SetColumnSpan(caption,2)
+        let span (control:Control) row =
+            layout.Controls.Add(control,0,row)
+            layout.SetColumnSpan(control,2)
+        // The field and what it is, above its method and pattern: "Window title" / contains / Anki.
+        let caption = new Label(Text=field,AutoSize=true,UseMnemonic=false,Font=SettingsUi.subsectionFont(),Margin=Padding(0,0,0,Dpi.scale 4))
+        span caption 0
+        span hintLabel 1
         methodChoice.Name <- "rule-method"
         methodChoice.SelectedIndex <- max 0 (min 4 matchType)
         methodChoice.FitToItems()
         methodChoice.Margin <- Padding(0,0,Dpi.scale 8,0)
         patternBox.Text <- pattern
-        patternInput.Size <- Size(Dpi.scale 260,methodChoice.Height)
+        patternInput.Size <- Size(max (Dpi.scale 200) (width-methodChoice.Width-Dpi.scale 8),methodChoice.Height)
         patternInput.Margin <- Padding.Empty
-        layout.Controls.Add(methodChoice,0,1)
-        layout.Controls.Add(patternInput,1,1)
-        layout.Controls.Add(status,0,2)
-        layout.SetColumnSpan(status,2)
+        layout.Controls.Add(methodChoice,0,2)
+        layout.Controls.Add(patternInput,1,2)
+        // The field's values in the app's windows open now, each put in the pattern by a click.
+        span (new Label(Text=tr (if examples.IsEmpty then Strings.AppRules.noOpenWindows else Strings.AppRules.openWindowsNow),
+                        AutoSize=true,UseMnemonic=false,Tag="muted",Name="rule-examples-heading",MaximumSize=Size(width,0),Margin=Padding(0,Dpi.scale 14,0,Dpi.scale 4))) 3
+        let exampleList = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.TopDown,
+                                              WrapContents=false,Margin=Padding.Empty,Name="rule-examples")
+        for label in exampleLabels do
+            // Lit as text while pointed at, as a link is; the value goes in whole, cut or not.
+            label.MouseEnter.Add(fun _ -> label.ForeColor <- (SettingsColors.current()).text)
+            label.MouseLeave.Add(fun _ -> label.ForeColor <- (SettingsColors.current()).description)
+            label.Click.Add(fun _ ->
+                patternBox.Text <- label.Text
+                status.Text <- ""
+                patternBox.Focus() |> ignore
+                patternBox.SelectAll())
+            exampleList.Controls.Add(label)
+        span exampleList 4
+        span status 5
         let buttons = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
                                           FlowDirection=FlowDirection.RightToLeft,Anchor=AnchorStyles.Right,Margin=Padding(0,Dpi.scale 20,0,0))
         let ok = SettingsUi.button (tr Strings.Common.ok)
@@ -302,8 +329,7 @@ type RuleConditionDialog(title:string, field:string, matchType:int, pattern:stri
         cancel.Margin <- Padding(0,0,Dpi.scale 8,0)
         buttons.Controls.Add(ok)
         buttons.Controls.Add(cancel)
-        layout.Controls.Add(buttons,0,3)
-        layout.SetColumnSpan(buttons,2)
+        span buttons 6
         this.Controls.Add(layout)
         // A pattern that cannot be used is said under it and the dialog stays.
         ok.Click.Add(fun _ ->
@@ -319,6 +345,9 @@ type RuleConditionDialog(title:string, field:string, matchType:int, pattern:stri
     member _.Method = methodChoice
     member _.Pattern = patternBox
     member _.Status = status
+    member _.Hint = hintLabel
+    /// The values listed, one label each, in the order given.
+    member _.Examples = exampleLabels
     /// What was chosen, once OK is pressed.
     member _.MatchType = methodChoice.SelectedIndex
     member _.PatternText = patternBox.Text.Trim()
@@ -488,8 +517,27 @@ type AppGroupingRulesView() as this =
     let askCondition (rule:AppGroupingRule) (field:RuleField) =
         let kept = AppGroupingRules.isConditioned rule && rule.field=field
         let withCondition matchType pattern = {rule with field=field;title=pattern;matchType=matchType}
+        // The field's value in each of the app's windows open now, each value once, the
+        // topmost first; the command line is read only for a rule that asks for it.
+        let examples =
+            try
+                OS().windowsInZorder.toArray |> Array.choose(fun window ->
+                    try
+                        if window.isWindow && Services.filter.isAppWindow(window.hwnd) && AppIdentity.same window.pid.processPath rule.processPath then
+                            let value =
+                                match field with
+                                | WindowTitle -> window.text
+                                | WindowClass -> window.className
+                                | CommandLine -> window.pid.commandLine
+                                | AppOnly -> ""
+                            if String.IsNullOrWhiteSpace value then None else Some(value.Trim())
+                        else None
+                    with _ -> None)
+                |> Array.distinct |> Array.truncate 8 |> List.ofArray
+            with _ -> []
         use dialog = new RuleConditionDialog(tr (Strings.AppRules.conditionFor (ApplicationNames.label rule.processPath) (tr (RuleField.label field))),
-                                             tr (RuleField.label field),(if kept then rule.matchType else 3),(if kept then rule.title else ""),
+                                             tr (RuleField.label field),tr (RuleField.hint field),examples,
+                                             (if kept then rule.matchType else 3),(if kept then rule.title else ""),
                                              (fun matchType pattern -> AppGroupingRules.problem (withCondition matchType pattern)))
         let result = match this.FindForm() with null -> dialog.ShowDialog() | owner -> dialog.ShowDialog(owner)
         if result=DialogResult.OK then replaceRule rule (withCondition dialog.MatchType dialog.PatternText)
