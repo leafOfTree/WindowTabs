@@ -235,11 +235,12 @@ type ChipConditionMenu() =
     member _.Picked = picked.Publish
     /// Opens below a box on screen, the current choice marked; chosen again, it still acts, as
     /// a condition's dialog opens to change the pattern.
-    member _.Open(anchor:Rectangle, labels:string[], name:string, separatorsBefore:int list, current:int) =
+    member _.Open(anchor:Rectangle, labels:string[], name:string, separatorsBefore:int list, current:int, disabled:int list) =
         retire()
         let next = SettingsUi.choice labels
         next.AccessibleName <- name
         next.SeparatorsBefore <- separatorsBefore
+        next.DisabledItems <- disabled
         next.DropDownAnchor <- Some anchor
         next.Visible <- false
         next.SelectedIndex <- current
@@ -397,7 +398,8 @@ type AppGroupingRulesView() as this =
     let mutable menuRule : AppGroupingRule option = None
     /// The group whose "+" opened the app list.
     let mutable pickingFor : string option = None
-    let fields = [|AppOnly;WindowTitle;WindowClass;CommandLine|]
+    /// The fields in the order offered: by how often each is the one wanted.
+    let fields = [|AppOnly;WindowTitle;CommandLine;WindowClass|]
     /// A chip's note: the condition it takes its windows by, or nothing for the app's every window.
     let describe (rule:AppGroupingRule) =
         if not (AppGroupingRules.isConditioned rule) then ""
@@ -520,27 +522,32 @@ type AppGroupingRulesView() as this =
             reload (Some(GroupNode rule.groupId))
     /// Asks for a chip's condition on a field in a dialog: with the rule's own method and pattern
     /// when that is the field it has, else ready for a pattern. Cancelled, the rule stays.
+    /// The field's value in each of the app's windows open now, the topmost first; the command
+    /// line, read only when asked for, as its arguments, which is what the rule sees.
+    let valuesOf (rule:AppGroupingRule) (field:RuleField) =
+        try
+            OS().windowsInZorder.toArray |> Array.choose(fun window ->
+                try
+                    if window.isWindow && Services.filter.isAppWindow(window.hwnd) && AppIdentity.same window.pid.processPath rule.processPath then
+                        match field with
+                        | WindowTitle -> Some window.text
+                        | WindowClass -> Some window.className
+                        | CommandLine -> Some(CommandLineText.arguments window.pid.commandLine)
+                        | AppOnly -> None
+                    else None
+                with _ -> None)
+            |> Array.map(fun value -> if isNull value then "" else value.Trim())
+            |> List.ofArray
+        with _ -> []
+    /// A field that tells none of the app's open windows apart, its value the same in each of
+    /// two or more; one window alone says nothing of the windows to come.
+    let tellsNoneApart (rule:AppGroupingRule) (field:RuleField) =
+        field<>AppOnly &&
+        (let values = valuesOf rule field in values.Length>=2 && (List.distinct values).Length<=1)
     let askCondition (rule:AppGroupingRule) (field:RuleField) =
         let kept = AppGroupingRules.isConditioned rule && rule.field=field
         let withCondition matchType pattern = {rule with field=field;title=pattern;matchType=matchType}
-        // The field's value in each of the app's windows open now, each value once, the
-        // topmost first; the command line, read only for a rule that asks for it, as its
-        // arguments, which is what the rule sees.
-        let values =
-            try
-                OS().windowsInZorder.toArray |> Array.choose(fun window ->
-                    try
-                        if window.isWindow && Services.filter.isAppWindow(window.hwnd) && AppIdentity.same window.pid.processPath rule.processPath then
-                            match field with
-                            | WindowTitle -> Some window.text
-                            | WindowClass -> Some window.className
-                            | CommandLine -> Some(CommandLineText.arguments window.pid.commandLine)
-                            | AppOnly -> None
-                        else None
-                    with _ -> None)
-                |> Array.map(fun value -> if isNull value then "" else value.Trim())
-                |> List.ofArray
-            with _ -> []
+        let values = valuesOf rule field
         let examples = values |> List.filter((<>) "") |> List.distinct |> List.truncate 8
         let examplesNote =
             if not examples.IsEmpty then Strings.AppRules.openWindowsNow
@@ -642,10 +649,16 @@ type AppGroupingRulesView() as this =
                 | true,members when index<members.Length ->
                     let rule = members.[index]
                     menuRule <- Some rule
+                    // A field the same in every open window is greyed and says so: it would tell
+                    // none of them apart.
+                    let same = fields |> Array.filter(tellsNoneApart rule) |> Array.toList
                     let labels = fields |> Array.map(fun field ->
-                        if field=AppOnly then tr (RuleField.label field) else tr (Strings.AppRules.conditionChoice (tr (RuleField.label field))))
+                        if field=AppOnly then tr (RuleField.label field)
+                        elif List.contains field same then sprintf "%s (%s)" (tr (Strings.AppRules.conditionChoice (tr (RuleField.label field)))) (tr Strings.AppRules.sameForAll)
+                        else tr (Strings.AppRules.conditionChoice (tr (RuleField.label field))))
                     conditionMenu.Open(tree.RectangleToScreen(box),Array.append labels [|tr Strings.AppRules.removeFromGroup|],tr Strings.AppRules.chipTip,[labels.Length],
-                                       fields |> Array.findIndex ((=) rule.field))
+                                       fields |> Array.findIndex ((=) rule.field),
+                                       same |> List.map(fun field -> fields |> Array.findIndex ((=) field)))
                 | _ -> ()
             | _ -> ())
         conditionMenu.Picked.Add(fun index ->

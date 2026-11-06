@@ -1421,8 +1421,11 @@ otepad.exe"]},
             assertTrue (conditionMenu.DropDown |> Option.exists(fun window -> window.Visible)
                         && conditionMenu.Choice.Value.ItemText(4)=tr Strings.AppRules.removeFromGroup
                         && conditionMenu.Choice.Value.SeparatorsBefore=[4]
-                        && conditionMenu.Choice.Value.SelectedIndex=(match saved().Head.field with AppOnly -> 0 | WindowTitle -> 1 | WindowClass -> 2 | CommandLine -> 3))
-                       "Pressing a chip did not open its menu, the menu cannot remove the app, that is not set apart, or the current choice is not marked"
+                        && conditionMenu.Choice.Value.SelectedIndex=(match saved().Head.field with AppOnly -> 0 | WindowTitle -> 1 | CommandLine -> 2 | WindowClass -> 3)
+                        && conditionMenu.Choice.Value.ItemText(1).StartsWith(tr Strings.AppRules.windowTitle)
+                        && conditionMenu.Choice.Value.ItemText(2).StartsWith(tr Strings.AppRules.commandLine)
+                        && conditionMenu.Choice.Value.ItemText(3).StartsWith(tr Strings.AppRules.windowClass))
+                       "Pressing a chip did not open its menu, the menu cannot remove the app, that is not set apart, the current choice is not marked, or the fields are out of order"
             // Taken as from the list, so the current choice acts again.
             conditionMenu.Choice.Value.Choose index
         /// Drives the modal condition dialog once it opens, from a timer inside its loop; the
@@ -1442,6 +1445,15 @@ otepad.exe"]},
             act()
             driven
         let press (button:IButtonControl) = (button :?> Button).PerformClick()
+        // A choice greyed in a list is not taken, from the list or in code.
+        do
+            use greyed = SettingsUi.choice [|"a";"b";"c"|]
+            greyed.DisabledItems <- [1]
+            let mutable taken = []
+            greyed.Chosen.Add(fun index -> taken <- index::taken)
+            greyed.Choose 1
+            greyed.Choose 2
+            assertTrue (taken=[2] && greyed.SelectedIndex=2) "A greyed choice was taken, or an open one was not"
         // No tip on hover: the heading's (i) says what the chips do.
         assertTrue (tree.Roots.[1].ChipMenu && tree.Roots.[1].ChipTip=""
                     && descendants groupView |> Seq.forall(fun control -> control.Name<>"rule-condition"))
