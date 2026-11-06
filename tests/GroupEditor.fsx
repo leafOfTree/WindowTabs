@@ -259,10 +259,11 @@ let main() =
             check (editor.Selected=c && editor.Layout.rows.[0].cells=[[],Occupied c,editor.Layout.rows.[0].picture] && editor.Layout.rows.[0].focused=Some [] && editor.Layout.rows.[0].splitButton.IsSome) "A tab in no pane did not fill the content with the split button on it"
             click b
             check (editor.Selected=b && editor.Layout.rows.[0].cells.Length=2 && editor.Layout.rows.[0].focused=Some [Second]) "A pane tab chosen did not focus its cell"
-            // Taking the selected tab out, as its menu does, closes its pane; the plan is just its detaching.
+            // Taking the selected tab out, as its menu does, closes its pane and gives it a row of
+            // its own; the plan is just that row.
             editor.TakeOut b
-            check (editor.Draft.groups.[0].tabs=[a;c;d] && editor.Draft.loose=[b] && editor.Selected=c && editor.Draft.groups.[0].panes.IsNone) "Taking the tab out did not close its pane"
-            check (editor.Plan.detached=[b] && editor.Plan.groups.IsEmpty) "A tab taken out alone planned more than its detaching"
+            check (editor.Draft.groups.[0].tabs=[a;c;d] && editor.Draft.groups.[1].tabs=[b] && editor.Draft.loose.IsEmpty && editor.Selected=c && editor.Draft.groups.[0].panes.IsNone) "Taking the tab out did not close its pane or give it a row"
+            check (editor.Plan.detached=[] && (editor.Plan.groups |> List.map(fun p -> p.group,p.tabs,p.joining))=[None,[b],[b]]) (sprintf "A tab taken out alone planned more than its own row: %A" editor.Plan)
             // Save hands the plan on and the popup ends; Esc ends it with nothing.
             let planned = ref None
             let endings = ref 0
@@ -270,7 +271,7 @@ let main() =
             editor.Ended.Add(fun () -> endings.Value <- endings.Value+1)
             editor.Save()
             check (editor.IsClosed && endings.Value=1) "Save did not end the editor"
-            check (planned.Value |> Option.exists(fun plan -> plan.detached=[b] && plan.groups.IsEmpty)) "Save did not hand on the plan"
+            check (planned.Value |> Option.exists(fun plan -> plan.detached=[] && (plan.groups |> List.map(fun p -> p.group,p.tabs))=[None,[b]])) "Save did not hand on the plan"
             let left = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a}],shown,Some 0)
             let plannedLeft = ref false
             left.Saved.Add(fun _ -> plannedLeft.Value <- true)
@@ -315,7 +316,7 @@ let main() =
             // The pane tabs stand in the order of their cells: the one just split in stands with them.
             check (tabsNow()=[a;c;b;d]) (sprintf "The tabs did not take the panes' order: %A" (tabsNow()))
             // A pane's window leaves its pane by its tab's menu, staying a tab.
-            (match List.last (editor.TabMenu b) with CmiRegular r -> r.click() | _ -> failwith "The pane tab's menu did not end with a regular item")
+            (match editor.TabMenu b |> List.tryPick(function CmiRegular r when r.text=tr Strings.GroupEditor.leavePane -> Some r | _ -> None) with Some r -> r.click() | None -> failwith "The pane tab's menu did not offer to take it out of the pane")
             check (panes()=[a;c] && tabsNow()=[a;c;b;d]) (sprintf "Taking a pane's window out by its tab's menu went wrong: %A %A" (panes()) (tabsNow()))
             // A pane's tab carried away from the other pane's tab leaves its pane, the split
             // ending; carried back among the panes' tabs before the drop, it is in it again.
@@ -351,7 +352,7 @@ let main() =
             check (sameColor (SettingsColors.current().accent) (settled.GetPixel(activeTab.X+activeTab.Width/2,activeTab.Bottom-Dpi.scale 1))) "The active pane's tab bore no accent once its slide had ended"
             // Taking a tab out, as its menu does, leaves it loose.
             editor.TakeOut d
-            check (tabsNow()=[c;a;b] && editor.Draft.loose=[d]) (sprintf "Taking the tab out did not leave it loose: %A" (tabsNow()))
+            check (tabsNow()=[c;a;b] && (List.last editor.Draft.groups).tabs=[d]) (sprintf "Taking the tab out did not give it a row of its own: %A" (tabsNow()))
             // The split button on the focused cell opens the shapes; one cuts the cell, its slots empty.
             // (The window put in a pane was selected by its drop; another tab first, so the click
             // on it selects rather than folds.)
@@ -418,7 +419,7 @@ let main() =
             let l = editor.Layout
             check (editor.Expanded=None && l.rows.Length=2 && l.rows |> List.forall(fun row -> not row.expanded) && (l.looseTabs |> List.map fst)=[e;f]) "The overview did not list the rows and the loose windows"
             check (l.rows |> List.forall(fun row -> row.cells.IsEmpty && row.tabs |> List.forall(fun (_,t) -> t.Right<=row.band.Right))) "A folded row did not keep to its tabs"
-            check (l.rows.[0].band.Bottom<=l.rows.[1].band.Y && l.rows.[1].band.Bottom<=l.loose.Y && l.loose.Bottom<=l.newGroup.Y && l.newGroup.Bottom<=l.save.Y) "The rows are not stacked in order"
+            check (l.rows.[0].band.Bottom<=l.rows.[1].band.Y && l.rows.[1].band.Bottom<=l.loose.Y && l.loose.Bottom<=l.newGroup.Y && l.newGroup.Bottom<=l.closing.Y && l.closing.Bottom<=l.save.Y) "The rows are not stacked in order"
             use image = editor.Render()
             image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-editor-overview.png"))
             check (image.Height=l.height) "The overview picture is not its own height"
@@ -458,70 +459,139 @@ let main() =
             check (tabsOf 0=[a;b] && tabsOf 1=[d;c] && editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) (sprintf "A tab carried off the rows did not go back: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
             editor.MouseUp(off)
             check (tabsOf 0=[a;b] && tabsOf 1=[d;c] && editor.Drag.IsNone) (sprintf "A tab dropped off the rows changed something: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
-            // A tab dragged to the loose row leaves its group; one on the new group's band starts one.
+            // A tab dragged to + New group starts a row of its own, its pane closing.
             let l = editor.Layout
             editor.MouseDown(centre (tabIn l.rows.[0] b))
-            editor.MouseMove(centre l.loose)
-            check (editor.Draft.loose=[e;f;b] && editor.Drag |> Option.exists(fun d -> d.aim=None)) "A tab over the loose row did not go loose there"
-            editor.MouseUp(centre l.loose)
-            check (editor.Draft.loose=[e;f;b] && tabsOf 0=[a] && editor.Draft.groups.[0].panes.IsNone) "A tab dropped on the loose row did not leave its group"
+            editor.MouseMove(centre l.newGroup)
+            check (editor.Drag |> Option.exists(fun d -> d.aim=Some NewGroupRow)) "A tab over + New group was not aimed at it"
+            editor.MouseUp(centre l.newGroup)
+            check (tabsOf 0=[a] && (List.last editor.Draft.groups).tabs=[b] && editor.Draft.loose=[e;f] && editor.Draft.groups.[0].panes.IsNone)
+                  (sprintf "A tab dropped on + New group did not start a row of its own, or kept its pane: %A" editor.Draft)
             // Into the bin and out again: over it the tab is in it, closing on Save; taken back
-            // to the loose row it stays open.
+            // to + New group it is a row of its own again.
             do
                 let l = editor.Layout
-                editor.MouseDown(centre (l.looseTabs |> List.find(fun (hwnd,_) -> hwnd=b) |> snd))
+                editor.MouseDown(centre (tabIn (List.last l.rows) b))
                 editor.MouseMove(centre l.closing)
                 editor.MouseUp(centre l.closing)
-                check (editor.Draft.closing=[b] && editor.Draft.loose=[e;f]) (sprintf "A tab dropped on the bin did not go in it: %A" editor.Draft)
+                check (editor.Draft.closing=[b] && editor.Draft.loose=[e;f] && not (editor.Draft.groups |> List.exists(fun g -> List.contains b g.tabs))) (sprintf "A tab dropped on the bin did not go in it: %A" editor.Draft)
                 let l = editor.Layout
                 check (l.closingTabs |> List.exists(fun (hwnd,_) -> hwnd=b)) "The bin does not show the tab put in it"
                 editor.MouseDown(centre (l.closingTabs |> List.find(fun (hwnd,_) -> hwnd=b) |> snd))
+                editor.MouseMove(centre l.newGroup)
+                editor.MouseUp(centre l.newGroup)
+                check (editor.Draft.closing.IsEmpty && (List.last editor.Draft.groups).tabs=[b]) (sprintf "A tab taken out of the bin stayed in it: %A" editor.Draft)
+            // Windows in no group are listed to drag from, after the rows; the list is not a drop.
+            do
+                let l = editor.Layout
+                check (l.loose.Height>0 && (l.looseTabs |> List.map fst)=[e;f] && l.loose.Bottom<=l.newGroup.Y) "The windows in no group are not listed before + New group"
+                let row = editor.Draft.groups |> List.findIndex(fun g -> g.tabs.Length>1)
+                let x = List.last (editor.Draft.groups.[row]).tabs
+                let before = editor.Draft
+                let press = centre (tabIn l.rows.[row] x)
+                editor.MouseDown(press)
+                editor.MouseMove(Point(press.X+Dpi.scale 8,press.Y))
                 editor.MouseMove(centre l.loose)
+                check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None) && editor.Draft=before) "The windows in no group took a drop"
                 editor.MouseUp(centre l.loose)
-                check (editor.Draft.closing.IsEmpty && editor.Draft.loose=[e;f;b]) (sprintf "A tab taken out of the bin stayed in it: %A" editor.Draft)
-            let l = editor.Layout
-            editor.MouseDown(centre (tabIn l.rows.[1] c))
-            editor.MouseMove(centre l.newGroup)
-            check (editor.Drag |> Option.exists(fun d -> d.aim=Some NewGroupRow)) "A tab over the new group's band was not aimed at it"
-            editor.MouseUp(centre l.newGroup)
-            check (editor.Draft.groups.Length=3 && tabsOf 2=[c] && editor.Draft.groups.[2].group=None) (sprintf "A tab dropped on the new group's band did not start a group: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
-            // A window alone in its group is not offered a new group.
-            let l = editor.Layout
-            editor.MouseDown(centre (tabIn l.rows.[0] a))
-            editor.MouseMove(centre l.newGroup)
-            check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) "A window alone in its group was offered a new group"
-            editor.MouseUp(centre l.newGroup)
+                check (editor.Draft=before) "Dropping on the windows in no group changed something"
+            // The tab menu does what a drag does: Move to another row or New group, the bin; a
+            // window in New group goes to a row or the bin; one in the bin is kept open or put in
+            // a row. A row's menu starts with expanding it.
+            do
+                let texts (items:ContextMenuItem list) = items |> List.choose(function CmiRegular r -> Some r.text | CmiPopUp p -> Some p.text | _ -> None)
+                let item hwnd text = editor.TabMenu hwnd |> List.tryPick(function CmiRegular r when r.text=text -> Some r | _ -> None)
+                let click hwnd text = match item hwnd text with Some r -> r.click() | None -> failwithf "The menu of %A offers no %s" hwnd text
+                let moveTo hwnd = editor.TabMenu hwnd |> List.tryPick(function CmiPopUp p when p.text=tr Strings.GroupEditor.moveTo -> Some p.items.list | _ -> None) |> Option.defaultValue []
+                let row = editor.Draft.groups |> List.findIndex(fun g -> g.tabs.Length>1)
+                let x = (editor.Draft.groups.[row]).tabs.Head
+                check (texts (editor.TabMenu x)=[tr Strings.GroupEditor.moveTo;tr Strings.GroupEditor.newGroup;tr Strings.GroupEditor.closeOnSave] && not (texts (moveTo x) |> List.contains (tr Strings.GroupEditor.newGroup)))
+                      (sprintf "A row tab's menu is not Move to, New group, Close on save: %A / %A" (texts (editor.TabMenu x)) (texts (moveTo x)))
+                // A window in no group has the same, and comes back among them from the bin.
+                check (texts (editor.TabMenu e)=[tr Strings.GroupEditor.moveTo;tr Strings.GroupEditor.newGroup;tr Strings.GroupEditor.closeOnSave])
+                      (sprintf "The menu of a window in no group is not Move to (ending in New group), Close on save: %A" (texts (editor.TabMenu e)))
+                click e (tr Strings.GroupEditor.closeOnSave)
+                check (editor.Draft.closing=[e] && editor.Draft.loose=[f]) (sprintf "Close on save from the menu did not put the window in the bin: %A" editor.Draft)
+                check (texts (editor.TabMenu e)=[tr Strings.GroupEditor.keepOpen;tr Strings.GroupEditor.moveTo]) (sprintf "A binned window's menu is not Keep open, Move to: %A" (texts (editor.TabMenu e)))
+                click e (tr Strings.GroupEditor.keepOpen)
+                check (editor.Draft.closing.IsEmpty && List.sort editor.Draft.loose=List.sort [e;f]) (sprintf "Keep open did not put the window back among those in no group: %A" editor.Draft)
+                // A row's tab kept open from the bin gets a row of its own; a tab alone in its row
+                // is not offered New group.
+                click b (tr Strings.GroupEditor.closeOnSave)
+                check (editor.Draft.closing=[b] && not (editor.Draft.groups |> List.exists(fun g -> List.contains b g.tabs))) (sprintf "Close on save did not take the row tab: %A" editor.Draft)
+                click b (tr Strings.GroupEditor.keepOpen)
+                check (editor.Draft.closing.IsEmpty && (List.last editor.Draft.groups).tabs=[b] && not (List.contains b editor.Draft.loose)) (sprintf "Keep open did not give the row tab a row of its own: %A" editor.Draft)
+                check (not (texts (editor.TabMenu b) |> List.contains (tr Strings.GroupEditor.newGroup))) "A tab alone in its row was offered New group"
+                // Move to New group from a row, by the menu, and back.
+                let loose = editor.Draft.loose
+                click x (tr Strings.GroupEditor.newGroup)
+                check (editor.Draft.loose=loose && (List.last editor.Draft.groups).tabs=[x]) (sprintf "Move to New group did not give the tab a row of its own: %A" editor.Draft)
+                let rowName = (shown |> List.find(fun s -> s.hwnd=(editor.Draft.groups.[row]).tabs.Head)).name
+                (match moveTo x |> List.tryPick(function CmiRegular r when r.text.StartsWith rowName -> Some r | _ -> None) with
+                 | Some r -> r.click() | None -> failwith "Move to does not list the row")
+                check (editor.Draft.loose=loose && List.contains x (tabsOf row)) (sprintf "Move to did not put the tab back in its row: %A" editor.Draft)
+                check ((texts (editor.RowMenu 0)).Head=tr Strings.GroupEditor.expandRow) (sprintf "A row's menu does not start with Expand: %A" (texts (editor.RowMenu 0)))
+            // The dashed band under New group starts a group of the one window, so a second
+            // group can be made while New group holds windows; a window alone in its row is not
+            // offered one. The band stays whatever is in New group.
+            do
+                let l = editor.Layout
+                let row = editor.Draft.groups |> List.findIndex(fun g -> g.tabs.Length>1)
+                let x = List.last (editor.Draft.groups.[row]).tabs
+                let rows = editor.Draft.groups.Length
+                let press = centre (tabIn l.rows.[row] x)
+                editor.MouseDown(press)
+                editor.MouseMove(Point(press.X+Dpi.scale 8,press.Y))
+                editor.MouseMove(centre l.newGroup)
+                check (editor.Drag |> Option.exists(fun d -> d.aim=Some NewGroupRow)) "A tab over the band under New group was not aimed at it"
+                editor.MouseUp(centre l.newGroup)
+                check (editor.Draft.groups.Length=rows+1 && (List.last editor.Draft.groups).tabs=[x] && (List.last editor.Draft.groups).group=None)
+                      (sprintf "A tab dropped on the band did not start a row of its own: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
+                let l = editor.Layout
+                let alone = editor.Draft.groups |> List.findIndex(fun g -> g.tabs.Length=1)
+                let y = (editor.Draft.groups.[alone]).tabs.Head
+                let press = centre (tabIn l.rows.[alone] y)
+                editor.MouseDown(press)
+                editor.MouseMove(Point(press.X+Dpi.scale 8,press.Y))
+                editor.MouseMove(centre l.newGroup)
+                check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) "A window alone in its row was offered a group of its own"
+                editor.MouseUp(centre l.newGroup)
+                check (editor.Layout.newGroup.Height>0 && editor.Draft.groups.Length=rows+1) "The band went, or the drop changed the rows"
             // Clicking a folded row's tab expands the row on that tab; the selected tab clicked
             // again folds it back, and so does Esc.
+            let rowOf hwnd = editor.Draft.groups |> List.findIndex(fun g -> List.contains hwnd g.tabs)
             let l = editor.Layout
-            clickTab l.rows.[1] d
-            check (editor.Expanded=Some 1 && editor.Selected=d && editor.Layout.rows.[1].expanded && not editor.Layout.rows.[0].expanded) "Clicking a folded row's tab did not expand its row"
+            clickTab l.rows.[rowOf d] d
+            check (editor.Expanded=Some(rowOf d) && editor.Selected=d && editor.Layout.rows.[rowOf d].expanded && not editor.Layout.rows.[rowOf a].expanded) "Clicking a folded row's tab did not expand its row"
             // Expanded, the row's tabs stay where the folded row had them: only the content opens under them.
-            check (tabIn editor.Layout.rows.[1] d=tabIn l.rows.[1] d) (sprintf "Expanding moved the row's tabs: %A to %A" (tabIn l.rows.[1] d) (tabIn editor.Layout.rows.[1] d))
-            clickTab editor.Layout.rows.[1] d
+            check (tabIn editor.Layout.rows.[rowOf d] d=tabIn l.rows.[rowOf d] d) (sprintf "Expanding moved the row's tabs: %A to %A" (tabIn l.rows.[rowOf d] d) (tabIn editor.Layout.rows.[rowOf d] d))
+            clickTab editor.Layout.rows.[rowOf d] d
             check (editor.Expanded=None) "Clicking the selected tab did not fold the row"
-            clickTab editor.Layout.rows.[1] d
-            check (editor.Expanded=Some 1 && editor.Selected=d) "Clicking a folded row's tab did not expand it again"
+            clickTab editor.Layout.rows.[rowOf d] d
+            check (editor.Expanded=Some(rowOf d) && editor.Selected=d) "Clicking a folded row's tab did not expand it again"
             editor.Press Keys.Escape
             check (editor.Expanded=None) "Esc did not go back to the overview"
             // Another row's tab expands that row in place of the one before.
-            clickTab editor.Layout.rows.[2] c
-            check (editor.Expanded=Some 2 && editor.Selected=c) "Clicking another row's tab did not expand it"
+            clickTab editor.Layout.rows.[rowOf c] c
+            check (editor.Expanded=Some(rowOf c) && editor.Selected=c) "Clicking another row's tab did not expand it"
             editor.Press Keys.Escape
-            // Taking a lone window out, as its menu does, ends its row; a loose window dragged onto
-            // a row's tabs joins that group.
-            editor.TakeOut c
-            check (editor.Draft.loose=[e;f;b;c] && editor.Draft.groups.Length=2) (sprintf "Taking the lone window out did not end its row: %A" editor.Draft)
+            // A window in no group dragged onto a row's tabs joins that group.
+            let rowsBefore = editor.Draft.groups.Length
             let l = editor.Layout
             editor.MouseDown(centre (l.looseTabs |> List.find(fun (each,_) -> each=e) |> snd))
-            let slot = let r = tabIn l.rows.[1] d in Point(r.Right+Dpi.scale 20,r.Y+r.Height/2)
+            let slot = let r = tabIn l.rows.[rowOf d] d in Point(r.Right+Dpi.scale 20,r.Y+r.Height/2)
             editor.MouseMove(Point(slot.X,slot.Y+Dpi.scale 60))
             editor.MouseMove(slot)
             editor.MouseUp(slot)
-            check (tabsOf 1=[d;e] && editor.Draft.loose=[f;b;c]) (sprintf "A loose window dragged onto a row's tabs did not join the group: %A" editor.Draft)
+            check (tabsOf (rowOf d)=[d;e] && editor.Draft.loose=[f] && editor.Draft.groups.Length=rowsBefore) (sprintf "A window in no group dragged onto a row's tabs did not join the group: %A" editor.Draft)
             let plan = editor.Plan
-            check (plan.detached=[b;c] && plan.groups.Length=1 && plan.groups.Head.joining=[e] && not plan.groups.Head.reorder && plan.groups.Head.layout.IsNone)
+            check (plan.detached=[] && (plan.groups |> List.exists(fun p -> p.tabs=[d;e] && List.contains e p.joining && p.layout.IsNone)))
                   (sprintf "The overview's plan is not as expected: %A" plan)
+            // The rows of one made above go to the bin, out of the way of what follows.
+            for hwnd in [b;c] do
+                (match editor.TabMenu hwnd |> List.tryPick(function CmiRegular r when r.text=tr Strings.GroupEditor.closeOnSave -> Some r | _ -> None) with
+                 | Some r -> r.click() | None -> failwith "No Close on save")
+            check ((editor.Draft.groups |> List.map(fun g -> g.tabs))=[[a];[d;e]]) (sprintf "The rows are not as the next checks expect: %A" editor.Draft)
             // A window alone in its row carried to another row's tabs empties its own: its band stays
             // while the drag lasts, so the row below does not move up under the pointer, and takes
             // a drop as New group does; the drop where the pointer is leaves the tab where it joined.
@@ -548,8 +618,9 @@ let main() =
                 GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a}],shown,Some 0)
             let panes (editor:GroupEditorForm) = GroupDraft.paneWindows editor.Draft.groups.[0]
             let editor = opened()
-            check (panes editor=[a;b] && (editor.TabMenu c).Length=1 && (editor.TabMenu a).Length=2) "The menu of a tab in a pane did not offer to take it out of the pane"
-            (match List.last (editor.TabMenu a) with CmiRegular r -> r.click() | _ -> failwith "The tab's menu did not end with a regular item")
+            let offersLeave hwnd = editor.TabMenu hwnd |> List.exists(function CmiRegular r -> r.text=tr Strings.GroupEditor.leavePane | _ -> false)
+            check (panes editor=[a;b] && not (offersLeave c) && offersLeave a) "The menu of a tab in a pane did not offer to take it out of the pane"
+            (match editor.TabMenu a |> List.tryPick(function CmiRegular r when r.text=tr Strings.GroupEditor.leavePane -> Some r | _ -> None) with Some r -> r.click() | None -> failwith "The tab's menu did not offer to take it out of the pane")
             check (not(List.contains a (panes editor)) && editor.Draft.groups.[0].tabs=[a;b;c]) (sprintf "Taking a window out of its pane by the menu did not keep it a tab: %A" editor.Draft)
             editor.Close()
         // Opened as the app opens it: every row folded, centred on the screen of the window in
@@ -648,11 +719,10 @@ let main() =
             editor.ButtonDown(MouseButtons.Right,room)
             check editor.MenuOpen "A right click on the row's empty room opened no menu"
             editor.DismissMenu()
+            // A right click that closes one menu opens the next: the row it is on gets its menu.
             editor.ButtonDown(MouseButtons.Right,room)
             editor.ButtonUp(MouseButtons.Right,room)
-            check (not editor.MenuOpen) "The right click that closed the menu opened another"
-            editor.ButtonDown(MouseButtons.Right,room)
-            check editor.MenuOpen "The right click after the one that closed the menu opened none"
+            check editor.MenuOpen "The right click that closed the menu did not open the next"
             editor.DismissMenu()
             let tab = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=b) |> snd
             let onTab = Point(tab.X+tab.Width/2,tab.Y+tab.Height/2)
@@ -675,10 +745,22 @@ let main() =
             (match editor.RowMenu 0 |> List.tryPick(function CmiRegular r when r.text=tr Strings.GroupEditor.ungroup -> Some r | _ -> None) with
              | Some r -> r.click()
              | None -> failwith "The row's menu offered no Ungroup")
-            check (editor.Draft.groups.IsEmpty && editor.Draft.loose=[c;a;b]) (sprintf "Ungroup by the menu did not set the windows loose: %A" editor.Draft)
+            check ((editor.Draft.groups |> List.map(fun g -> g.tabs))=[[c];[a];[b]] && editor.Draft.loose.IsEmpty) (sprintf "Ungroup by the menu did not leave each window a row of its own: %A" editor.Draft)
+            editor.Close()
+        // A row with a long first title is named short in the menus, so one title does not set
+        // the submenu's width.
+        do
+            let long = String.replicate 6 "A long window title "
+            let shown = List.zip [a;b] [long;"Two"] |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
+            let frame = Rect(Pt(100,100),Sz(1600,900))
+            let desk = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a] Set.empty GroupLayout.Single; GroupDraft.ofGroup (IntPtr 2) [b] Set.empty GroupLayout.Single] []
+            let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a};{group=Some(IntPtr 2); frame=frame; active=b}],shown,None)
+            let names = editor.RowMenu 1 |> List.tryPick(function CmiPopUp p -> Some(p.items.list |> List.choose(function CmiRegular r -> Some r.text | _ -> None)) | _ -> None) |> Option.defaultValue []
+            check (names.Length=1 && names.Head.EndsWith "…" && names.Head.Length<=GroupEditorMetrics.menuNameLength && names.Head.StartsWith "A long window title")
+                  (sprintf "A long title was not cut short in the menu: %A" names)
             editor.Close()
         // A whole row taken by its band's empty room: dropped on another row, its windows join that
-        // group; dropped on the loose row, they all go loose.
+        // group; dropped on the bin, they close on Save.
         do
             let shown = List.zip [a;b;c] ["One";"Two";"Three"] |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
             let frame = Rect(Pt(100,100),Sz(1600,900))
@@ -702,38 +784,43 @@ let main() =
             editor.MouseMove(room l.rows.[1].band)
             editor.MouseUp(room l.rows.[1].band)
             check (editor.Draft.groups.Length=1 && editor.Draft.groups.[0].tabs=[c;a;b] && editor.Draft.groups.[0].group=Some(IntPtr 2)) (sprintf "A row dropped on another did not join its group: %A" editor.Draft)
+            // With no window in no group there is no row for them; a row dropped on + New group,
+            // which takes tabs alone, stays as it is.
             let l = editor.Layout
+            check (l.loose.Height=0 && l.looseTabs.IsEmpty) "A row for windows in no group shows with none"
+            check (l.newGroup.Height=l.closing.Height) (sprintf "The + New group band is %d tall beside an empty bin %d tall" l.newGroup.Height l.closing.Height)
             editor.MouseDown(room l.rows.[0].band)
             editor.MouseMove(Point((room l.rows.[0].band).X,(room l.rows.[0].band).Y+Dpi.scale 12))
-            editor.MouseMove(centre l.loose)
-            editor.MouseUp(centre l.loose)
-            check (editor.Draft.groups.IsEmpty && editor.Draft.loose=[c;a;b]) (sprintf "A row dropped on the loose row did not dissolve: %A" editor.Draft)
-            // A click on the loose row's empty room changes nothing.
-            let l = editor.Layout
-            editor.MouseDown(centre l.loose)
-            editor.MouseUp(centre l.loose)
-            check (editor.Draft.loose=[c;a;b] && editor.Expanded=None) "A click on the loose row's empty room changed something"
+            editor.MouseMove(centre l.newGroup)
+            editor.MouseUp(centre l.newGroup)
+            check (editor.Draft.groups.Length=1 && editor.Draft.groups.[0].tabs=[c;a;b] && editor.Expanded=None) (sprintf "A row dropped on + New group changed something: %A" editor.Draft)
             // A whole row dropped on the bin puts every window of it there, to close on Save.
             do
-                let l = editor.Layout
-                editor.MouseDown(centre (l.looseTabs |> List.find(fun (hwnd,_) -> hwnd=c) |> snd))
-                editor.MouseMove(centre l.newGroup)
-                editor.MouseUp(centre l.newGroup)
-                check (editor.Draft.groups.Length=1 && editor.Draft.groups.[0].tabs=[c]) (sprintf "A tab on the new group's band made no row: %A" editor.Draft)
+                let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a};{group=Some(IntPtr 2); frame=frame; active=c}],shown,None)
                 let l = editor.Layout
                 editor.MouseDown(room l.rows.[0].band)
                 editor.MouseMove(Point((room l.rows.[0].band).X,(room l.rows.[0].band).Y+Dpi.scale 12))
                 editor.MouseMove(centre l.closing)
                 editor.MouseUp(centre l.closing)
-                check (editor.Draft.groups.IsEmpty && editor.Draft.closing=[c] && editor.Draft.loose=[a;b]) (sprintf "A row dropped on the bin did not put its windows in it: %A" editor.Draft)
-            // The bin's edge is in the red Windows warns in, so it reads as where windows close.
+                check (editor.Draft.groups.Length=1 && editor.Draft.closing=[a;b] && editor.Draft.loose.IsEmpty) (sprintf "A row dropped on the bin did not put its windows in it: %A" editor.Draft)
+                editor.Close()
+            // The bin's edge is in the red Windows warns in, so it reads as where windows close,
+            // and dashed, so it reads as a place to drop into: along its left side some pixels
+            // are red and some are the band's own colour.
             if not SystemInformation.HighContrast then
                 let l = editor.Layout
                 use image = editor.RenderHovered()
                 let warning = if ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
                 let distance (x:Color) (y:Color) = abs(int x.R-int y.R)+abs(int x.G-int y.G)+abs(int x.B-int y.B)
-                let edge = [for x in l.closing.X-1..l.closing.X+2 -> image.GetPixel(x,l.closing.Y+l.closing.Height/2)] |> List.minBy (distance warning)
-                check (distance edge warning<120) (sprintf "The bin's edge is %A, not the warning red %A" edge warning)
+                let middle = l.closing.Y+l.closing.Height/2
+                let side y = [for x in l.closing.X-1..l.closing.X+2 -> image.GetPixel(x,y)] |> List.minBy (distance warning)
+                let edge = [for y in middle-6..middle+6 -> side y]
+                // Light, so a dash is only a tint of the red over the band: redder than it is
+                // green or blue, and nearer the red than a solid line's full strength would be far.
+                let reddish (pixel:Color) = int pixel.R-int pixel.G>=20 && int pixel.R-int pixel.B>=12 && distance pixel warning<300
+                check (edge |> List.exists reddish) (sprintf "The bin's edge is %A, not a tint of the warning red %A" (side middle) warning)
+                check (edge |> List.exists(fun pixel -> not (reddish pixel))) "The bin's edge is a solid line, not dashed"
+                check (edge |> List.forall(fun pixel -> distance pixel warning>60)) (sprintf "The bin's edge is the full warning red, not a lighter tint: %A" (side middle))
             editor.Close()
         // A row whose tabs wrap: a tab carried into the gap between the lines keeps its line, rather
         // than flipping between two layouts as the nearer line changes; on the other line, it moves.

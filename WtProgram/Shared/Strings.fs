@@ -781,10 +781,10 @@ module Strings =
         let windows count =
             { en=(if count=1 then "1 window" else sprintf "%d windows" count); zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نافذة" count }
         let save = { en="Save"; zh="保存"; ja="保存"; ar="حفظ" }
-        let hint = { en="Drag tabs along the strip or onto a pane; the corner button splits a pane; right-click a tab to take it out; Esc goes back."
-                     zh="沿标签条或往窗格里拖标签；窗格角上的按钮可拆分；右键标签可移出分组；Esc 回到全部分组。"
-                     ja="タブをストリップに沿って、またはペインへドラッグ。ペイン隅のボタンで分割、タブの右クリックで外し、Esc で戻ります。"
-                     ar="اسحب علامات التبويب على طول الشريط أو إلى لوحة؛ زر الزاوية يقسم اللوحة؛ انقر بزر الفأرة الأيمن على علامة تبويب لإخراجها؛ وEsc يعود." }
+        let hint = { en="Drag tabs along the strip or onto a pane; the corner button splits a pane; right-click a tab for more; Esc goes back."
+                     zh="沿标签条或往窗格里拖标签；窗格角上的按钮可拆分；右键标签有更多操作；Esc 回到全部分组。"
+                     ja="タブをストリップに沿って、またはペインへドラッグ。ペイン隅のボタンで分割、タブの右クリックで他の操作、Esc で戻ります。"
+                     ar="اسحب علامات التبويب على طول الشريط أو إلى لوحة؛ زر الزاوية يقسم اللوحة؛ انقر بزر الفأرة الأيمن على علامة تبويب للمزيد؛ وEsc يعود." }
         let noGroup = { en="The window in front is in no group."; zh="当前窗口不在任何分组里。"; ja="手前のウィンドウはどのグループにもありません。"; ar="النافذة الأمامية ليست في أي مجموعة." }
         /// What saving did.
         let applied moved detached made closed =
@@ -813,18 +813,25 @@ module Strings =
               ar=sprintf "%d مجموعة، %d نافذة" groups windows }
         /// The bin's label, and what it says while empty.
         let closeBin = { en="Close on save"; zh="保存时关闭"; ja="保存時に閉じる"; ar="تُغلق عند الحفظ" }
-        let closeBinEmpty = { en="Drop tabs or a whole row here to close their windows when you save"; zh="把标签或整行拖到这里，保存时关闭这些窗口"; ja="タブや行ごとここにドロップすると、保存時にそのウィンドウを閉じます"; ar="أفلت علامات التبويب أو صفًا كاملًا هنا لإغلاق نوافذها عند الحفظ" }
+        let closeBinEmpty = { en="Drop here to close on Save"; zh="拖到这里，保存时关闭"; ja="ここにドロップで保存時に閉じる"; ar="أفلت هنا للإغلاق عند الحفظ" }
         /// The row menu's item that puts every window of the row in the bin.
         let closeRow = { en="Close its windows on save"; zh="保存时关闭这些窗口"; ja="保存時にこれらのウィンドウを閉じる"; ar="إغلاق نوافذه عند الحفظ" }
-        let looseWindows = { en="Loose windows"; zh="未分组窗口"; ja="未分類のウィンドウ"; ar="نوافذ غير مجمّعة" }
+        /// The band under the rows that starts a row of one, and the tab menu's item for it.
+        let newGroup = { en="New group"; zh="新建组"; ja="新しいグループ"; ar="مجموعة جديدة" }
+        /// The row of the windows in no group, shown only while there are any, to drag from.
+        let notGrouped = { en="Not grouped"; zh="未分组"; ja="未分類"; ar="غير مجمّعة" }
+        /// The tab's menu: into another row, listed by their first tabs.
+        let moveTo = { en="Move to"; zh="移到"; ja="移動先"; ar="نقل إلى" }
+        let closeOnSave = { en="Close on save"; zh="保存时关闭"; ja="保存時に閉じる"; ar="إغلاق عند الحفظ" }
+        /// A window in the bin, kept open after all: back among those with no group.
+        let keepOpen = { en="Keep open"; zh="保留，不关闭"; ja="閉じない"; ar="إبقاؤها مفتوحة" }
+        let expandRow = { en="Expand"; zh="展开"; ja="展開"; ar="توسيع" }
+        let collapseRow = { en="Collapse"; zh="折叠"; ja="折りたたむ"; ar="طي" }
         /// In the loose row while no window is on its own: what the row is for.
-        let looseEmpty = { en="Ungroup: drop a tab or a whole row here"; zh="移出分组：把标签或整行拖到这里"; ja="グループ解除：タブや行ごとここにドロップ"; ar="فك التجميع: أفلت علامة تبويب أو صفًا كاملًا هنا" }
-        let newGroup = { en="New group: drop a tab here"; zh="新建分组：拖到这里"; ja="新しいグループ：ここにドロップ"; ar="مجموعة جديدة: أفلت علامة تبويب هنا" }
-        let overviewHint = { en="Drag a tab to another row, Ungroup or New group; drag a row by its empty room onto another to merge; click a tab or a row to expand it."
-                             zh="把标签拖到别的行、“移出分组”或“新建分组”；按住行的空白处拖到别的行即合并；点标签或行即展开。"
-                             ja="タブを別の行、グループ解除、新しいグループへドラッグ。行の空きをつかんで別の行へ重ねると統合、タブや行をクリックで展開。"
-                             ar="اسحب علامة تبويب إلى صف آخر أو فك التجميع أو مجموعة جديدة؛ اسحب صفًا من فراغه إلى صف آخر لدمجهما؛ انقر علامة تبويب أو صفًا لتوسيعه." }
-        let removeTab = { en="Take out of the group"; zh="移出分组"; ja="グループから外す"; ar="إخراج من المجموعة" }
+        let overviewHint = { en="Drag tabs between rows, or to + New group for a group of their own. Drag a row by its empty room onto another row to merge them. Right-click for more."
+                             zh="标签可拖到其他行，或拖到“+ 新建组”自成一组。按住行的空白处拖到另一行可合并。右键有更多操作。"
+                             ja="タブは別の行へ、または「+ 新しいグループ」へドラッグして単独のグループにできます。行の空き部分をつかんで別の行に重ねると結合します。右クリックで他の操作。"
+                             ar="اسحب علامات التبويب بين الصفوف، أو إلى «+ مجموعة جديدة» لتكوين مجموعة مستقلة. اسحب صفًا من فراغه فوق صف آخر لدمجهما. انقر بالزر الأيمن للمزيد." }
         /// For a window in a pane: it stays a tab of its group, out of the split.
         let leavePane = { en="Take out of the pane"; zh="移出窗格"; ja="ペインから外す"; ar="إخراج من اللوحة" }
         /// The row's menu, from a right click on its empty room.

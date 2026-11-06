@@ -3,7 +3,7 @@
 Status: design of 2026-10-29; phases 1 to 4 of section 7 are implemented: the model,
 `ReplaceLayout`, `SetTabOrder` and the apply pipeline; the popup (`GroupEditor.fs`, opened by
 **Edit groups…** from the palette, the Workspaces page or its key) with every group of the desktop as
-a row, folded at first, the loose row and the new group's band, and
+a row, folded at first, the windows not grouped, the + New group band and the bin, and
 dragging within and between rows, the tab menu, the split button and its empty cells, with
 `tests/GroupEditor.fsx`. Phase 5's polish (the greyed tab and row for what is gone, the docs
 beyond this file, the README) is not.
@@ -55,7 +55,7 @@ picture, and moves the windows once, when the user is done.
   background, as the Settings window is, the bands a step lighter in its surface colour and
   the tabs another step in its selection colour, as the Settings controls are, with the
   accent as a tint on what is selected; only the
-  New group zone is dashed, as a place to drop into. High contrast gets the system's
+  bin's edge is dashed, in the warning red, as a place to drop into. High contrast gets the system's
   outlines through `SettingsColors.current()`, as every settings-style popup does.
 - It lists the groups on the virtual desktop in view, as the split view's window list does,
   and the loose windows there: the windows the window search lists on their own, those
@@ -76,9 +76,12 @@ picture, and moves the windows once, when the user is done.
 │  ▌[🌐 Edge – Docs] 🗗 Notepad – notes.txt ▣  ⬛ Terminal ▣  📁 Downloads         ⌄  │
 │  ▌[📁 Downloads] 📁 Documents  📁 Pictures                                     ⌄  │
 │  ▌[⬛ Terminal]                                                                ⌄  │
-│  ▌ 📄 report.pdf  🎵 Spotify                                          Loose windows │
+│  ▌ 📄 report.pdf  🎵 Spotify                                            Not grouped │
 │  ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐ │
-│                        + New group: drop a window here                          │
+│                                 + New group                                     │
+│  └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘ │
+│  ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐ │
+│                      Drop here to close on Save                       Close on save │
 │  └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘ │
 │  Drag tabs between rows to regroup; Enter expands a row.                  [Cancel] [Save]
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -96,16 +99,21 @@ picture, and moves the windows once, when the user is done.
   title: the active tab names it, as the
   strip names a group on the taskbar.
 - **The row's menu**, on a right click of its band's empty room, holds only what a drag
-  does less handily with many rows: merge the row into another, named by its first tab, as
-  dropping the row on it does, or ungroup it, its windows going loose, as dropping it on
-  the loose row does. Nothing a click does is in it; the row has no button.
+  does less handily with many rows: expand or collapse it, merge the row into another,
+  named by its first tab, as dropping the row on it does, ungroup it, each window a row of
+  its own, or close its windows on Save. Nothing a click does is in it; the row has no button.
   A folded row shows no picture of the group (a thumbnail there was tried and dropped: too
   small to read, and it cost a live DWM picture per row); the tabs say which group is
   which, and the seam button between two of them says it is split.
-- **Loose windows.** The last row, a shade darker than the group rows: the windows in no
-  group as the same blocks, with "Loose windows" at the right end and, while there is
-  none, a line saying that a tab or a whole row dropped there leaves its group. Under it
-  **New group**, a dashed, empty band that takes a drop, saying so in its own words.
+- **Not grouped.** After the rows, only while there are windows in no group: those
+  windows as the same blocks, a shade darker, with "Not grouped" at the right end. It is
+  a list to drag from, not a place to drop: nothing happens over it. Under it a dashed,
+  empty **+ New group** band, always there: a tab dropped on it starts a row of its own,
+  which takes more tabs as any row does, and is a group of one on Save; a tab alone in its
+  row is not offered it. Ungroup in a row's menu leaves each window a row of its own the
+  same way. Under that the **bin**, dashed in a tint of the warning red, whose windows
+  close on Save; Keep open puts a window back among the not grouped if that is where it
+  was, else in a row of its own.
 - **Expanding.** Clicking a tab of the row, which is then the selected one, or the band's
   empty room, grows that row
   in place over 180ms, the rows below sliding down (and folds it back the same way), into
@@ -117,9 +125,8 @@ picture, and moves the windows once, when the user is done.
   tab again or the strip's empty room, or expanding another row, goes back to the overview.
 - **A whole row.** Pressed on its band's empty room, a row comes along under the pointer
   as it is, its old place faded behind it. Dropped on another row, every window of it joins that group, after the
-  group's own; dropped on the loose row, the group dissolves and its windows stand on their
-  own. The row it is over is lit. A click on the empty room alone expands the row, or folds
-  it back.
+  group's own; dropped on the bin, its windows close on Save. The row it is over is lit.
+  A click on the empty room alone expands the row, or folds it back.
 
 ### 2.3 A group expanded
 
@@ -223,9 +230,10 @@ Between rows:
 | --- | --- | --- |
 | any tab of a group | another row's tabs | the window joins that row as the pointer arrives, at the place among its tabs, the others making room; carried on, it moves on with the pointer |
 | any tab of a group | the expanded row's cell or edge | the window leaves its group (its pane closing as above) and joins the expanded one as the table above says |
-| any tab of a group | the loose windows row | the window leaves its group and stands on its own, as the pointer arrives |
+| any tab of a group | the not grouped list | nothing: it is not a drop |
 | a loose window | a row's tabs, or the expanded row's cell or edge | the window joins that group as above |
-| any tab | New group | a new row with that one window, above the loose row; drop more on it as on any row |
+| any tab, or a window not grouped | the + New group band | a new row with that one window, after the rows; drop more on it as on any row |
+| any tab, window not grouped or window in the bin | its menu | Move to a row by name; New group (a row of its own); Take out of the pane; Close on save; in the bin, Keep open and Move to |
 
 A row left with no window goes: the group would exit on its own once its last window
 left, and the picture says so first. While the drag that emptied it lasts, its band stays
@@ -377,7 +385,7 @@ the main STA with the other popups, one at a time.
   captured layouts, opening the popup as the palette opens, keeping one at a time.
 - `WtProgram/Commands.fs`, `Shared/SettingsCatalog.fs`, `TabStripDecorator.fs`: the
   command, its shortcut entry and the tab menu item.
-- `WtProgram/Shared/Strings.fs`: title, Loose windows, New group, Expand, the shapes'
+- `WtProgram/Shared/Strings.fs`: title, New group, Close on save, Move to, Keep open, Expand, Collapse, the shapes'
   names, Drop a window here, the drag hints, Save, Cancel, the notices; `en`, `zh`, `ja`
   (and `ar` as the file has it).
 
@@ -408,8 +416,9 @@ the main STA with the other popups, one at a time.
 2. The popup with one row expanded: the strip, the content with its pictures, Save and
    Cancel, the entry points and strings. Rendering tests.
 3. Dragging within a row, taking a tab out, the split button and its empty cells.
-4. The overview: every group as a row of its tabs, the loose row, New group,
-   expanding a row, dragging between rows. Rendering and drag tests for the overview.
+4. The overview: every group as a row of its tabs, the loose row, the bin,
+   expanding a row, dragging between rows and onto a loose window, the menus. Rendering
+   and drag tests for the overview.
 5. Polish: the greyed tab and row for what is gone, the notice naming what was done,
    docs (`architecture.md` popups list, this file kept current) and the README's feature
    list.
