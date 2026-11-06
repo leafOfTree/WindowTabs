@@ -24,12 +24,29 @@ module WindowTitleMatcher =
     let labels = [| Strings.Workspaces.exactMatch; Strings.Workspaces.startsWith; Strings.Workspaces.endsWith
                     Strings.Workspaces.contains; Strings.Workspaces.regularExpression |]
 
+module CommandLineText =
+    /// What a process was started with past its program: the program is the app the rule is for
+    /// already, and its path's quotes would be in the way of a pattern.
+    let arguments (commandLine:string) =
+        if String.IsNullOrWhiteSpace commandLine then "" else
+        let text = commandLine.TrimStart()
+        let programEnd =
+            if text.StartsWith "\"" then
+                match text.IndexOf('"',1) with
+                | -1 -> text.Length
+                | close -> close+1
+            else
+                match text.IndexOfAny [|' ';'\t'|] with
+                | -1 -> text.Length
+                | space -> space
+        text.Substring(programEnd).Trim()
+
 type AppGroupingMatch =
     | NoGroupingRule
     | GroupingTarget of string
 
 /// A window as the grouping rules see it. The command line is read only for a rule that asks for
-/// it: reading it opens the process.
+/// it: reading it opens the process. A rule sees only its arguments (`CommandLineText.arguments`).
 type RuleWindow = { path:string; title:string; className:string; commandLine:unit -> string }
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
@@ -150,7 +167,7 @@ module AppGroupingRules =
                     match field with
                     | WindowTitle -> window.title
                     | WindowClass -> window.className
-                    | _ -> window.commandLine()
+                    | _ -> CommandLineText.arguments (window.commandLine())
                 try test (if isNull value then "" else value) with _ -> false
 
     /// The group a window goes to by the rules: a rule for some of its app's windows, the first

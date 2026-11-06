@@ -96,6 +96,15 @@ let main() =
     check (AppGroupingRules.resolve [broad;titled] (seen "x" "" counted)=GroupingTarget "General" && asked=0) "A rule without a command-line condition read the command line"
     check (AppGroupingRules.resolve [launched] (seen "x" "" counted)=GroupingTarget "Anki" && asked=1) "A command-line condition did not read the command line"
     check (AppGroupingRules.resolve [{launched with matchType=4;title="("}] (seen "x" "" (fun () -> "x"))=NoGroupingRule) "A pattern that cannot be compiled matched or raised"
+    // A command-line rule sees only the arguments: the program is the app already, and its
+    // quoted path would be in the way of an exact match or a starts-with.
+    check (CommandLineText.arguments "\"C:\\Program Files\\App\\app.exe\" /SESSION:abc --x"="/SESSION:abc --x"
+           && CommandLineText.arguments @"C:\Python\pythonw.exe -m anki"="-m anki"
+           && CommandLineText.arguments "  \"C:\\a b\\x.exe\"  "="" && CommandLineText.arguments "x.exe"="" && CommandLineText.arguments null=""
+           && CommandLineText.arguments "\"C:\\no close"="")
+          "A command line's arguments were not taken past its program"
+    check (AppGroupingRules.resolve [{launched with matchType=0;title="-m anki"}] (seen "x" "" (fun () -> "\"C:\\Python\\pythonw.exe\" -m anki"))=GroupingTarget "Anki")
+          "An exact command-line condition did not match the arguments alone"
     check (not (AppGroupingRules.hasEnabled [titled] @"c:\editor.exe") && AppGroupingRules.hasEnabled [titled;broad] @"c:\editor.exe") "A rule for some windows claimed the whole app"
     check ((AppGroupingRules.problem {titled with title=" "}).IsSome && (AppGroupingRules.problem {titled with matchType=4;title="("}).IsSome
            && (AppGroupingRules.problem titled).IsNone && (AppGroupingRules.problem broad).IsNone) "A condition's problems were not reported"

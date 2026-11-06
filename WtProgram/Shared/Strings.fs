@@ -1024,10 +1024,12 @@ module Strings =
                                 zh="窗口的内部类型名，重启后也不变；标题经常变化时用它。"
                                 ja="ウィンドウ内部の種類名。再起動しても変わらないので、タイトルがよく変わるウィンドウに向きます。"
                                 ar="اسم النوع الداخلي للنافذة؛ يبقى كما هو بعد إعادة التشغيل، فيناسب النوافذ التي يتغير عنوانها." }
-        let commandLineHint = { en="How the window's process was started; it tells apart apps that share one program, such as pythonw or java."
-                                zh="窗口进程的启动命令；用来区分共用同一个程序的应用，如 pythonw、java。"
-                                ja="ウィンドウのプロセスの起動コマンド。pythonw や java など同じプログラムを共有するアプリを見分けます。"
-                                ar="كيف بدأت عملية النافذة؛ يميز التطبيقات التي تشترك في برنامج واحد مثل pythonw أو java." }
+        let commandLineHint = { en="The arguments the window's program was started with; they tell apart apps that share one program, such as pythonw or java."
+                                zh="窗口程序启动时带的参数；用来区分共用同一个程序的应用，如 pythonw、java。"
+                                ja="ウィンドウのプログラムに起動時に渡された引数。pythonw や java など同じプログラムを共有するアプリを見分けます。"
+                                ar="الوسائط التي بدأ بها برنامج النافذة؛ تميز التطبيقات التي تشترك في برنامج واحد مثل pythonw أو java." }
+        /// Over an empty list of command lines: the app's windows are open, with nothing after the program.
+        let noArguments = { en="Its windows open now were started with no arguments."; zh="它当前打开的窗口启动时都没有带参数。"; ja="今開いているウィンドウは引数なしで起動されています。"; ar="نوافذه المفتوحة الآن بدأت بلا وسائط." }
         /// Over the values of the app's open windows, which a click puts in the pattern.
         let openWindowsNow = { en="From the app's windows open now, to click:"; zh="该应用当前打开的窗口，点击填入："; ja="このアプリで今開いているウィンドウ（クリックで入力）："; ar="من نوافذ التطبيق المفتوحة الآن، انقر للإدخال:" }
         let noOpenWindows = { en="The app has no window open now."; zh="该应用现在没有打开的窗口。"; ja="このアプリのウィンドウは今開いていません。"; ar="لا توجد نافذة مفتوحة لهذا التطبيق الآن." }

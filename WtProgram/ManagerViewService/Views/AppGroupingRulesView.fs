@@ -258,7 +258,7 @@ type ChipConditionMenu() =
 /// it is kept. A line says what the field is, and the field's values in the app's windows open
 /// now are listed, a click putting one in the pattern, so the choice is made on what is there
 /// rather than on the field's name. Cancel, or Escape, leaves the rule as it was.
-type RuleConditionDialog(title:string, field:string, hint:string, examples:string list, matchType:int, pattern:string, problem:int -> string -> string option) as this =
+type RuleConditionDialog(title:string, field:string, hint:string, examplesNote:string, examples:string list, matchType:int, pattern:string, problem:int -> string -> string option) as this =
     inherit Form()
     /// The ways to match in the order offered, Contains first as the usual one; a rule keeps
     /// the way's own number.
@@ -308,8 +308,7 @@ type RuleConditionDialog(title:string, field:string, hint:string, examples:strin
         row methodChoice 2
         row patternInput 3
         // The field's values in the app's windows open now, each put in the pattern by a click.
-        row (new Label(Text=tr (if examples.IsEmpty then Strings.AppRules.noOpenWindows else Strings.AppRules.openWindowsNow),
-                       AutoSize=true,UseMnemonic=false,Tag="muted",Name="rule-examples-heading",MaximumSize=Size(width,0),Margin=Padding(0,Dpi.scale 14,0,Dpi.scale 4))) 4
+        row (new Label(Text=examplesNote,AutoSize=true,UseMnemonic=false,Tag="muted",Name="rule-examples-heading",MaximumSize=Size(width,0),Margin=Padding(0,Dpi.scale 14,0,Dpi.scale 4))) 4
         let exampleList = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.TopDown,
                                               WrapContents=false,Margin=Padding.Empty,Name="rule-examples")
         let plain = SettingsUi.bodyFont()
@@ -525,25 +524,31 @@ type AppGroupingRulesView() as this =
         let kept = AppGroupingRules.isConditioned rule && rule.field=field
         let withCondition matchType pattern = {rule with field=field;title=pattern;matchType=matchType}
         // The field's value in each of the app's windows open now, each value once, the
-        // topmost first; the command line is read only for a rule that asks for it.
-        let examples =
+        // topmost first; the command line, read only for a rule that asks for it, as its
+        // arguments, which is what the rule sees.
+        let values =
             try
                 OS().windowsInZorder.toArray |> Array.choose(fun window ->
                     try
                         if window.isWindow && Services.filter.isAppWindow(window.hwnd) && AppIdentity.same window.pid.processPath rule.processPath then
-                            let value =
-                                match field with
-                                | WindowTitle -> window.text
-                                | WindowClass -> window.className
-                                | CommandLine -> window.pid.commandLine
-                                | AppOnly -> ""
-                            if String.IsNullOrWhiteSpace value then None else Some(value.Trim())
+                            match field with
+                            | WindowTitle -> Some window.text
+                            | WindowClass -> Some window.className
+                            | CommandLine -> Some(CommandLineText.arguments window.pid.commandLine)
+                            | AppOnly -> None
                         else None
                     with _ -> None)
-                |> Array.distinct |> Array.truncate 8 |> List.ofArray
+                |> Array.map(fun value -> if isNull value then "" else value.Trim())
+                |> List.ofArray
             with _ -> []
+        let examples = values |> List.filter((<>) "") |> List.distinct |> List.truncate 8
+        let examplesNote =
+            if not examples.IsEmpty then Strings.AppRules.openWindowsNow
+            elif values.IsEmpty then Strings.AppRules.noOpenWindows
+            elif field=CommandLine then Strings.AppRules.noArguments
+            else Strings.AppRules.noOpenWindows
         use dialog = new RuleConditionDialog(tr (Strings.AppRules.conditionFor (ApplicationNames.label rule.processPath) (tr (RuleField.label field))),
-                                             tr (RuleField.label field),tr (RuleField.hint field),examples,
+                                             tr (RuleField.label field),tr (RuleField.hint field),tr examplesNote,examples,
                                              (if kept then rule.matchType else 3),(if kept then rule.title else ""),
                                              (fun matchType pattern -> AppGroupingRules.problem (withCondition matchType pattern)))
         let result = match this.FindForm() with null -> dialog.ShowDialog() | owner -> dialog.ShowDialog(owner)

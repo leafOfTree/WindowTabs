@@ -41,7 +41,9 @@ app's windows open now for a click to take, and refuses a pattern it cannot use;
 removing the app. Such a chip has a dashed edge. A rule for some windows comes
 before the app's rule for all of them, and leaves the app in the list above with its
 own Auto-group; the command line is read from the process (`ProcessCommandLine`) only
-for a rule that asks for it. Rules saved without a `field` are for the app's every window.
+for a rule that asks for it, and the rule sees only its arguments past the program
+(`CommandLineText.arguments`), as the dialog lists them. Rules saved without a `field`
+are for the app's every window.
 Empty groups persist in `appGroupingTargets`. Adding an already-mapped
 app to another group moves its single mapping instead of creating competing rules.
 A chip for some of an app's windows shows its condition under the app's name in small

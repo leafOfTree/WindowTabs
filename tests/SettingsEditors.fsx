@@ -1459,7 +1459,7 @@ otepad.exe"]},
                             && dialog.Hint.Text=tr Strings.AppRules.windowTitleHint)
                            (sprintf "The condition dialog did not open ready for a pattern, or does not say what the field is: %s" dialog.Text)
                 let heading = descendants dialog |> Seq.find(fun control -> control.Name="rule-examples-heading")
-                assertTrue (heading.Text=tr (if dialog.Examples.IsEmpty then Strings.AppRules.noOpenWindows else Strings.AppRules.openWindowsNow))
+                assertTrue (heading.Text=tr (if dialog.Examples.IsEmpty then Strings.AppRules.noOpenWindows else Strings.AppRules.openWindowsNow) && heading.Text<>"")
                            "The dialog does not say whose values it lists, or that there are none"
                 dialog.Examples |> List.tryHead |> Option.iter(fun example ->
                     typeof<Label>.GetMethod("OnClick",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(example,[|box EventArgs.Empty|]) |> ignore
