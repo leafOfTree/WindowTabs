@@ -1413,51 +1413,72 @@ otepad.exe"]},
                         (saved() |> List.map(fun rule -> rule.groupName,IO.Path.GetFileName rule.processPath)) tree.Roots.[0].Chips.Length tree.Roots.[1].Chips.Length
                         tree.Roots.Count)
         // A chip is a menu of which of the app's windows the group takes: all, or those whose
-        // title, window class or command line matches, whose condition opens below the list;
-        // and of leaving the group.
-        let conditionPanel = descendants groupView |> Seq.find(fun control -> control.Name="rule-condition")
-        let fieldChoice = descendants groupView |> Seq.pick(function :? SettingsCombo as combo when combo.Name="rule-field" -> Some combo | _ -> None)
-        let methodChoice = descendants groupView |> Seq.pick(function :? SettingsCombo as combo when combo.Name="rule-method" -> Some combo | _ -> None)
-        let patternBox = descendants groupView |> Seq.pick(function :? TextBox as text when text.Name="rule-pattern" -> Some text | _ -> None)
-        let statusLabel = descendants groupView |> Seq.find(fun control -> control.Name="grouping-status")
+        // title, window class or command line matches, asked for in a dialog; and, set apart
+        // last, leaving the group.
         let conditionMenu = groupView.ConditionMenu
         let chooseCondition index =
             pressChipPart "chipAt" tree.Roots.[1]
             assertTrue (conditionMenu.DropDown |> Option.exists(fun window -> window.Visible)
-                        && conditionMenu.Choice.Value.ItemText(4)=tr Strings.AppRules.removeFromGroup)
-                       "Pressing a chip did not open its menu, or the menu cannot remove the app"
+                        && conditionMenu.Choice.Value.ItemText(4)=tr Strings.AppRules.removeFromGroup
+                        && conditionMenu.Choice.Value.SeparatorsBefore=[4])
+                       "Pressing a chip did not open its menu, the menu cannot remove the app, or that is not set apart"
             conditionMenu.Choice.Value.SelectedIndex <- index
-        assertTrue (tree.Roots.[1].ChipMenu && tree.Roots.[1].ChipTip=tr Strings.AppRules.chipTip && not conditionPanel.Visible)
-                   "A group's chip is not a menu, does not say what it is for, or the condition shows unasked"
+        /// Drives the modal condition dialog once it opens, from a timer inside its loop; the
+        /// driver must close it. Says whether it opened at all.
+        let withDialog (drive:RuleConditionDialog -> unit) (act:unit -> unit) =
+            use timer = new Timer(Interval=30)
+            let mutable driven = false
+            timer.Tick.Add(fun _ ->
+                if not driven then
+                    match Application.OpenForms |> Seq.cast<Form> |> Seq.tryPick(function :? RuleConditionDialog as dialog when dialog.Visible -> Some dialog | _ -> None) with
+                    | Some dialog ->
+                        driven <- true
+                        timer.Stop()
+                        drive dialog
+                    | None -> ())
+            timer.Start()
+            act()
+            driven
+        let press (button:IButtonControl) = (button :?> Button).PerformClick()
+        assertTrue (tree.Roots.[1].ChipMenu && tree.Roots.[1].ChipTip=tr Strings.AppRules.chipTip
+                    && descendants groupView |> Seq.forall(fun control -> control.Name<>"rule-condition"))
+                   "A group's chip is not a menu, does not say what it is for, or a condition editor sits under the list"
+        assertTrue (not (withDialog ignore (fun () -> chooseCondition 0)) && saved().Head.field=AppOnly)
+                   "Choosing the whole app for a chip that takes it already opened a dialog or changed something"
+        // A field opens its dialog ready for a pattern, which OK asks for before it closes.
+        let opened =
+            withDialog (fun dialog ->
+                assertTrue (dialog.Method.SelectedIndex=3 && dialog.Pattern.Text="" && dialog.Text=tr (Strings.AppRules.conditionFor (IO.Path.GetFileName selectedPath) (tr Strings.AppRules.windowTitle)))
+                           (sprintf "The condition dialog did not open ready for a pattern: %s" dialog.Text)
+                press dialog.AcceptButton
+                assertTrue (dialog.Visible && dialog.Status.Text=tr Strings.AppRules.requiredTitle && saved().Head.field=AppOnly)
+                           "OK with no pattern closed the dialog, saved, or did not ask for one"
+                dialog.Pattern.Text <- "Anki"
+                press dialog.AcceptButton) (fun () -> chooseCondition 1)
+        assertTrue (opened && saved().Length=1 && saved().Head.field=WindowTitle && saved().Head.title="Anki" && saved().Head.matchType=3
+                    && tree.Roots.[1].Chips.Head.Note<>"")
+                   (sprintf "A title condition was not saved from the dialog: %A" (saved() |> List.map(fun rule -> rule.field,rule.title,rule.matchType)))
+        // The field it has comes back as saved; a pattern that cannot be compiled is refused and
+        // said, and Cancel leaves the rule as it was.
+        let opened =
+            withDialog (fun dialog ->
+                assertTrue (dialog.Method.SelectedIndex=3 && dialog.Pattern.Text="Anki" && dialog.Status.Text="") "A chip's condition did not come back as saved"
+                dialog.Pattern.Text <- "("
+                dialog.Method.SelectedIndex <- 4
+                press dialog.AcceptButton
+                assertTrue (dialog.Visible && dialog.Status.Text<>"" && saved().Head.matchType=3 && saved().Head.title="Anki")
+                           "A pattern that cannot be compiled was saved, or nothing said so"
+                press dialog.CancelButton) (fun () -> chooseCondition 1)
+        assertTrue (opened && saved().Head.title="Anki" && saved().Head.matchType=3) "Cancel did not leave the condition as it was"
+        // Another field starts afresh, the saved condition kept while the dialog is cancelled.
+        let opened =
+            withDialog (fun dialog ->
+                assertTrue (dialog.Pattern.Text="" && dialog.Method.SelectedIndex=3) "Choosing another field kept the old pattern"
+                press dialog.CancelButton) (fun () -> chooseCondition 2)
+        assertTrue (opened && saved().Head.field=WindowTitle && saved().Head.title="Anki") "Cancelling another field's dialog changed the rule"
         chooseCondition 0
-        assertTrue (not conditionPanel.Visible && saved().Head.field=AppOnly) "Choosing the whole app for a chip that takes it already opened or changed something"
-        chooseCondition 1
-        assertTrue (conditionPanel.Visible && fieldChoice.SelectedIndex=1 && patternBox.Parent.Visible && methodChoice.Visible && patternBox.Text=""
-                    && saved().Head.field=AppOnly && statusLabel.Text=tr Strings.AppRules.requiredTitle && conditionPanel.Bottom<=groupView.ClientSize.Height)
-                   (sprintf "Choosing a field did not open its condition asking for a pattern: shown %b field %d" conditionPanel.Visible fieldChoice.SelectedIndex)
-        patternBox.Text <- "Anki"
-        key patternBox Keys.Enter
-        assertTrue (saved().Length=1 && saved().Head.field=WindowTitle && saved().Head.title="Anki" && saved().Head.matchType=3
-                    && tree.Roots.[1].Chips.Head.Note<>"" && not conditionPanel.Visible && statusLabel.Text="")
-                   (sprintf "A title condition was not saved from the chip: %A" (saved() |> List.map(fun rule -> rule.field,rule.title,rule.matchType)))
-        // The field it has comes back as saved; a pattern that cannot be compiled is refused and said.
-        chooseCondition 1
-        assertTrue (fieldChoice.SelectedIndex=1 && methodChoice.SelectedIndex=3 && patternBox.Text="Anki" && statusLabel.Text="") "A chip's condition did not come back as saved"
-        patternBox.Text <- "("
-        methodChoice.SelectedIndex <- 4
-        assertTrue (saved().Head.matchType=3 && saved().Head.title="Anki" && statusLabel.Text<>"") "A pattern that cannot be compiled was saved, or nothing said so"
-        key patternBox Keys.Escape
-        assertTrue (not conditionPanel.Visible && saved().Head.title="Anki" && statusLabel.Text="") "Escape did not leave the condition as it was"
-        // Another field starts afresh, the saved condition kept until a pattern is entered.
-        chooseCondition 2
-        assertTrue (conditionPanel.Visible && fieldChoice.SelectedIndex=2 && patternBox.Text="" && saved().Head.field=WindowTitle && saved().Head.title="Anki")
-                   "Choosing another field kept the old pattern or changed the rule before one was entered"
-        key patternBox Keys.Escape
-        chooseCondition 0
-        assertTrue (saved().Head.field=AppOnly && saved().Head.title="" && saved().Head.matchType= -1 && tree.Roots.[1].Chips.Head.Note="" && not conditionPanel.Visible)
+        assertTrue (saved().Head.field=AppOnly && saved().Head.title="" && saved().Head.matchType= -1 && tree.Roots.[1].Chips.Head.Note="")
                    "Back to the whole app did not clear the condition"
-        tree.SelectedItem <- tree.Roots.[0]
-        assertTrue (not conditionPanel.Visible) "Choosing another row left the condition open"
         // The group's box turns all its apps on or off.
         tree.SelectedItem <- tree.Roots.[1]
         regrouped.Clear()

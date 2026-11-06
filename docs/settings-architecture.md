@@ -35,8 +35,9 @@ delete button, and its chips dimmed while it is off. A cut-off chip says its who
 on hover. A chip is a menu, with an arrow
 after its name: which of the app's windows the group takes, all (`AppOnly`) or those
 whose title, window class or command line matches a pattern (exact, starts or ends
-with, contains or a regular expression, ignoring case), which opens the condition's
-controls below the list; and, last, removing the app. Such a chip has a dashed edge. A rule for some windows comes
+with, contains or a regular expression, ignoring case), asked for in a small dialog
+(`RuleConditionDialog`) that refuses a pattern it cannot use; and, set apart last,
+removing the app. Such a chip has a dashed edge. A rule for some windows comes
 before the app's rule for all of them, and leaves the app in the list above with its
 own Auto-group; the command line is read from the process (`ProcessCommandLine`) only
 for a rule that asks for it. Rules saved without a `field` are for the app's every window.

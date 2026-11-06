@@ -1009,7 +1009,7 @@ module Strings =
         let addRule = { en="Add rule"; zh="添加规则"; ja="ルールを追加"; ar="إضافة قاعدة" }
         let invalidRule = { en="Invalid grouping rule"; zh="分组规则无效"; ja="無効なグループ化ルール"; ar="قاعدة التجميع غير صالحة" }
         let requiredFields = { en="Choose an application and enter a target group."; zh="请选择应用并填写目标组。"; ja="アプリを選択して宛先グループを入力してください。"; ar="اختر تطبيقًا وأدخل المجموعة المستهدفة." }
-        let requiredTitle = { en="Enter what to match, or choose All windows."; zh="请填写匹配内容，或选择“全部窗口”。"; ja="一致させる内容を入力するか「すべてのウィンドウ」を選択してください。"; ar="أدخل ما تريد مطابقته، أو اختر «كل النوافذ»." }
+        let requiredTitle = { en="Enter what to match."; zh="请填写匹配内容。"; ja="一致させる内容を入力してください。"; ar="أدخل ما تريد مطابقته." }
         let invalidPattern details = { en="The pattern cannot be used: " + details; zh="无法使用这个模式：" + details; ja="このパターンは使えません: " + details; ar="تعذر استخدام هذا النمط: " + details }
         /// What a rule can look at beside the app, as the condition's first choice.
         let windowTitle = { en="Window title"; zh="窗口标题"; ja="ウィンドウのタイトル"; ar="عنوان النافذة" }
@@ -1020,10 +1020,10 @@ module Strings =
                         zh="该应用的哪些窗口加入：全部，或标题、窗口类名或命令行匹配的窗口；或移除该应用"
                         ja="このアプリのどのウィンドウを含めるか：すべて、またはタイトル・ウィンドウ クラス・コマンド ラインが一致するもの。またはアプリを外す"
                         ar="أي نوافذ التطبيق تنضم: كلها، أو التي يطابق عنوانها أو فئتها أو سطر أوامرها؛ أو إزالة التطبيق" }
-        /// The arrow's menu: a field to match on, which opens the condition's controls.
+        /// The chip's menu: a field to match on, which asks for the condition in a dialog.
         let conditionChoice field = { en=field+"…"; zh=field+"…"; ja=field+"…"; ar=field+"…" }
-        /// Before the condition's controls: the app whose chip opened them, in the chosen row.
-        let conditionFor app = { en=sprintf "%s:" app; zh=sprintf "%s：" app; ja=sprintf "%s：" app; ar=sprintf "%s:" app }
+        /// The condition dialog's title: the app whose chip opened it and the field it matches on.
+        let conditionFor app field = { en=sprintf "%s – %s" app field; zh=sprintf "%s · %s" app field; ja=sprintf "%s – %s" app field; ar=sprintf "%s – %s" app field }
         /// Said on hover over a chip that takes only some of its app's windows.
         let conditionNote field (method:string) pattern =
             { en=sprintf "%s %s “%s”" field (method.ToLowerInvariant()) pattern; zh=sprintf "%s %s “%s”" field method pattern

@@ -1332,6 +1332,8 @@ type SettingsCombo(items:string[]) as this =
     member val SearchCue : string option = None with get,set
     /// The most rows shown at once; more scroll.
     member val MaxRows : int option = None with get,set
+    /// Choices a line is drawn above in the list, as a menu parts its items.
+    member val SeparatorsBefore : int list = [] with get,set
     /// The first choice is a prompt, as "Choose a command…": shown closed, muted, while nothing
     /// is chosen, and left out of the list.
     member val PromptFirst = false with get,set
@@ -1374,10 +1376,17 @@ type SettingsCombo(items:string[]) as this =
                     e.Graphics.FillRectangle(background,e.Bounds)
                     let active = e.Index=hovered ||
                                  (keyboardNavigation && hovered<0 && (e.State &&& DrawItemState.Selected)<>enum 0)
+                    // A line across the top of a row that starts a part of its own, the row's
+                    // highlight starting under it.
+                    let parted = List.contains item this.SeparatorsBefore
+                    if parted then
+                        use line = new Pen(p.border)
+                        e.Graphics.DrawLine(line,e.Bounds.X+Dpi.scale 6,e.Bounds.Y+Dpi.scale 1,e.Bounds.Right-Dpi.scale 6,e.Bounds.Y+Dpi.scale 1)
                     // The chosen one keeps the fill too, as WinUI's list does, its bar beside it.
                     if active || item=selected then
                         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-                        use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 e.Bounds.Y,float32 e.Bounds.Width,float32 e.Bounds.Height)) (SettingsShapes.controlRadius())
+                        let inset = if parted then Dpi.scale 3 else 0
+                        use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 (e.Bounds.Y+inset),float32 e.Bounds.Width,float32 (e.Bounds.Height-inset))) (SettingsShapes.controlRadius())
                         use brush = new SolidBrush(if active || SystemInformation.HighContrast then p.selection else Color.FromArgb(170,p.selection))
                         e.Graphics.FillPath(brush,shape)
                     let foreground = if active && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
