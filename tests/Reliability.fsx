@@ -58,24 +58,59 @@ let main() =
     check ((VirtualDesktop.resolveGroupingDesktop (desktop None) (desktop None) (desktop None) (desktop None)).IsNone)
           "An unconfirmed desktop became a wildcard grouping target"
     let appRule target kind title =
-        { id=Guid.NewGuid().ToString("N");enabled=true;processPath = @"C:\Editor.exe";title=title;matchType=kind
+        { id=Guid.NewGuid().ToString("N");enabled=true;processPath = @"C:\Editor.exe";title=title;matchType=kind;field=AppOnly
           groupId=target;groupName=target }
     let broad = appRule "General" -1 ""
     let legacy = appRule "Project A" 3 "Project A"
     let browser = {broad with id="browser";processPath = @"C:\Browser.exe"}
-    check (AppGroupingRules.resolve [broad] @"c:\EDITOR.exe" "Any title"=GroupingTarget "General") "Application grouping compared titles or path case"
-    check (AppGroupingRules.resolve [{broad with enabled=false}] broad.processPath ""=NoGroupingRule) "Disabled application rule was applied"
-    check (AppGroupingRules.resolve [broad] browser.processPath ""=NoGroupingRule) "Application rule matched another executable"
+    let window path title = { path=path; title=title; className=""; commandLine=(fun () -> "") }
+    check (AppGroupingRules.resolve [broad] (window @"c:\EDITOR.exe" "Any title")=GroupingTarget "General") "Application grouping compared titles or path case"
+    check (AppGroupingRules.resolve [{broad with enabled=false}] (window broad.processPath "")=NoGroupingRule) "Disabled application rule was applied"
+    check (AppGroupingRules.resolve [broad] (window browser.processPath "")=NoGroupingRule) "Application rule matched another executable"
     check (AppGroupingRules.hasEnabled [broad] @"c:\editor.exe") "Custom grouping did not claim its app case-insensitively"
-    check (AppGroupingRules.resolve [broad] @"D:\Updated\EDITOR.exe" ""=GroupingTarget "General") "A custom grouping rule did not apply across installation directories"
+    check (AppGroupingRules.resolve [broad] (window @"D:\Updated\EDITOR.exe" "")=GroupingTarget "General") "A custom grouping rule did not apply across installation directories"
     check (AppGroupingRules.withoutAutoGrouping [broad] [@"c:\editor.exe";browser.processPath]=[browser.processPath]) "Custom grouping retained duplicate automatic grouping"
     check (AppGroupingRules.withoutAutoGrouping [{broad with enabled=false}] [broad.processPath]=[broad.processPath]) "Disabled custom grouping disabled an independent automatic choice"
     let rootRules = JObject(JProperty("appGroupingRules",AppGroupingRules.write [broad;browser]))
     check (AppGroupingRules.read rootRules=[broad;browser]) "Application grouping lost its paths or destination"
     let aliases = JObject(JProperty("appGroupingRules",AppGroupingRules.write [broad;{broad with id="alias";processPath= @"D:\Other\EDITOR.exe"}]))
     check (AppGroupingRules.read aliases=[broad]) "Imported aliases created multiple grouping destinations for one executable"
-    let migrated = JObject(JProperty("appGroupingRules",AppGroupingRules.write [legacy;broad]))
+    // A file from before conditions names no field: its title rules are for the app's every window.
+    let legacyJson = JObject(JProperty("id",legacy.id),JProperty("enabled",true),JProperty("processPath",legacy.processPath),JProperty("title",legacy.title),
+                             JProperty("matchType",legacy.matchType),JProperty("groupId",legacy.groupId),JProperty("groupName",legacy.groupName))
+    let migrated = JObject(JProperty("appGroupingRules",JArray(legacyJson,(AppGroupingRules.write [broad]).[0].DeepClone())))
+    for item in migrated.["appGroupingRules"] :?> JArray do (item :?> JObject).Remove("field") |> ignore
     check (AppGroupingRules.read migrated=[{legacy with title="";matchType= -1}]) "Legacy title rules did not become one application mapping"
+    // Rules for some of an app's windows: by title, window class or command line, before the app's own rule.
+    let titled = {appRule "Project A" 3 "project a" with id="titled";field=WindowTitle}
+    let classed = {appRule "Consoles" 0 "ConsoleWindowClass" with id="classed";field=WindowClass}
+    let launched = {appRule "Anki" 3 "anki" with id="launched";field=CommandLine}
+    let seen title cls (cmd:unit -> string) = { path= @"C:\Editor.exe"; title=title; className=cls; commandLine=cmd }
+    let none () = ""
+    check (AppGroupingRules.resolve [broad;titled] (seen "Project A - notes" "" none)=GroupingTarget "Project A") "A title condition did not take its window, or compared case"
+    check (AppGroupingRules.resolve [broad;titled] (seen "Other" "" none)=GroupingTarget "General") "A window outside the title condition did not fall back to the app's rule"
+    check (AppGroupingRules.resolve [titled] (seen "Other" "" none)=NoGroupingRule) "A window outside the only condition was still grouped by it"
+    check (AppGroupingRules.resolve [classed] (seen "" "consolewindowclass" none)=GroupingTarget "Consoles") "A window class condition did not match"
+    let mutable asked = 0
+    let counted () = asked <- asked+1; @"C:\Python\pythonw.exe -m anki"
+    check (AppGroupingRules.resolve [broad;titled] (seen "x" "" counted)=GroupingTarget "General" && asked=0) "A rule without a command-line condition read the command line"
+    check (AppGroupingRules.resolve [launched] (seen "x" "" counted)=GroupingTarget "Anki" && asked=1) "A command-line condition did not read the command line"
+    check (AppGroupingRules.resolve [{launched with matchType=4;title="("}] (seen "x" "" (fun () -> "x"))=NoGroupingRule) "A pattern that cannot be compiled matched or raised"
+    // A command-line rule sees only the arguments: the program is the app already, and its
+    // quoted path would be in the way of an exact match or a starts-with.
+    check (CommandLineText.arguments "\"C:\\Program Files\\App\\app.exe\" /SESSION:abc --x"="/SESSION:abc --x"
+           && CommandLineText.arguments @"C:\Python\pythonw.exe -m anki"="-m anki"
+           && CommandLineText.arguments "  \"C:\\a b\\x.exe\"  "="" && CommandLineText.arguments "x.exe"="" && CommandLineText.arguments null=""
+           && CommandLineText.arguments "\"C:\\no close"="")
+          "A command line's arguments were not taken past its program"
+    check (AppGroupingRules.resolve [{launched with matchType=0;title="-m anki"}] (seen "x" "" (fun () -> "\"C:\\Python\\pythonw.exe\" -m anki"))=GroupingTarget "Anki")
+          "An exact command-line condition did not match the arguments alone"
+    check (not (AppGroupingRules.hasEnabled [titled] @"c:\editor.exe") && AppGroupingRules.hasEnabled [titled;broad] @"c:\editor.exe") "A rule for some windows claimed the whole app"
+    check ((AppGroupingRules.problem {titled with title=" "}).IsSome && (AppGroupingRules.problem {titled with matchType=4;title="("}).IsSome
+           && (AppGroupingRules.problem titled).IsNone && (AppGroupingRules.problem broad).IsNone) "A condition's problems were not reported"
+    let second = {titled with id="second";title="project b"}
+    let conditioned = JObject(JProperty("appGroupingRules",AppGroupingRules.write [broad;titled;second]))
+    check (AppGroupingRules.read conditioned=[broad;titled;second]) "Rules for some of an app's windows were lost or merged on reading"
     let malformedRules = rootRules.DeepClone() :?> JObject
     (malformedRules.["appGroupingRules"] :?> JArray).Add(JObject(JProperty("processPath","broken")))
     let invalidPath = (AppGroupingRules.write [broad]).[0].DeepClone()

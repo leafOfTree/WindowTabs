@@ -95,6 +95,7 @@ let main() =
             member _.setHotKey _ _ = true
             member _.getHotKey _ = 0
             member _.newTab _ = ()
+            member _.activateWindow _ = ()
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish

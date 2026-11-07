@@ -62,8 +62,10 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 - **Pinned tabs:** right-click a tab → **Pin** to keep it at the front of its group, out of
   reach of **Close others** and **Close all**, across restarts.
 - **App rules:** choose which running apps get tabs and which group automatically.
-  Under **Groups across apps**, create named groups so windows of different apps join
-  one group. Groups made by dragging tabs are remembered and listed there too.
+  Under **Groups across apps**, add groups so windows of different apps join
+  one group; an app's menu there takes only the windows whose title, window class or
+  command line matches, as for apps that run under pythonw.exe or java.exe. Groups made
+  by dragging tabs are remembered and listed in a panel of their own below.
 - **Split view:** show two or more of a group's windows side by side or stacked, as in a
   browser or editor. Right-click a tab → **Split view** and pick a window for each side, or
   drag a tab to a window's edge. Drag the bar between the panes to resize them, right-click

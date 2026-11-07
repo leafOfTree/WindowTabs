@@ -491,6 +491,42 @@ type SettingsHelpButton(text:string) as this =
         this.AccessibleDescription <- text
         this.Click.Add(fun _ -> hover.Show())
 
+/// A chevron beside a heading that folds or opens the panel under it: pointing down while
+/// open, right while folded, as the tree list draws its expanders.
+type SettingsExpanderButton() as this =
+    inherit Button()
+    let mutable opened = false
+    do
+        this.Size <- Size(Dpi.scale 24,Dpi.scale 24)
+        this.FlatStyle <- FlatStyle.Flat
+        this.FlatAppearance.BorderSize <- 0
+        this.Cursor <- Cursors.Hand
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+    /// Whether the panel is open, which way the chevron points.
+    member _.Open
+        with get() = opened
+        and set(value) =
+            if opened<>value then
+                opened <- value
+                this.Invalidate()
+    override this.OnPaint(e) =
+        let p = SettingsColors.current()
+        e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
+        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        let color = if this.Focused || this.ClientRectangle.Contains(this.PointToClient(Control.MousePosition)) then p.text else p.muted
+        let cx,cy = float32 this.Width/2.0f,float32 this.Height/2.0f
+        let em = float32(Dpi.scale 12)
+        if not (UiFace.glyph e.Graphics (if opened then 0xE70D else 0xE76C) (RectangleF(cx-em/2.0f,cy-em/2.0f,em,em)) color) then
+            let s = float32(Dpi.scale 4)
+            use pen = new Pen(color,1.5f)
+            let points =
+                if opened then [|PointF(cx-s,cy-s/2.0f);PointF(cx,cy+s/2.0f);PointF(cx+s,cy-s/2.0f)|]
+                else [|PointF(cx-s/2.0f,cy-s);PointF(cx+s/2.0f,cy);PointF(cx-s/2.0f,cy+s)|]
+            e.Graphics.DrawLines(pen,points)
+        if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32 this.Height/2.0f) p
+    override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
+    override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
+
 /// A round arrow beside a section heading that resets the section; hovering says what it resets,
 /// `help` in more words where its name alone does not. Dimmed while there is nothing to reset.
 type SettingsResetButton(text:string, ?help:string) as this =
@@ -1207,6 +1243,8 @@ type SettingsCombo(items:string[]) as this =
     /// A copy, so SetItemText changes this control's labels only.
     let items = Array.copy items
     let changed = Event<EventArgs>()
+    /// A choice taken from the list, the one already chosen included.
+    let chosen = Event<int>()
     /// A search result's accent highlight, 1 to 0; see Flash.
     let mutable flash = 0.0
     let flashClock = Diagnostics.Stopwatch()
@@ -1263,6 +1301,14 @@ type SettingsCombo(items:string[]) as this =
                 this.Invalidate()
                 changed.Trigger(EventArgs.Empty)
     member _.SelectedIndexChanged = changed.Publish
+    /// A choice was taken from the open list, whether or not it was the chosen one already: for
+    /// a menu, whose current item does something again when chosen again.
+    member _.Chosen = chosen.Publish
+    /// Takes a choice as the open list would: closes it, chooses, and says so.
+    member this.Choose(index:int) =
+        popup |> Option.iter(fun window -> window.Close())
+        this.SelectedIndex <- index
+        chosen.Trigger index
     /// Images remain owned by the caller, as tree-list item icons do.
     member _.ItemImages
         with get() = Array.copy itemImages
@@ -1296,6 +1342,10 @@ type SettingsCombo(items:string[]) as this =
     member val SearchCue : string option = None with get,set
     /// The most rows shown at once; more scroll.
     member val MaxRows : int option = None with get,set
+    /// Choices a line is drawn above in the list, as a menu parts its items.
+    member val SeparatorsBefore : int list = [] with get,set
+    /// A line over the list saying what the choices are, in small muted type, for a menu.
+    member val Heading : string option = None with get,set
     /// The first choice is a prompt, as "Choose a command…": shown closed, muted, while nothing
     /// is chosen, and left out of the list.
     member val PromptFirst = false with get,set
@@ -1338,10 +1388,19 @@ type SettingsCombo(items:string[]) as this =
                     e.Graphics.FillRectangle(background,e.Bounds)
                     let active = e.Index=hovered ||
                                  (keyboardNavigation && hovered<0 && (e.State &&& DrawItemState.Selected)<>enum 0)
+                    // A line across the top of a row that starts a part of its own, the row's
+                    // highlight starting under it.
+                    let parted = List.contains item this.SeparatorsBefore
+                    if parted then
+                        // As the tree list draws a row's divider: the border alone sank into the list's fill.
+                        use line = new Pen(if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(110,p.muted))
+                        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.None
+                        e.Graphics.DrawLine(line,e.Bounds.X+Dpi.scale 6,e.Bounds.Y+Dpi.scale 1,e.Bounds.Right-Dpi.scale 6,e.Bounds.Y+Dpi.scale 1)
                     // The chosen one keeps the fill too, as WinUI's list does, its bar beside it.
                     if active || item=selected then
                         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-                        use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 e.Bounds.Y,float32 e.Bounds.Width,float32 e.Bounds.Height)) (SettingsShapes.controlRadius())
+                        let inset = if parted then Dpi.scale 3 else 0
+                        use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 (e.Bounds.Y+inset),float32 e.Bounds.Width,float32 (e.Bounds.Height-inset))) (SettingsShapes.controlRadius())
                         use brush = new SolidBrush(if active || SystemInformation.HighContrast then p.selection else Color.FromArgb(170,p.selection))
                         e.Graphics.FillPath(brush,shape)
                     let foreground = if active && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
@@ -1375,7 +1434,9 @@ type SettingsCombo(items:string[]) as this =
             let finish commit =
                 let value = if list.SelectedIndex>=0 && list.SelectedIndex<shown.Count then shown.[list.SelectedIndex] else -1
                 window.Close()
-                if commit && value>=0 then this.SelectedIndex <- value
+                if commit && value>=0 then
+                    this.SelectedIndex <- value
+                    chosen.Trigger value
                 if commit && not this.IsDisposed then this.Focus() |> ignore
             list.MouseMove.Add(fun e ->
                 let index = list.IndexFromPoint(e.Location)
@@ -1405,6 +1466,16 @@ type SettingsCombo(items:string[]) as this =
                     finish false
                     this.Parent.SelectNextControl(this,not e.Shift,true,true,true) |> ignore
                     e.SuppressKeyPress <- true)
+            // A menu's heading, first, over the rows: what the choices are, not one of them.
+            let heading =
+                this.Heading |> Option.map(fun text ->
+                    let small = new Font(UiFace.small this.Font.FontFamily.Name,this.Font.Size*0.86f,FontStyle.Regular,this.Font.Unit)
+                    let label = new Label(Text=text,AutoSize=false,UseMnemonic=false,Font=small,BackColor=p.hover,ForeColor=p.muted,
+                                          TextAlign=ContentAlignment.MiddleLeft,Height=small.Height+Dpi.scale 10,Padding=Padding(Dpi.scale 12,Dpi.scale 2,Dpi.scale 12,0))
+                    label.Disposed.Add(fun _ -> small.Dispose())
+                    let host = new ToolStripControlHost(label,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty,BackColor=p.hover)
+                    window.Items.Add(host) |> ignore
+                    host)
             // A long list opens under a box that narrows it as one types; the keys that move
             // through the rows work from the box too.
             let search =
@@ -1452,7 +1523,9 @@ type SettingsCombo(items:string[]) as this =
             list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
             // As tall as all the choices, or as MaxRows of them, whatever a search leaves.
             let rows = match this.MaxRows with Some most -> min most shown.Count | None -> shown.Count
-            let boxHeight = match search with Some host -> host.Control.Height+Dpi.scale 4 | None -> 0
+            let searchHeight = match search with Some host -> host.Control.Height+Dpi.scale 4 | None -> 0
+            let headingHeight = match heading with Some host -> host.Control.Height | None -> 0
+            let boxHeight = searchHeight+headingHeight
             // What a row keeps beside its label, as the rows are drawn: the inset before it, the dot or
             // image, the room for the tick, and the scrollbar the frame keeps whether rows overflow or not.
             let chrome = Dpi.scale 42+(if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 then Dpi.scale 22 else 0)+frame.BarWidth+window.Padding.Horizontal
@@ -1462,11 +1535,11 @@ type SettingsCombo(items:string[]) as this =
             // the box by its own padding on each side. Lists that scroll or search open below,
             // where the rows and the box stay apart.
             let fits = rows*list.ItemHeight+window.Padding.Vertical+2<=area.Height-Dpi.scale 12
-            let overBox = this.DropDownAnchor.IsNone && search.IsNone && rows=shown.Count && fits && chosenRow>=0
+            let overBox = this.DropDownAnchor.IsNone && search.IsNone && heading.IsNone && rows=shown.Count && fits && chosenRow>=0
             let boxWidth = anchorBox.Width+(if overBox then window.Padding.Horizontal else 0)
             window.Size <- Size(min area.Width (max boxWidth (labelWidth+chrome)),
                                 min (area.Height-Dpi.scale 12) (rows*list.ItemHeight+boxHeight+window.Padding.Vertical+2))
-            search |> Option.iter(fun host -> host.Size <- Size(window.Width-window.Padding.Horizontal,host.Control.Height))
+            for host in Option.toList heading @ Option.toList search do host.Size <- Size(window.Width-window.Padding.Horizontal,host.Control.Height)
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical-boxHeight)
             frame.Size <- listHost.Size
             list.SelectedIndex <- max 0 (shown.IndexOf selected)
@@ -1497,11 +1570,11 @@ type SettingsCombo(items:string[]) as this =
         match this.CreateDropDown() with
         | Some window ->
             window.Show(window.Location)
-            // The search box has the keys where there is one, else the list.
-            match (window.Items.[0] :?> ToolStripControlHost).Control with
-            | :? SettingsSearchBox as field -> field.Controls.[0].Focus() |> ignore
-            | :? SettingsListFrame as frame -> frame.List.Focus() |> ignore
-            | _ -> ()
+            // The search box has the keys where there is one, else the list; a heading has none.
+            let hosted = window.Items |> Seq.cast<ToolStripItem> |> Seq.choose(function :? ToolStripControlHost as host -> Some host.Control | _ -> None) |> List.ofSeq
+            match hosted |> List.tryPick(function :? SettingsSearchBox as field -> Some(field.Controls.[0]) | _ -> None) with
+            | Some input -> input.Focus() |> ignore
+            | None -> hosted |> List.tryPick(function :? SettingsListFrame as frame -> Some frame.List | _ -> None) |> Option.iter(fun list -> list.Focus() |> ignore)
         | None -> ()
     override this.OnMouseDown(e) =
         match popup with

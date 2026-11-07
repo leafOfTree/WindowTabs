@@ -395,6 +395,7 @@ let main() =
             member _.setHotKey _ _ = true
             member _.getHotKey key = if key="newTab" then 1614 elif key="closeTab" then SettingsCatalog.shortcutDefault "closeTab" else 0
             member _.newTab hwnd = newTabRequests.Enqueue(hwnd)
+            member _.activateWindow _ = ()
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
@@ -490,6 +491,23 @@ let main() =
                     onHelper(fun () -> OS().windowFromHwnd(source).move(Rect(Pt(60,60),Sz(900,600))))
                     pumpUntil(fun () -> onGroup(fun group -> group.placementBounds.width>=890 && group.isPlacementIdle))
                     let partner = handles |> List.take 2 |> List.find((<>) source)
+                    // Last used tab goes back to the tab left by a click, which takes the new tab
+                    // as active ahead of the foreground event, and from there returns.
+                    do
+                        let topIs hwnd = onGroup(fun group -> group.topWindow)=hwnd
+                        let waitTop hwnd what =
+                            let clock = Diagnostics.Stopwatch.StartNew()
+                            while not (topIs hwnd) && clock.ElapsedMilliseconds<3000L do Application.DoEvents(); Threading.Thread.Sleep(20)
+                            waitOperation()
+                            check (topIs hwnd) (sprintf "%s: source %A partner %A top %A active %A target %A" what source partner (onGroup(fun group -> group.topWindow)) (onGroup(fun group -> group.activeTabs)) (onGroup(fun group -> group.lastUsedTab)))
+                        onGroup(fun group -> group.tabActivate(Tab(partner),false))
+                        waitTop partner "The partner did not come to the front for the last used tab check"
+                        onGroup(fun group -> group.switchToLastActive false)
+                        waitTop source "Last used tab did not go back to the tab left by a click"
+                        onGroup(fun group -> group.switchToLastActive false)
+                        waitTop partner "Last used tab did not return to the tab it came from"
+                        onGroup(fun group -> group.switchToLastActive false)
+                        waitTop source "Last used tab did not go back a second time"
                     let gap = Dpi.scale SplitMetrics.gap
                     let paneRect (group:WindowGroup) side = (SplitGeometry.paneRect gap group.layoutFrame group.splitLayout.Value [side]).Value
                     let pair first second axis focused = {tree={axis=axis;ratio=0.5;first=Leaf first;second=Leaf second};focused=[focused]}
@@ -1541,6 +1559,22 @@ let main() =
                 check (List.head alone = Localization.tr Strings.TabMenu.newTab + "\tCtrl+Alt+N") "The tab menu does not start with New tab and its shortcut"
                 // Closing the tab has a shortcut of its own, Ctrl+Alt+W, shown beside Close.
                 check (List.contains (Localization.tr Strings.TabMenu.close + "\tCtrl+Alt+W") alone) "Close does not show its shortcut in the tab menu"
+                // Split view starts with the clicked tab's neighbour, needing no choice; it is
+                // greyed only for a tab with no other tab to take.
+                let splitFirst hwnd = onGroup(fun group ->
+                    let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
+                                    |> fun field -> field.GetValue(group.ts)
+                    let images = ResizeArray<Img>()
+                    try
+                        let items = decorator.GetType().GetMethod("contextMenu",flags).Invoke(decorator,[|box hwnd;box images|]) :?> List2<ContextMenuItem>
+                        items.list |> List.pick(function CmiPopUp popup when popup.text=Localization.tr Strings.TabMenu.split -> Some popup.items.list | _ -> None)
+                        |> List.head |> function CmiRegular item -> item | _ -> failwith "Split view does not start with a command"
+                    finally for image in images do image.bitmap.Dispose())
+                check (let item = splitFirst handles.Head in
+                       item.text.StartsWith(Localization.tr Strings.Commands.splitWithNext.caption) && not (List.contains MenuFlags.MF_GRAYED item.flags.list))
+                      "Split view does not start with Split with the next tab, or greys it out beside another tab"
+                check (onGroup(fun group -> group.splitPartner handles.Head=Some handles.[1] && group.splitPartner (List.last handles)=Some handles.[handles.Length-2]))
+                      "The tab's split partner is not the next tab, or the one before for the last tab"
                 // Icons only is one switch under one name, ticked while it is on.
                 let iconsOnlyTicked() =
                     menu handles.Head |> List.tryFind(fun item -> item.text=Localization.tr Strings.TabMenu.showIconsOnly)

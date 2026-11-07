@@ -95,6 +95,13 @@ type TreeListItem(text:string) =
     member val ChipsDimmed = false with get,set
     /// Chips laid out this many to a line, all one width, filling it; 0 sizes each to its text.
     member val ChipColumns = 0 with get,set
+    /// Each chip is a menu: it carries an arrow after its text, and a press anywhere on it
+    /// raises ChipInvoked.
+    member val ChipMenu = false with get,set
+    /// Said on hover over a chip that is a menu.
+    member val ChipTip = "" with get,set
+    /// Chips two lines tall, each chip's note under its text in small type rather than on hover.
+    member val ChipDetails = false with get,set
     member val AlwaysShowActions = false with get,set
     member _.Children = children :> IReadOnlyList<TreeListItem>
     member this.Add(child:TreeListItem) = child.Parent <- this; children.Add(child); child
@@ -119,6 +126,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let chipAddInvoked = Event<TreeListItem>()
     let rowsChanged = Event<EventArgs>()
     let actionInvoked = Event<TreeListItem * int>()
+    let chipInvoked = Event<TreeListItem * int>()
     let mutable rows : (TreeListItem * int)[] = [||]
     let mutable offset = 0
     let mutable selected : TreeListItem = null
@@ -126,6 +134,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// The row action under the pointer, or -1.
     let mutable hoveredAction = -1
     let mutable hoveredChip : (TreeListItem * int) option = None
+    let mutable hoveredChipMenu : (TreeListItem * int) option = None
     let mutable hoveredChipAdd : TreeListItem = null
     /// The row whose icon, which says something on hover, is under the pointer.
     /// Where each shown row starts, below the header and before scrolling, and where the last
@@ -194,6 +203,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member _.ChipRemoved = chipRemoved.Publish
     /// The "+" after a row's chips was pressed.
     member _.ChipAddInvoked = chipAddInvoked.Publish
+    /// A chip's menu arrow was pressed: the row and the chip's index.
+    member _.ChipInvoked = chipInvoked.Publish
     /// Rows were added, removed, expanded or collapsed: a list sized to its rows grows or shrinks.
     member _.RowsChanged = rowsChanged.Publish
     /// Buttons drawn in the action column on the row under the pointer, as their glyphs.
@@ -227,14 +238,17 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// The top of a shown row in client coordinates.
     member private this.rowTop(index:int) = this.headerHeight+this.tops.[index]-offset
     member private this.rowSpan(index:int) = this.tops.[index+1]-this.tops.[index]
-    /// One line, or as many as its chips need.
+    /// One line, or as many as its chips need; taller by a line of small type for chips with
+    /// their notes under their text.
     member private this.itemHeight(item:TreeListItem, level:int) =
         if item.Chips.IsEmpty && not item.ChipAdd then this.rowHeight
         else
             let _,_,_,lines = this.chipLayout(item,level,0)
-            this.rowHeight+(lines-1)*this.chipPitch
+            this.rowHeight+(this.chipHeightOf item-this.chipHeight)+(lines-1)*this.chipPitchOf item
     member private this.chipHeight = this.rowHeight-Dpi.scale 12
-    member private this.chipPitch = this.chipHeight+Dpi.scale 6
+    member private this.detailFont = SettingsUi.font (SettingsUi.smallFamily()) 8.5f FontStyle.Regular
+    member private this.chipHeightOf(item:TreeListItem) = this.chipHeight+(if item.ChipDetails then this.detailFont.Height else 0)
+    member private this.chipPitchOf(item:TreeListItem) = this.chipHeightOf item+Dpi.scale 6
 
     /// Recomputes the visible rows after items, expansion or roots change.
     member this.Rebuild() =
@@ -392,8 +406,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine
         let measure (text:string) = TextRenderer.MeasureText(text,this.Font,Size(Int32.MaxValue,this.rowHeight),flags).Width
         let nameWidth = min (measure item.Text) (min (bounds.Width/4) (Dpi.scale 130))
-        let height = this.chipHeight
-        let firstY = top+(this.rowHeight-height)/2
+        let height = this.chipHeightOf item
+        let firstY = top+(this.rowHeight-this.chipHeight)/2
         let pad,gap,icon,close = Dpi.scale 8,Dpi.scale 6,Dpi.scale 16,Dpi.scale 14
         // A row without a name starts its chips where the names of the rows around it start.
         let left = if item.Text="" then bounds.X else bounds.X+nameWidth+Dpi.scale 12
@@ -402,13 +416,14 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             if item.ChipColumns>0 then max height ((right-left-(item.ChipColumns-1)*gap)/item.ChipColumns) else
             let iconWidth = if isNull chip.Icon then 0 else icon+Dpi.scale 5
             let closeWidth = if chip.Removable then Dpi.scale 4+close+Dpi.scale 2 else pad
-            min (right-left) (pad+iconWidth+min (Dpi.scale 160) (measure chip.Text+Dpi.scale 4)+closeWidth)
+            let menuWidth = if item.ChipMenu then close+Dpi.scale 2 else 0
+            min (right-left) (pad+iconWidth+min (Dpi.scale 160) (measure chip.Text+Dpi.scale 4)+menuWidth+closeWidth)
         let mutable x,line = left,0
         let place width =
             if x>left && x+width>right then
                 x <- left
                 line <- line+1
-            let box = Rectangle(x,firstY+line*this.chipPitch,width,height)
+            let box = Rectangle(x,firstY+line*this.chipPitchOf item,width,height)
             x <- x+width+gap
             box
         let laid =
@@ -433,6 +448,28 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             laid |> List.tryPick(fun (chip,_,closeBox) ->
                 closeBox |> Option.filter(fun (box:Rectangle) -> Rectangle.Inflate(box,Dpi.scale 2,Dpi.scale 2).Contains(point))
                          |> Option.map(fun _ -> item,chip)))
+
+    /// The chip under a point, with its row.
+    member private this.chipAt(point:Point) =
+        this.chipsAt point |> Option.bind(fun (item,laid,_) ->
+            laid |> List.tryPick(fun (chip,box:Rectangle,_) -> if box.Contains point then Some(item,chip) else None))
+
+    /// The arrow after a chip's text that says the chip is a menu, on rows whose chips are.
+    member private this.chipMenuBox(item:TreeListItem, box:Rectangle, closeBox:Rectangle option) =
+        if not item.ChipMenu then None else
+        let arrow = Dpi.scale 14
+        let right = match closeBox with Some(close:Rectangle) -> close.X-Dpi.scale 2 | None -> box.Right-Dpi.scale 6
+        Some(Rectangle(right-arrow,box.Y+(box.Height-arrow)/2,arrow,arrow))
+
+    /// The chip under a point that is a menu, with its row.
+    member private this.chipMenuAt(point:Point) =
+        this.chipAt point |> Option.filter(fun (item,_) -> item.ChipMenu)
+
+    /// Where a shown chip that is a menu is, in client coordinates: what its menu opens under.
+    member this.ChipMenuBounds(item:TreeListItem, chip:int) =
+        this.indexOf item |> Option.bind(fun index ->
+            let _,laid,_,_ = this.chipLayout(item,snd rows.[index],this.rowTop index)
+            laid |> List.tryPick(fun (i,box,_) -> if i=chip && item.ChipMenu then Some box else None))
 
     /// Where a shown row's "+" is, in client coordinates.
     member this.ChipAddBounds(item:TreeListItem) =
@@ -631,6 +668,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             let item = (this.chipAddAt e.Location).Value
             this.SelectedItem <- item
             chipAddInvoked.Trigger(item)
+        | _,_ when e.Button=MouseButtons.Left && (this.chipMenuAt e.Location).IsSome ->
+            let item,chip = (this.chipMenuAt e.Location).Value
+            this.SelectedItem <- item
+            chipInvoked.Trigger((item,chip))
+        | _,_ when e.Button=MouseButtons.Left && (this.chipAt e.Location).IsSome ->
+            this.SelectedItem <- fst (this.chipAt e.Location).Value
         | _,Some(item,action) when e.Button=MouseButtons.Left ->
             this.SelectedItem <- item
             actionInvoked.Trigger((item,action))
@@ -651,8 +694,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         // there must not also expand, collapse or open the row.
         | Some(index,(item,level)) when not (this.onExpander(index,item,level,e.Location))
                                         && (this.checkAt(index,item,e.Location)).IsNone
-                                        && (this.chipCloseAt e.Location).IsNone && (this.chipAddAt e.Location).IsNone
-                                        && (this.actionAt e.Location).IsNone ->
+                                        && (this.chipCloseAt e.Location).IsNone && (this.chipMenuAt e.Location).IsNone
+                                        && (this.chipAddAt e.Location).IsNone && (this.actionAt e.Location).IsNone ->
             if not this.ExpandOnDoubleClick then itemActivated.Trigger(item)
             elif item.Children.Count>0 then this.SetExpanded(item,not item.Expanded)
         | _ -> ()
@@ -675,6 +718,14 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         if not same then
             hoveredChip <- chip
             this.Invalidate()
+        let menu = this.chipMenuAt e.Location
+        let sameMenu = match menu,hoveredChipMenu with
+                       | Some(a,i),Some(b,j) -> Object.ReferenceEquals(a,b) && i=j
+                       | None,None -> true
+                       | _ -> false
+        if not sameMenu then
+            hoveredChipMenu <- menu
+            this.Invalidate()
         let add = this.chipAddAt e.Location |> Option.toObj
         if not (Object.ReferenceEquals(add,hoveredChipAdd)) then
             hoveredChipAdd <- add
@@ -691,6 +742,17 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 let box = this.chipsAt e.Location |> Option.bind(fun (_,laid,_) ->
                               laid |> List.tryPick(fun (index,_,close) -> if index=snd chip.Value then close else None))
                 this.ChipRemoveTip,Option.defaultValue around box
+            | None,_ when menu.IsSome ->
+                // What the menu is for; a chip cut short says its whole text instead.
+                let item,index = menu.Value
+                let box = this.ChipMenuBounds(item,index)
+                let chip = item.Chips.[index]
+                let cut =
+                    box |> Option.exists(fun box ->
+                        let left = box.X+Dpi.scale 8+(if isNull chip.Icon then 0 else Dpi.scale 16+Dpi.scale 5)
+                        let right = box.Right-Dpi.scale 8-Dpi.scale 14
+                        TextRenderer.MeasureText(chip.Text,this.Font,Size(Int32.MaxValue,box.Height),TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width > right-left)
+                (if cut then chip.Text elif chip.Note<>"" && not item.ChipDetails then chip.Note else item.ChipTip),Option.defaultValue around box
             | None,_ when not(isNull add) -> this.ChipAddTip,Option.defaultValue around (this.ChipAddBounds add)
             | None,Some(index,(item,_)) when (this.checkAt(index,item,e.Location)).IsSome ->
                 let column = (this.checkAt(index,item,e.Location)).Value
@@ -705,13 +767,19 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 |> Option.bind(fun (index,box,close) ->
                     let chip = item.Chips.[index]
                     let left = box.X+Dpi.scale 8+(if isNull chip.Icon then 0 else Dpi.scale 16+Dpi.scale 5)
-                    let right = match close with Some(close:Rectangle) -> close.X-Dpi.scale 4 | None -> box.Right-Dpi.scale 8
+                    let right =
+                        match this.chipMenuBox(item,box,close),close with
+                        | Some(arrow:Rectangle),_ -> arrow.X-Dpi.scale 2
+                        | None,Some(close:Rectangle) -> close.X-Dpi.scale 4
+                        | None,None -> box.Right-Dpi.scale 8
                     let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine
                     let cut = TextRenderer.MeasureText(chip.Text,this.Font,Size(Int32.MaxValue,box.Height),flags).Width > right-left
                     match cut,chip.Note with
                     | true,"" -> Some(chip.Text,box)
                     | true,note -> Some(chip.Text+Environment.NewLine+note,box)
                     | false,"" -> None
+                    // A note shown under the text is not said again on hover.
+                    | false,_ when item.ChipDetails -> None
                     | false,note -> Some(note,box))
                 |> Option.defaultValue ("",around)
             | None,Some(index,(item,level)) when e.X < (this.columnBounds).[0].Right ->
@@ -727,6 +795,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         hovered <- null
         hoveredAction <- -1
         hoveredChip <- None
+        hoveredChipMenu <- None
         hoveredChipAdd <- null
         tooltipText <- ""
         tooltip.Hide()
@@ -857,13 +926,19 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             use shape = SettingsShapes.rounded (RectangleF(float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height)) (SettingsShapes.controlRadius())
                             // Faded, only a trace of the fill; with a note, a dashed edge to say there
                             // is more to it, told on hover.
-                            use fill = new SolidBrush(if chip.Faded && not SystemInformation.HighContrast then Color.FromArgb(10,p.text) else chipFill)
+                            // A chip that is a menu lights up under the pointer, as a button does.
+                            let pointedMenu = hoveredChipMenu |> Option.exists(fun (row,i) -> Object.ReferenceEquals(row,item) && i=chipIndex)
+                            use fill = new SolidBrush(if chip.Faded && not SystemInformation.HighContrast then Color.FromArgb(10,p.text)
+                                                      elif pointedMenu && not SystemInformation.HighContrast then Color.FromArgb(46,p.text)
+                                                      else chipFill)
                             g.FillPath(fill,shape)
                             if SystemInformation.HighContrast then
                                 use edge = new Pen(SystemColors.WindowText)
                                 g.DrawPath(edge,shape)
                             elif chip.Note<>"" then
-                                use edge = new Pen(Color.FromArgb(110,p.text),DashStyle=DashStyle.Dash)
+                                // As light as before, with gaps as long as the dashes, so the dashes
+                                // read as such at a glance rather than as a faint solid line.
+                                use edge = new Pen(Color.FromArgb(110,p.text),DashPattern=[|4.0f;3.0f|])
                                 g.DrawPath(edge,shape)
                             let mutable x = box.X+Dpi.scale 8
                             if not (isNull chip.Icon) then
@@ -880,11 +955,34 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                                     g.DrawImage(chip.Icon,target,0,0,chip.Icon.Width,chip.Icon.Height,GraphicsUnit.Pixel,attributes)
                                 else g.DrawImage(chip.Icon,target)
                                 x <- x+side+Dpi.scale 5
-                            let textRight = match closeBox with Some(close:Rectangle) -> close.X-Dpi.scale 4 | None -> box.Right-Dpi.scale 8
+                            let menuBox = this.chipMenuBox(item,box,closeBox)
+                            let textRight =
+                                match menuBox,closeBox with
+                                | Some(arrow:Rectangle),_ -> arrow.X-Dpi.scale 2
+                                | None,Some(close:Rectangle) -> close.X-Dpi.scale 4
+                                | None,None -> box.Right-Dpi.scale 8
                             let chipText =
                                 if SystemInformation.HighContrast then (if item.ChipsDimmed || chip.Faded then SystemColors.GrayText else SystemColors.WindowText)
                                 elif item.ChipsDimmed || chip.Faded then p.muted else p.text
-                            TextRenderer.DrawText(g,chip.Text,this.Font,Rectangle(x,box.Y,max 1 (textRight-x),box.Height),chipText,flags)
+                            if item.ChipDetails && chip.Note<>"" then
+                                // The note under the text, in small muted type.
+                                let line,small = this.Font.Height,this.detailFont.Height
+                                let top = box.Y+(box.Height-line-small)/2
+                                TextRenderer.DrawText(g,chip.Text,this.Font,Rectangle(x,top,max 1 (textRight-x),line),chipText,flags)
+                                let noteColor = if SystemInformation.HighContrast then chipText elif item.ChipsDimmed || chip.Faded then p.muted else p.muted
+                                TextRenderer.DrawText(g,chip.Note,this.detailFont,Rectangle(x,top+line,max 1 (textRight-x),small),noteColor,flags)
+                            else
+                                TextRenderer.DrawText(g,chip.Text,this.Font,Rectangle(x,box.Y,max 1 (textRight-x),box.Height),chipText,flags)
+                            // The arrow that says the chip is a menu, a chevron as the drop-downs
+                            // draw theirs.
+                            menuBox |> Option.iter(fun arrow ->
+                                let color = if pointedMenu then chipText else p.muted
+                                let cx,cy = float32 arrow.X+float32 arrow.Width/2.0f,float32 arrow.Y+float32 arrow.Height/2.0f
+                                let em = float32(Dpi.scale 10)
+                                if not (UiFace.glyph g 0xE70D (RectangleF(cx-em/2.0f,cy-em/2.0f,em,em)) color) then
+                                    let s = float32(Dpi.scale 3)
+                                    use pen = new Pen(color,1.3f)
+                                    g.DrawLines(pen,[|PointF(cx-s,cy-s/2.0f);PointF(cx,cy+s/2.0f);PointF(cx+s,cy-s/2.0f)|]))
                             closeBox |> Option.iter(fun close ->
                                 let pointed = hoveredChip |> Option.exists(fun (row,i) -> Object.ReferenceEquals(row,item) && i=chipIndex)
                                 if pointed then

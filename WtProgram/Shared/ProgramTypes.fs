@@ -10,13 +10,24 @@ type TabColorChoice =
 
 type AppGroupingTarget = { id:string; name:string }
 
+/// What a grouping rule looks at beside the app: nothing, so the app's every window; or a window's
+/// title, its class name, or the command line its process was started with, for apps that run
+/// under a shared host such as pythonw.exe or java.exe.
+type RuleField =
+    | AppOnly
+    | WindowTitle
+    | WindowClass
+    | CommandLine
+
 type AppGroupingRule = {
     id: string
     enabled: bool
     processPath: string
+    /// The pattern a window's `field` is matched against; empty for the app's every window.
     title: string
-    /// Retained for reading older exports; application mappings normalize this to -1.
+    /// How `title` is matched (`WindowTitleMatcher` kinds); -1 for the app's every window.
     matchType: int
+    field: RuleField
     groupId: string
     groupName: string
 }
@@ -175,6 +186,8 @@ type IProgram =
     abstract member getHotKey: string -> int
     /// Starts the tab's program again. Posted to the UI thread; returns before the work runs.
     abstract member newTab : IntPtr -> unit
+    /// Brings the window to the front, through its group when it has one. Posted to the UI thread.
+    abstract member activateWindow : IntPtr -> unit
     abstract member suspendTabMonitoring : unit -> unit
     abstract member resumeTabMonitoring : unit -> unit
     abstract member llMouse : IEvent<int32 * IntPtr>
@@ -252,6 +265,8 @@ type IGroup =
     abstract member addWindow: IntPtr * bool -> unit
     abstract member removeWindow: IntPtr -> unit
     abstract member switchWindow: bool * bool -> unit
+    /// Back to the tab that was in front before the one there now.
+    abstract member switchToLastActive: bool -> unit
     /// Brings one of its windows to the front as clicking its tab does: a split's panes come up
     /// together under a cover, rather than the other pane catching up unpainted.
     abstract member activate: IntPtr -> unit

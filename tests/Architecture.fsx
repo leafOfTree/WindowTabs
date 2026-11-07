@@ -256,6 +256,7 @@ let main() =
             member _.setHotKey _ _ = true
             member _.getHotKey _ = 0
             member _.newTab _ = ()
+            member _.activateWindow _ = ()
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
@@ -364,6 +365,11 @@ let main() =
         check (TabNavigation.closeTarget [a;b;c] (fun hwnd -> hwnd<>b) b a (Some a) None false=None) "Closing a background tab changed selection"
         check (TabNavigation.neighbour [a] a=None) "Closing the only tab fabricated a successor"
         check (TabNavigation.neighbour [c;a;b] a=Some b) "Close selection ignored reordered tabs"
+        check (TabNavigation.lastActive [a;b;c] (fun _ -> true) (Some a) b=Some a) "Last used tab did not go back to the tab before this one"
+        check (TabNavigation.lastActive [a;b;c] (fun _ -> true) (Some b) b=None) "Last used tab offered the tab already in front"
+        check (TabNavigation.lastActive [a;b;c] (fun hwnd -> hwnd<>a) (Some a) b=None) "Last used tab offered a closing tab"
+        check (TabNavigation.lastActive [b;c] (fun _ -> true) (Some a) b=None && TabNavigation.lastActive [a;b] (fun _ -> true) None a=None) "Last used tab offered a tab the group let go, or one it never had"
+        check (Commands.find "last-used-tab" |> Option.exists(fun command -> command.category=TabCommands && command.scope=TabbedWindow && command.shortcut=Some "lastUsedTab")) "Last used tab must be a tab command with its key in the catalog"
         let six = [1..6] |> List.map IntPtr
         let rec closeFromRight order =
             match List.rev order with

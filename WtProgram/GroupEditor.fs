@@ -38,7 +38,8 @@ module GroupEditorMetrics =
     let contentMax = 420
     /// The "Loose windows" label at that row's right end.
     let labelWidth = 128
-    let newGroupHeight = 40
+    /// The longest a row's name is in a menu, so one long window title does not set its width.
+    let menuNameLength = 40
     let footerHeight = 44
     let buttonWidth = 84
     let buttonHeight = 30
@@ -81,9 +82,9 @@ type DragAim =
     | StripSlot of row:int * slot:int
     | CellMiddle of row:int * PanePath
     | CellEdge of row:int * PanePath * SplitAxis * Side
-    | LooseRow
     /// The bin, whose windows close on Save.
     | CloseRow
+    /// The band under the New group row: a row of the one window, a group of its own.
     | NewGroupRow
     /// The band a row left empty while the drag lasts: the tab carried back onto it puts the group back.
     | VacatedRow of int
@@ -94,7 +95,6 @@ type DragAim =
 /// or the loose row, which dissolves it.
 type RowAim =
     | IntoRow of int
-    | Dissolve
     /// The bin: every window of the row closes on Save.
     | CloseAll
 
@@ -145,8 +145,9 @@ type GroupEditorLayout = {
     rows:GroupEditorRowLayout list
     loose:Rectangle
     looseTabs:(IntPtr * Rectangle) list
+    /// The band under the New group row that starts a group of one.
     newGroup:Rectangle
-    /// The bin under the new group's band, and the tabs in it.
+    /// The bin under the band, and the tabs in it.
     closing:Rectangle
     closingTabs:(IntPtr * Rectangle) list
     /// Bands kept where rows emptied by the drag in hand were, so nothing shifts under the pointer.
@@ -430,6 +431,17 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             | _ -> None
         | _ -> None
 
+    /// The footer's note: what the keys do, or what the empty cells come to; wrapped to the room
+    /// beside the buttons, two lines at most.
+    let noteText() =
+        match DesktopDraft.emptyCells current with
+        | 0 -> if expandedRow().IsSome then tr Strings.GroupEditor.hint else tr Strings.GroupEditor.overviewHint
+        | empty -> tr (Strings.GroupEditor.emptyCellsClose empty)
+    let noteFlags = TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.NoPadding
+    let noteWidth() = max 0 (width-2*pad-2*scale GroupEditorMetrics.buttonWidth-scale 8-scale 12)
+    let noteHeight() =
+        min (2*hintFont.Height) (TextRenderer.MeasureText(noteText(),hintFont,Size(noteWidth(),Int32.MaxValue),noteFlags).Height)
+
     /// The layout for the width, the expanded row's content as tall as its frame's shape asks
     /// within its bounds, the upper one raised by the room the window leaves under the rows.
     let computeLayout (room:int) : GroupEditorLayout =
@@ -494,8 +506,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let looseTop = y
         let looseTabs,looseBottom = wrapTabs (fun _ -> false) looseNow (pad+rowPad) (looseTop+rowPad) (inner-3*rowPad-scale GroupEditorMetrics.labelWidth)
         let looseBottom = max looseBottom (looseTop+rowPad+scale GroupEditorMetrics.tabHeight)+rowPad
-        let loose = Rectangle(pad,looseTop,inner,looseBottom-looseTop)
-        let newGroup = Rectangle(pad,loose.Bottom+scale GroupEditorMetrics.rowGap,inner,scale GroupEditorMetrics.newGroupHeight)
+        // The windows in no group, only while there are any: nothing is dropped there.
+        let loose = if looseNow.IsEmpty then Rectangle(pad,looseTop,inner,0) else Rectangle(pad,looseTop,inner,looseBottom-looseTop)
+        // The band for a group of one, always there, as tall as an empty row, so the bands under
+        // the rows line up.
+        let newGroup = Rectangle(pad,(if loose.Height>0 then loose.Bottom+scale GroupEditorMetrics.rowGap else looseTop),inner,2*rowPad+scale GroupEditorMetrics.tabHeight)
         // The bin last, under everything that keeps a window: a tab reaches it only on purpose.
         let closingTop = newGroup.Bottom+scale GroupEditorMetrics.rowGap
         let closingTabs,closingBottom = wrapTabs (fun _ -> false) (standing current.closing) (pad+rowPad) (closingTop+rowPad) (inner-3*rowPad-scale GroupEditorMetrics.labelWidth)
@@ -503,10 +518,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let closing = Rectangle(pad,closingTop,inner,closingBottom-closingTop)
         let buttonSize = Size(scale GroupEditorMetrics.buttonWidth,scale GroupEditorMetrics.buttonHeight)
         let footerTop = closing.Bottom+scale GroupEditorMetrics.rowGap
-        let buttonTop = footerTop+(scale GroupEditorMetrics.footerHeight-buttonSize.Height)/2
+        // The footer grows for a note of two lines, the buttons staying in its middle.
+        let footerHeight = max (scale GroupEditorMetrics.footerHeight) (noteHeight()+scale 12)
+        let buttonTop = footerTop+(footerHeight-buttonSize.Height)/2
         let save = Rectangle(width-pad-buttonSize.Width,buttonTop,buttonSize.Width,buttonSize.Height)
         let cancel = Rectangle(save.X-scale 8-buttonSize.Width,buttonTop,buttonSize.Width,buttonSize.Height)
-        {rows=rowLayouts; loose=loose; looseTabs=looseTabs; newGroup=newGroup; closing=closing; closingTabs=closingTabs; vacated=List.ofSeq vacatedRects; ghost=ghost; save=save; cancel=cancel; body=footerTop; height=footerTop+scale GroupEditorMetrics.footerHeight+pad/2}
+        {rows=rowLayouts; loose=loose; looseTabs=looseTabs; newGroup=newGroup; closing=closing; closingTabs=closingTabs; vacated=List.ofSeq vacatedRects; ghost=ghost; save=save; cancel=cancel; body=footerTop; height=footerTop+footerHeight+pad/2}
 
     /// The layout as last computed for the same state: asked for at every event and paint, it
     /// is measured again only once something it depends on has changed.
@@ -586,8 +603,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             else None
         | Some row -> Some(StripSlot(row.index,slotAt row.tabs pt dragged))
         | None ->
-            if l.loose.Contains pt then Some LooseRow
-            elif l.closing.Contains pt then Some CloseRow
+            if l.closing.Contains pt then Some CloseRow
             elif l.newGroup.Contains pt then Some NewGroupRow
             else
                 match l.vacated |> List.tryFindIndex(fun r -> r.Contains pt) with
@@ -637,7 +653,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 match g.panes with
                 | Some _ -> GroupDraft.splitAt hwnd path axis side g
                 | None -> GroupDraft.beside anchor hwnd axis side g)
-        | LooseRow -> if source=Loose then None else Some(DesktopDraft.moveToLoose hwnd draft,None)
         | CloseRow -> if source=Closing || source=Nowhere then None else Some(DesktopDraft.moveToClosing hwnd draft,None)
         | NewGroupRow | VacatedRow _ ->
             if alone || source=Nowhere then None
@@ -856,24 +871,22 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     use cellBrush = new SolidBrush(if pressed then accent else palette.muted)
                     for _,_,cell in SplitGeometry.leafRects (scale 2) (toRect (Rectangle.Inflate(r,-scale 4,-scale 4))) (GroupDraft.shapeTree Empty shape) [] do
                         g.FillRectangle(cellBrush,cell.Rectangle)
-        // The loose row, darker, and the new group's band, dashed.
+        // The windows in no group, darker, only while there are any: a list to drag from, not a
+        // place to drop; then the new group's band, dashed.
         do
-            use band = rounded l.loose (scale 8)
-            use fill = new SolidBrush(looseFill)
-            g.FillPath(fill,band)
-            for tab in l.looseTabs do drawTab tab
-            let label = Rectangle(l.loose.Right-rowPad-scale GroupEditorMetrics.labelWidth,l.loose.Y,scale GroupEditorMetrics.labelWidth,l.loose.Height)
-            TextRenderer.DrawText(g,tr Strings.GroupEditor.looseWindows,hintFont,label,palette.muted,looseFill,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
-            // Empty, the row says what it is for, as the new group's band does.
-            if l.looseTabs.IsEmpty then
-                TextRenderer.DrawText(g,tr Strings.GroupEditor.looseEmpty,bodyFont,l.loose,palette.muted,looseFill,
-                                      TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis)
-            // The new group's band, dashed and named; the band of a row the drag emptied keeps the
-            // row's look with the faded copy of the tab that left it, so the row reads as away
-            // rather than gone, or a dashed edge where no tab stands for it.
+            if l.loose.Height>0 then
+                use band = rounded l.loose (scale 8)
+                use fill = new SolidBrush(looseFill)
+                g.FillPath(fill,band)
+                for tab in l.looseTabs do drawTab tab
+                let label = Rectangle(l.loose.Right-rowPad-scale GroupEditorMetrics.labelWidth,l.loose.Y,scale GroupEditorMetrics.labelWidth,l.loose.Height)
+                TextRenderer.DrawText(g,tr Strings.GroupEditor.notGrouped,hintFont,label,palette.muted,looseFill,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
+            // The band for a group of one, dashed and named; the band of a row the drag emptied
+            // keeps the row's look with the faded copy of the tab that left it, so the row reads
+            // as away rather than gone, or a dashed edge where no tab stands for it.
             do
                 use dashed = rounded l.newGroup (scale 8)
-                use pen = new Pen(palette.muted,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
+                use pen = new Pen(palette.muted,float32(scale 1),DashPattern=[|4.0f;3.0f|])
                 g.DrawPath(pen,dashed)
                 TextRenderer.DrawText(g,"+ "+tr Strings.GroupEditor.newGroup,bodyFont,l.newGroup,palette.muted,Color.Transparent,
                                       TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
@@ -882,7 +895,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use band = rounded l.closing (scale 8)
                 use fill = new SolidBrush(looseFill)
                 g.FillPath(fill,band)
-                use edge = new Pen(warning,float32(scale 1))
+                // Dashed, a place to drop into rather than a row that holds, and light: it says
+                // where windows close without shouting it.
+                use edge = new Pen(Color.FromArgb(120,warning),float32(scale 1),DashPattern=[|4.0f;3.0f|])
                 g.DrawPath(edge,band)
                 for tab in l.closingTabs do drawTab tab
                 let label = Rectangle(l.closing.Right-rowPad-scale GroupEditorMetrics.labelWidth,l.closing.Y,scale GroupEditorMetrics.labelWidth,l.closing.Height)
@@ -901,11 +916,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     use pen = new Pen(palette.muted,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
                     g.DrawPath(pen,band)
         // The footer: the keys, or what the empty cells come to, and the buttons.
-        let note =
-            match DesktopDraft.emptyCells current with
-            | 0 -> if expandedRow().IsSome then tr Strings.GroupEditor.hint else tr Strings.GroupEditor.overviewHint
-            | empty -> tr (Strings.GroupEditor.emptyCellsClose empty)
-        TextRenderer.DrawText(g,note,hintFont,Rectangle(pad,l.save.Y,max 0 (l.cancel.X-scale 12-pad),l.save.Height),palette.muted,surface,textFlags)
+        let noteH = noteHeight()
+        let footer = l.height-pad/2-l.body
+        TextRenderer.DrawText(g,noteText(),hintFont,Rectangle(pad,l.body+(footer-noteH)/2,noteWidth(),noteH),palette.muted,surface,noteFlags)
         drawAction g l.cancel false false
         drawAction g l.save true false
         image
@@ -969,10 +982,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 g.FillPath(fill,shape)
                 use pen = new Pen((if d.fits then accent else palette.muted),float32(scale 2))
                 g.DrawPath(pen,shape))
-        | Some(LooseRow | CloseRow as aim) ->
-            use band = rounded (if aim=CloseRow then l.closing else l.loose) (scale 8)
-            use pen = new Pen((if aim=CloseRow then warning else accent),float32(scale 2))
+        | Some CloseRow ->
+            use band = rounded l.closing (scale 8)
+            use pen = new Pen(warning,float32(scale 2))
             g.DrawPath(pen,band)
+        // The band for a group of one, lit and named; the band of the row the tab left, lit as
+        // the group it puts back.
         | Some(NewGroupRow | VacatedRow _ as aim) ->
             coverSlot()
             let r = match aim with VacatedRow i -> l.vacated.[i] | _ -> l.newGroup
@@ -981,8 +996,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             g.FillPath(fill,band)
             use pen = new Pen(accent,float32(scale 1))
             g.DrawPath(pen,band)
-            TextRenderer.DrawText(g,"+ "+tr Strings.GroupEditor.newGroup,bodyFont,r,textOn,selectedFill,
-                                  TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.PreserveGraphicsTranslateTransform ||| TextFormatFlags.PreserveGraphicsClipping)
+            if aim=NewGroupRow then
+                TextRenderer.DrawText(g,"+ "+tr Strings.GroupEditor.newGroup,bodyFont,r,textOn,selectedFill,
+                                      TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.PreserveGraphicsTranslateTransform ||| TextFormatFlags.PreserveGraphicsClipping)
         | None -> ()
         // The tab itself, under the pointer, is a window of its own (the drag image), not drawn here.
 
@@ -1045,7 +1061,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// it was taken, and its old place faded behind it.
     let rowOverlay (g:Graphics) (l:GroupEditorLayout) (d:GroupEditorRowDrag) =
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        let target = match d.aim with Some(IntoRow i) -> l.rows |> List.tryItem i |> Option.map(fun row -> row.band) | Some Dissolve -> Some l.loose | Some CloseAll -> Some l.closing | None -> None
+        let target = match d.aim with Some(IntoRow i) -> l.rows |> List.tryItem i |> Option.map(fun row -> row.band) | Some CloseAll -> Some l.closing | None -> None
         let lit = if d.aim=Some CloseAll then warning else accent
         target |> Option.iter(fun r ->
             use band = rounded r (scale 8)
@@ -1432,19 +1448,48 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         slide before
         refresh()
 
-    /// The window taken out of its group: to the loose windows, its pane closing.
-    let takeOut hwnd = slid (fun () -> moved (DesktopDraft.moveToLoose hwnd current) hwnd)
+    /// The window taken out of its group into a row of its own, its pane closing.
+    let takeOut hwnd = slid (fun () -> moved (DesktopDraft.newGroup hwnd current) hwnd)
+    /// A window kept open after all: back among those in no group if that is where it was, else
+    /// in a row of its own.
+    let keepOpen hwnd =
+        let back = if List.contains hwnd draft.loose then DesktopDraft.moveToLoose else DesktopDraft.newGroup
+        slid (fun () -> moved (back hwnd current) hwnd)
     /// The window taken out of its pane, staying a tab of its group.
     let leavePane hwnd =
         match DesktopDraft.find hwnd current with
         | InGroup i -> slid (fun () -> edit i (GroupDraft.removeFromPane hwnd))
         | _ -> ()
-    /// A tab's menu: the window out of its group, and, in a pane, out of that.
+    /// A row named by its first tab, with how many windows it holds.
+    let rowName (g:GroupDraft) =
+        let first =
+            let name = nameOf (List.head g.tabs)
+            if name.Length>GroupEditorMetrics.menuNameLength then name.Substring(0,GroupEditorMetrics.menuNameLength-1).TrimEnd()+"…" else name
+        if g.tabs.Length=1 then first else sprintf "%s (%s)" first (tr (Strings.GroupEditor.windows g.tabs.Length))
+    /// A tab's menu: everything a drag can do with the window, for the keys and for many rows.
+    /// In a row or in no group: into another row or a row of its own, out of its pane, and the
+    /// bin. In the bin: kept, or into a row.
     let tabMenuItems hwnd =
         let regular text click = CmiRegular({ text=text; image=None; flags=List2(); click=click })
-        let inPane = match DesktopDraft.find hwnd current with InGroup i -> List.contains hwnd (GroupDraft.paneWindows current.groups.[i]) | _ -> false
-        List2([ regular (tr Strings.GroupEditor.removeTab) (fun () -> takeOut hwnd) ]
-              @ (if inPane then [ regular (tr Strings.GroupEditor.leavePane) (fun () -> leavePane hwnd) ] else []))
+        let place = DesktopDraft.find hwnd current
+        let inPane = match place with InGroup i -> List.contains hwnd (GroupDraft.paneWindows current.groups.[i]) | _ -> false
+        let alone = match place with InGroup i -> current.groups.[i].tabs=[hwnd] | _ -> false
+        let rows =
+            groups() |> List.indexed |> List.filter(fun (i,_) -> place<>InGroup i)
+            |> List.map(fun (i,g) -> regular (rowName g) (fun () -> slid (fun () -> moved (DesktopDraft.moveToGroup hwnd i None current) hwnd)))
+        // New group an item of its own under Move to: one action, with no list to open.
+        let newGroup = if alone then [] else [ regular (tr Strings.GroupEditor.newGroup) (fun () -> takeOut hwnd) ]
+        let moveTo = if rows.IsEmpty then [] else [ CmiPopUp({ text=tr Strings.GroupEditor.moveTo; image=None; items=List2(rows) }) ]
+        let close = [ CmiSeparator; regular (tr Strings.GroupEditor.closeOnSave) (fun () -> slid (fun () -> moved (DesktopDraft.moveToClosing hwnd current) hwnd)) ]
+        // The window itself first: to see which one the tab is, the editor staying up behind it.
+        let goTo = [ regular (tr Strings.GroupEditor.goToWindow) (fun () -> Services.program.activateWindow hwnd); CmiSeparator ]
+        List2(
+            match place with
+            | InGroup _ ->
+                goTo @ moveTo @ newGroup @ (if inPane then [ regular (tr Strings.GroupEditor.leavePane) (fun () -> leavePane hwnd) ] else []) @ close
+            | Loose -> goTo @ moveTo @ newGroup @ close
+            | Closing -> goTo @ [ regular (tr Strings.GroupEditor.keepOpen) (fun () -> keepOpen hwnd) ] @ moveTo
+            | Nowhere -> [])
 
     /// The row scrolled into sight, when the rows are taller than the popup shows.
     let showRow (i:int) =
@@ -1504,20 +1549,26 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         refresh()
         startMorph fromL from
 
-    /// Every window of the row into another row's group, loose, or into the bin: the row goes with
-    /// its last one.
+    /// Every window of the row into another row's group or into the bin: the row goes with its
+    /// last one.
     let mergeRow (index:int) (into:RowAim) =
         let tabs = (groups()).[index].tabs
-        let target = match into with IntoRow t -> Some((groups()).[t].group,List.head (groups()).[t].tabs) | Dissolve | CloseAll -> None
+        let target = match into with IntoRow t -> Some((groups()).[t].group,List.head (groups()).[t].tabs) | CloseAll -> None
         let next =
             tabs |> List.fold (fun (draft:DesktopDraft) hwnd ->
                 match target with
                 | Some(strip,head) ->
                     let at = draft.groups |> List.findIndex(fun g -> (strip.IsSome && g.group=strip) || (strip.IsNone && List.contains head g.tabs))
                     DesktopDraft.moveToGroup hwnd at None draft
-                | None when into=CloseAll -> DesktopDraft.moveToClosing hwnd draft
-                | None -> DesktopDraft.moveToLoose hwnd draft) current
+                | None -> DesktopDraft.moveToClosing hwnd draft) current
         slid (fun () -> current <- next; reselect())
+    /// A row taken apart, as Ungroup does: each of its windows a row of its own, with its own
+    /// strip on Save.
+    let splitRow (index:int) =
+        let tabs = (groups()).[index].tabs
+        slid (fun () ->
+            current <- tabs |> List.fold (fun (draft:DesktopDraft) hwnd -> DesktopDraft.newGroup hwnd draft) current
+            reselect())
 
     /// A menu at the point of the popup, in place of the one before it.
     let showMenu (items:List2<ContextMenuItem>) (view:Point) =
@@ -1533,15 +1584,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// tab, as dropping the row there does, or ungroup it, as dropping it on the loose row does.
     let rowMenuItems (index:int) =
         let regular text click = CmiRegular({ text=text; image=None; flags=List2(); click=click })
-        let rowName (g:GroupDraft) =
-            let first = nameOf (List.head g.tabs)
-            if g.tabs.Length=1 then first else sprintf "%s (%s)" first (tr (Strings.GroupEditor.windows g.tabs.Length))
         let others =
             groups() |> List.indexed |> List.filter(fun (i,_) -> i<>index)
             |> List.map(fun (i,g) -> regular (rowName g) (fun () -> mergeRow index (IntoRow i)))
+        let open' = expandedRow()=Some index
         List2(
-            (if others.IsEmpty then [] else [ CmiPopUp({ text=tr Strings.GroupEditor.mergeInto; image=None; items=List2(others) }) ])
-            @ [ regular (tr Strings.GroupEditor.ungroup) (fun () -> mergeRow index Dissolve)
+            [ regular (tr (if open' then Strings.GroupEditor.collapseRow else Strings.GroupEditor.expandRow)) (fun () -> expand (if open' then None else Some index)) ]
+            @ (if others.IsEmpty then [] else [ CmiPopUp({ text=tr Strings.GroupEditor.mergeInto; image=None; items=List2(others) }) ])
+            @ [ regular (tr Strings.GroupEditor.ungroup) (fun () -> splitRow index)
                 regular (tr Strings.GroupEditor.closeRow) (fun () -> mergeRow index CloseAll) ])
     let rowMenu (index:int) (view:Point) = showMenu (rowMenuItems index) view
 
@@ -1677,7 +1727,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 match l.rows |> List.tryFind(fun row -> row.band.Contains pt) with
                 | Some row when row.index<>d.index -> Some(IntoRow row.index)
                 | Some _ -> None
-                | None -> if l.loose.Contains pt then Some Dissolve elif l.closing.Contains pt then Some CloseAll else None
+                | None -> if l.closing.Contains pt then Some CloseAll else None
             rowDrag <- Some {d with at=pt; aim=aim; begun=true}
             if form.IsHandleCreated then form.Invalidate()
 
@@ -1747,9 +1797,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         None,next<>g
                     | Some(StripSlot(row,slot)),source when row<(groups()).Length && source<>InGroup row ->
                         leaving source (fun () -> moved (DesktopDraft.moveToGroup d.hwnd row (Some slot) current) d.hwnd)
-                        None,true
-                    | Some LooseRow,source when source<>Loose ->
-                        leaving source (fun () -> moved (DesktopDraft.moveToLoose d.hwnd current) d.hwnd)
                         None,true
                     | Some CloseRow,source when source<>Closing ->
                         leaving source (fun () -> moved (DesktopDraft.moveToClosing d.hwnd current) d.hwnd)
@@ -1861,24 +1908,25 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
       if not closed then
         let l = layout()
         let pt = unscroll view
-        let onTab = l.rows |> List.collect(fun row -> row.tabs) |> List.tryFind(fun (_,r) -> r.Contains pt) |> Option.map fst
+        let onTab = (l.rows |> List.collect(fun row -> row.tabs))@l.looseTabs@l.closingTabs |> List.tryFind(fun (_,r) -> r.Contains pt) |> Option.map fst
         match onTab with
-        | Some hwnd when DesktopDraft.find hwnd current<>Loose ->
+        | Some hwnd when DesktopDraft.find hwnd current<>Nowhere ->
             showMenu (tabMenuItems hwnd) view
         | Some _ -> ()
         | None ->
             l.rows |> List.tryFind(fun row -> row.band.Contains pt && not(row.expanded && row.picture.Contains pt))
             |> Option.iter(fun row -> rowMenu row.index view)
 
-    /// A button pressed, then released, at a point of the popup. The click that closed a menu
-    /// from outside closes it and nothing more, whichever button: the rows fill the popup, so it
-    /// lands on them, and would otherwise open the next menu or take a tab in hand.
+    /// A button pressed, then released, at a point of the popup. The left click that closed a
+    /// menu from outside closes it and nothing more: the rows fill the popup, so it lands on
+    /// them, and would otherwise take a tab in hand. A right click goes on to open the menu of
+    /// what it is on, so one menu follows another without a click in between.
     let buttonDown (button:MouseButtons) (pt:Point) =
         // A click puts the title away until the pointer moves on.
         pointTitle None
         if (DateTime.UtcNow-menuClosedAt).TotalMilliseconds<500.0 then
             menuClosedAt <- DateTime.MinValue
-            closingClick <- true
+            if button=MouseButtons.Right then menuAt pt else closingClick <- true
         elif button=MouseButtons.Left then mouseDown pt
         elif button=MouseButtons.Right then menuAt pt
     let buttonUp (button:MouseButtons) (pt:Point) =

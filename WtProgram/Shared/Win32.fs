@@ -728,6 +728,12 @@ and Pid(pid:int) =
 
     member this.exeName = Path.GetFileName(this.processPath).ToLower()
 
+    /// The command line the process was started with; empty when it cannot be read.
+    member this.commandLine = Cell.cacheProp this <| fun() ->
+        match ProcessCommandLine.Read(this.pid) with
+        | null -> ""
+        | line -> line
+
     /// The program's own description (e.g. "Windows Explorer"), or its file name without ".exe".
     member this.appName = Cell.cacheProp this <| fun() ->
         let description =

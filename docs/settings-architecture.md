@@ -27,17 +27,32 @@ minimal defaults from `SettingsCatalog`; explicit legacy auto-hide settings reta
 their behavior. App auto-grouping and workspaces start empty and run only when chosen.
 
 App Rules places the new-app default at the top right, the running apps below, and
-Groups across apps underneath, as tall as its rows up to six. Each named group is one
-row: its name (Group 1, Group 2… when added), its apps as chips that wrap onto more
-lines, a "+" after them that opens a list of running apps with Browse… last, its
-Enabled box beside the rename and delete buttons, and its chips dimmed while it is
-off. A chip's × removes that app; a cut-off chip says its whole name on hover.
-Names edit in place and save on Enter, on leaving the field or on a click anywhere
-outside it. Empty groups persist in `appGroupingTargets`. Adding an already-mapped
+Groups across apps underneath, as tall as its rows up to six. Each group is one row
+with no name (the settings file numbers them by their place, Group 1, Group 2…, closed
+up when one is deleted): its apps as chips that wrap onto more lines, a "+" after
+them that opens a list of running apps with Browse… last, its Enabled box beside the
+delete button, and its chips dimmed while it is off. A cut-off chip says its whole name
+on hover. A chip is a menu, with an arrow
+after its name: which of the app's windows the group takes, all (`AppOnly`) or those
+whose title, command line or window class, in that order, matches a pattern (exact,
+starts or ends with, contains or a regular expression, ignoring case), asked for in a small dialog
+(`RuleConditionDialog`) that says what the field is, lists the field's values in the
+app's windows open now for a click to take, and refuses a pattern it cannot use; and, set apart last,
+removing the app. Such a chip has a dashed edge. A rule for some windows comes
+before the app's rule for all of them, and leaves the app in the list above with its
+own Auto-group; the command line is read from the process (`ProcessCommandLine`) only
+for a rule that asks for it, and the rule sees only its arguments past the program
+(`CommandLineText.arguments`), as the dialog lists them. Rules saved without a `field`
+are for the app's every window.
+Empty groups persist in `appGroupingTargets`. Adding an already-mapped
 app to another group moves its single mapping instead of creating competing rules.
-Groups made by dragging tabs follow, read only, behind an icon that names them on
-hover: open windows show their own icon, closed ones their app's icon in grey, and
-one button takes the group apart. The list says what goes in it while it is empty.
+A chip for some of an app's windows shows its condition under the app's name in small
+type, so the group reads at a glance. Groups made by dragging tabs are a panel of
+their own under the named groups, shown only while there are any and folded to its
+heading, which counts them, until opened (`handMadeGroupsOpen` in the settings file
+keeps that); their rows are read only, open windows showing their own icon, closed
+ones their app's icon in grey, and one button takes the group apart. The named
+groups' list says what goes in it while it is empty.
 
 Application identity is the case-insensitive executable filename, independent of
 its installation directory. App Rules and the application picker merge same-name

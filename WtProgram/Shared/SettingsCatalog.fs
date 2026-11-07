@@ -51,6 +51,8 @@ module SettingsCatalog =
         { id="pause-in-full-screen"; page=HotKeySettings; text=Strings.Settings.pauseInFullScreen; binding=Toggle("pauseInFullScreen",false,false) }
         { id="next-tab"; page=HotKeySettings; text=Strings.Settings.nextTab; binding=Shortcut("nextTab",3623) }
         { id="previous-tab"; page=HotKeySettings; text=Strings.Settings.previousTab; binding=Shortcut("prevTab",3621) }
+        // Unbound, as the split view keys are: the key is picked in the palette.
+        { id="last-used-tab"; page=HotKeySettings; text=Strings.Settings.lastUsedTab; binding=Shortcut("lastUsedTab",0) }
         { id="search-tabs"; page=HotKeySettings; text=Strings.Settings.searchTabs; binding=Shortcut("searchTabs",1620) }
         // Ctrl+Alt+P, beside the window search's Ctrl+Alt+T.
         { id="command-palette"; page=HotKeySettings; text=Strings.Settings.commandPalette; binding=Shortcut("commandPalette",1616) }

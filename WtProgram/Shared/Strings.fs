@@ -229,6 +229,9 @@ module Strings =
         let previousTab = { caption={ en="Switch to previous tab"; zh="切换到上一个标签"; ja="前のタブに切り替え"; ar="الانتقال إلى علامة التبويب السابقة" }
                             description=none
                             keywords=hotkeyWords }
+        let lastUsedTab = { caption={ en="Switch to last used tab"; zh="切换到上次使用的标签"; ja="最後に使ったタブに切り替え"; ar="الانتقال إلى آخر علامة تبويب مستخدمة" }
+                            description={ en="The tab that was in front before this one; again, and back."; zh="回到此标签之前所在的标签；再按一次则返回。"; ja="このタブの前に表示していたタブへ。もう一度押すと戻ります。"; ar="علامة التبويب التي كانت في المقدمة قبل هذه؛ مرة أخرى وتعود." }
+                            keywords={ en="hotkey recent back toggle alternate"; zh="热键 最近 返回 来回"; ja="ホットキー 最近 戻る 交互"; ar="مفتاح الاختصار الأخيرة رجوع تبديل" } }
         let searchTabs = { caption={ en="Switch windows"; zh="切换窗口"; ja="ウィンドウを切り替え"; ar="التبديل بين النوافذ" }
                            description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。"; ar="الانتقال إلى نافذة باستخدام عنوانها أو اسم التطبيق." }
                            keywords={ en="find"; zh="查找"; ja="検索"; ar="بحث" } }
@@ -778,10 +781,10 @@ module Strings =
         let windows count =
             { en=(if count=1 then "1 window" else sprintf "%d windows" count); zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نافذة" count }
         let save = { en="Save"; zh="保存"; ja="保存"; ar="حفظ" }
-        let hint = { en="Drag tabs along the strip or onto a pane; the corner button splits a pane; right-click a tab to take it out; Esc goes back."
-                     zh="沿标签条或往窗格里拖标签；窗格角上的按钮可拆分；右键标签可移出分组；Esc 回到全部分组。"
-                     ja="タブをストリップに沿って、またはペインへドラッグ。ペイン隅のボタンで分割、タブの右クリックで外し、Esc で戻ります。"
-                     ar="اسحب علامات التبويب على طول الشريط أو إلى لوحة؛ زر الزاوية يقسم اللوحة؛ انقر بزر الفأرة الأيمن على علامة تبويب لإخراجها؛ وEsc يعود." }
+        let hint = { en="Drag tabs along the strip or onto a pane; the corner button splits a pane; right-click a tab for more; Esc goes back."
+                     zh="沿标签条或往窗格里拖标签；窗格角上的按钮可拆分；右键标签有更多操作；Esc 回到全部分组。"
+                     ja="タブをストリップに沿って、またはペインへドラッグ。ペイン隅のボタンで分割、タブの右クリックで他の操作、Esc で戻ります。"
+                     ar="اسحب علامات التبويب على طول الشريط أو إلى لوحة؛ زر الزاوية يقسم اللوحة؛ انقر بزر الفأرة الأيمن على علامة تبويب للمزيد؛ وEsc يعود." }
         let noGroup = { en="The window in front is in no group."; zh="当前窗口不在任何分组里。"; ja="手前のウィンドウはどのグループにもありません。"; ar="النافذة الأمامية ليست في أي مجموعة." }
         /// What saving did.
         let applied moved detached made closed =
@@ -810,18 +813,27 @@ module Strings =
               ar=sprintf "%d مجموعة، %d نافذة" groups windows }
         /// The bin's label, and what it says while empty.
         let closeBin = { en="Close on save"; zh="保存时关闭"; ja="保存時に閉じる"; ar="تُغلق عند الحفظ" }
-        let closeBinEmpty = { en="Drop tabs or a whole row here to close their windows when you save"; zh="把标签或整行拖到这里，保存时关闭这些窗口"; ja="タブや行ごとここにドロップすると、保存時にそのウィンドウを閉じます"; ar="أفلت علامات التبويب أو صفًا كاملًا هنا لإغلاق نوافذها عند الحفظ" }
+        let closeBinEmpty = { en="Drop here to close on Save"; zh="拖到这里，保存时关闭"; ja="ここにドロップで保存時に閉じる"; ar="أفلت هنا للإغلاق عند الحفظ" }
         /// The row menu's item that puts every window of the row in the bin.
         let closeRow = { en="Close its windows on save"; zh="保存时关闭这些窗口"; ja="保存時にこれらのウィンドウを閉じる"; ar="إغلاق نوافذه عند الحفظ" }
-        let looseWindows = { en="Loose windows"; zh="未分组窗口"; ja="未分類のウィンドウ"; ar="نوافذ غير مجمّعة" }
+        /// The band under the rows that starts a row of one, and the tab menu's item for it.
+        let newGroup = { en="New group"; zh="新建组"; ja="新しいグループ"; ar="مجموعة جديدة" }
+        /// The row of the windows in no group, shown only while there are any, to drag from.
+        let notGrouped = { en="Not grouped"; zh="未分组"; ja="未分類"; ar="غير مجمّعة" }
+        /// The tab's menu: into another row, listed by their first tabs.
+        let moveTo = { en="Move to"; zh="移到"; ja="移動先"; ar="نقل إلى" }
+        let closeOnSave = { en="Close on save"; zh="保存时关闭"; ja="保存時に閉じる"; ar="إغلاق عند الحفظ" }
+        /// A window in the bin, kept open after all: back among those with no group.
+        let keepOpen = { en="Keep open"; zh="保留，不关闭"; ja="閉じない"; ar="إبقاؤها مفتوحة" }
+        /// The tab menu's first item: the window itself to the front.
+        let goToWindow = { en="Go to window"; zh="切换到此窗口"; ja="このウィンドウへ"; ar="الانتقال إلى النافذة" }
+        let expandRow = { en="Expand"; zh="展开"; ja="展開"; ar="توسيع" }
+        let collapseRow = { en="Collapse"; zh="折叠"; ja="折りたたむ"; ar="طي" }
         /// In the loose row while no window is on its own: what the row is for.
-        let looseEmpty = { en="Ungroup: drop a tab or a whole row here"; zh="移出分组：把标签或整行拖到这里"; ja="グループ解除：タブや行ごとここにドロップ"; ar="فك التجميع: أفلت علامة تبويب أو صفًا كاملًا هنا" }
-        let newGroup = { en="New group: drop a tab here"; zh="新建分组：拖到这里"; ja="新しいグループ：ここにドロップ"; ar="مجموعة جديدة: أفلت علامة تبويب هنا" }
-        let overviewHint = { en="Drag a tab to another row, Ungroup or New group; drag a row by its empty room onto another to merge; click a tab or a row to expand it."
-                             zh="把标签拖到别的行、“移出分组”或“新建分组”；按住行的空白处拖到别的行即合并；点标签或行即展开。"
-                             ja="タブを別の行、グループ解除、新しいグループへドラッグ。行の空きをつかんで別の行へ重ねると統合、タブや行をクリックで展開。"
-                             ar="اسحب علامة تبويب إلى صف آخر أو فك التجميع أو مجموعة جديدة؛ اسحب صفًا من فراغه إلى صف آخر لدمجهما؛ انقر علامة تبويب أو صفًا لتوسيعه." }
-        let removeTab = { en="Take out of the group"; zh="移出分组"; ja="グループから外す"; ar="إخراج من المجموعة" }
+        let overviewHint = { en="Drag tabs between rows, or to + New group for a group of their own. Drag a row by its empty room onto another row to merge them. Right-click for more."
+                             zh="标签可拖到其他行，或拖到“+ 新建组”自成一组。按住行的空白处拖到另一行可合并。右键有更多操作。"
+                             ja="タブは別の行へ、または「+ 新しいグループ」へドラッグして単独のグループにできます。行の空き部分をつかんで別の行に重ねると結合します。右クリックで他の操作。"
+                             ar="اسحب علامات التبويب بين الصفوف، أو إلى «+ مجموعة جديدة» لتكوين مجموعة مستقلة. اسحب صفًا من فراغه فوق صف آخر لدمجهما. انقر بالزر الأيمن للمزيد." }
         /// For a window in a pane: it stays a tab of its group, out of the split.
         let leavePane = { en="Take out of the pane"; zh="移出窗格"; ja="ペインから外す"; ar="إخراج من اللوحة" }
         /// The row's menu, from a right click on its empty room.
@@ -972,12 +984,17 @@ module Strings =
         let newGroup number = { en=sprintf "Group %d" number; zh=sprintf "组 %d" number; ja=sprintf "グループ %d" number; ar=sprintf "المجموعة %d" number }
         let selectRule = { en="Select a group or rule to edit here. Changes save automatically."; zh="选中组或规则即可在此编辑，修改会自动保存。"; ja="グループかルールを選択して編集します。変更は自動保存されます。"; ar="حدد مجموعة أو قاعدة لتحريرها هنا. تُحفظ التغييرات تلقائيًا." }
         let newRule = { en="New rule"; zh="新规则"; ja="新しいルール"; ar="قاعدة جديدة" }
-        let groupNameRequired = { en="Enter a group name."; zh="请填写组名。"; ja="グループ名を入力してください。"; ar="أدخل اسم المجموعة." }
-        let groupNameExists = { en="A group with this name already exists."; zh="已有同名组，请使用其他名称。"; ja="同じ名前のグループが存在します。"; ar="توجد مجموعة بهذا الاسم بالفعل." }
-        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. Windows you group by dragging tabs together show here too."
-                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用会始终启用标签，不再出现在上面的列表里，也不再使用“自动分组”。拖拽标签合并形成的窗口分组也会显示在这里。"
-                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。タブをドラッグしてまとめたウィンドウのグループもここに表示されます。"
-                               ar="ضع نوافذ تطبيقات مختلفة في مجموعة واحدة ذات اسم. التطبيقات المضافة هنا تستخدم علامات التبويب دائمًا، وتُزال من القائمة أعلاه ولا تستخدم التجميع التلقائي. كما تظهر هنا النوافذ التي تجمعها بسحب علامات التبويب فوق بعضها." }
+        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. Click an app to take only some of its windows, by title, window class or command line, or to remove it."
+                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用会始终启用标签，不再出现在上面的列表里，也不再使用“自动分组”。点击应用可只收纳它的部分窗口（按标题、窗口类名或命令行），或将其移除。"
+                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。アプリをクリックすると、タイトル・ウィンドウ クラス・コマンド ラインで一部のウィンドウだけを対象にしたり、外したりできます。"
+                               ar="ضع نوافذ تطبيقات مختلفة في مجموعة واحدة ذات اسم. التطبيقات المضافة هنا تستخدم علامات التبويب دائمًا، وتُزال من القائمة أعلاه ولا تستخدم التجميع التلقائي. انقر تطبيقًا لضم بعض نوافذه فقط حسب العنوان أو فئة النافذة أو سطر الأوامر، أو لإزالته." }
+        /// The heading of the panel of groups made by dragging, with how many there are, and
+        /// what the panel is for on hover.
+        let handMadeHeading count = { en=sprintf "Groups made by dragging (%d)" count; zh=sprintf "拖拽形成的分组（%d）" count; ja=sprintf "ドラッグで作ったグループ（%d）" count; ar=sprintf "مجموعات أنشئت بالسحب (%d)" count }
+        let handMadeHelp = { en="Windows you grouped by dragging tabs together, kept after a restart. Ungroup forgets the group and takes its open windows apart."
+                             zh="拖拽标签合并形成的分组，重启后仍会恢复。“解除分组”会忘记该组并拆开它打开的窗口。"
+                             ja="タブをドラッグしてまとめたグループで、再起動後も保持されます。「グループを解除」はグループを忘れ、開いているウィンドウを分けます。"
+                             ar="نوافذ جمعتها بسحب علامات التبويب معًا، وتبقى بعد إعادة التشغيل. «إلغاء التجميع» ينسى المجموعة ويفصل نوافذها المفتوحة." }
         let application = { en="Application"; zh="应用"; ja="アプリ"; ar="التطبيق" }
         let chooseApplication = { en="Add an app"; zh="添加应用"; ja="アプリを追加"; ar="إضافة تطبيق" }
         /// Hover tips on a group's buttons.
@@ -985,14 +1002,52 @@ module Strings =
         let removeFromGroup = { en="Remove from group"; zh="从分组中移除"; ja="グループから外す"; ar="إزالة من المجموعة" }
         let browseApplication = { en="Browse…"; zh="浏览…"; ja="参照…"; ar="استعراض…" }
         let applicationFiles = { en="Applications (*.exe)|*.exe"; zh="应用程序 (*.exe)|*.exe"; ja="アプリ (*.exe)|*.exe"; ar="التطبيقات (*.exe)|*.exe" }
-        let applicationOnly = { en="Application only"; zh="仅按应用"; ja="アプリのみ"; ar="التطبيق فقط" }
+        let allWindows = { en="All windows"; zh="全部窗口"; ja="すべてのウィンドウ"; ar="كل النوافذ" }
         let targetGroup = { en="Target group"; zh="目标组"; ja="宛先グループ"; ar="المجموعة المستهدفة" }
         let chooseGroup = { en="Existing group"; zh="选择已有组"; ja="既存のグループ"; ar="مجموعة موجودة" }
         let enabled = { en="Enabled"; zh="启用"; ja="有効"; ar="ممكّن" }
         let addRule = { en="Add rule"; zh="添加规则"; ja="ルールを追加"; ar="إضافة قاعدة" }
         let invalidRule = { en="Invalid grouping rule"; zh="分组规则无效"; ja="無効なグループ化ルール"; ar="قاعدة التجميع غير صالحة" }
         let requiredFields = { en="Choose an application and enter a target group."; zh="请选择应用并填写目标组。"; ja="アプリを選択して宛先グループを入力してください。"; ar="اختر تطبيقًا وأدخل المجموعة المستهدفة." }
-        let requiredTitle = { en="Enter a title pattern, or choose Application only."; zh="请填写标题条件，或选择“仅按应用”。"; ja="タイトル条件を入力するか「アプリのみ」を選択してください。"; ar="أدخل نمطًا للعنوان أو اختر «التطبيق فقط»." }
+        let requiredTitle = { en="Enter what to match."; zh="请填写匹配内容。"; ja="一致させる内容を入力してください。"; ar="أدخل ما تريد مطابقته." }
+        let invalidPattern details = { en="The pattern cannot be used: " + details; zh="无法使用这个模式：" + details; ja="このパターンは使えません: " + details; ar="تعذر استخدام هذا النمط: " + details }
+        /// What a rule can look at beside the app, as the condition's first choice.
+        let windowTitle = { en="Window title"; zh="窗口标题"; ja="ウィンドウのタイトル"; ar="عنوان النافذة" }
+        let windowClass = { en="Window class"; zh="窗口类名"; ja="ウィンドウ クラス"; ar="فئة النافذة" }
+        let commandLine = { en="Command line"; zh="命令行"; ja="コマンド ライン"; ar="سطر الأوامر" }
+        /// What each field is and when to match on it, under the condition dialog's heading.
+        let windowTitleHint = { en="The text in the title bar; it changes with what the window shows."
+                                zh="标题栏里的文字，会随窗口内容变化。"
+                                ja="タイトル バーの文字。表示内容によって変わります。"
+                                ar="النص في شريط العنوان؛ يتغير مع ما تعرضه النافذة." }
+        let windowClassHint = { en="The window's internal type name; it stays the same across restarts, so it suits windows whose titles change."
+                                zh="窗口的内部类型名，重启后也不变；标题经常变化时用它。"
+                                ja="ウィンドウ内部の種類名。再起動しても変わらないので、タイトルがよく変わるウィンドウに向きます。"
+                                ar="اسم النوع الداخلي للنافذة؛ يبقى كما هو بعد إعادة التشغيل، فيناسب النوافذ التي يتغير عنوانها." }
+        let commandLineHint = { en="The arguments the window's program was started with; they tell apart apps that share one program, such as pythonw or java."
+                                zh="窗口程序启动时带的参数；用来区分共用同一个程序的应用，如 pythonw、java。"
+                                ja="ウィンドウのプログラムに起動時に渡された引数。pythonw や java など同じプログラムを共有するアプリを見分けます。"
+                                ar="الوسائط التي بدأ بها برنامج النافذة؛ تميز التطبيقات التي تشترك في برنامج واحد مثل pythonw أو java." }
+        /// Over the chip's menu: what its choices decide.
+        let menuHeading = { en="Which windows join"; zh="收纳哪些窗口"; ja="含めるウィンドウ"; ar="أي النوافذ تنضم" }
+        /// Over an empty list of command lines: the app's windows are open, with nothing after the program.
+        let noArguments = { en="Its windows open now were started with no arguments."; zh="它当前打开的窗口启动时都没有带参数。"; ja="今開いているウィンドウは引数なしで起動されています。"; ar="نوافذه المفتوحة الآن بدأت بلا وسائط." }
+        /// Over the values of the app's open windows, which a click puts in the pattern.
+        let openWindowsNow = { en="From the app's windows open now, to click:"; zh="该应用当前打开的窗口，点击填入："; ja="このアプリで今開いているウィンドウ（クリックで入力）："; ar="من نوافذ التطبيق المفتوحة الآن، انقر للإدخال:" }
+        let noOpenWindows = { en="The app has no window open now."; zh="该应用现在没有打开的窗口。"; ja="このアプリのウィンドウは今開いていません。"; ar="لا توجد نافذة مفتوحة لهذا التطبيق الآن." }
+        /// What an app's chip menu is, for assistive technology; nothing is said on hover.
+        let chipTip = { en="Which of the app's windows join: all, or those whose title, window class or command line matches; or remove the app"
+                        zh="该应用的哪些窗口加入：全部，或标题、窗口类名或命令行匹配的窗口；或移除该应用"
+                        ja="このアプリのどのウィンドウを含めるか：すべて、またはタイトル・ウィンドウ クラス・コマンド ラインが一致するもの。またはアプリを外す"
+                        ar="أي نوافذ التطبيق تنضم: كلها، أو التي يطابق عنوانها أو فئتها أو سطر أوامرها؛ أو إزالة التطبيق" }
+        /// The chip's menu: a field to match on, which asks for the condition in a dialog.
+        let conditionChoice field = { en=field+"…"; zh=field+"…"; ja=field+"…"; ar=field+"…" }
+        /// The condition dialog's title: the app whose chip opened it and the field it matches on.
+        let conditionFor app field = { en=sprintf "%s – %s" app field; zh=sprintf "%s · %s" app field; ja=sprintf "%s – %s" app field; ar=sprintf "%s – %s" app field }
+        /// Said on hover over a chip that takes only some of its app's windows.
+        let conditionNote field (method:string) pattern =
+            { en=sprintf "%s %s “%s”" field (method.ToLowerInvariant()) pattern; zh=sprintf "%s %s “%s”" field method pattern
+              ja=sprintf "%s %s「%s」" field method pattern; ar=sprintf "%s %s «%s»" field method pattern }
         let description = { en="Choose which apps get tabs. Auto-group puts the windows of an app into one group. Expand an app to see its windows."
                             zh="选择哪些应用使用标签。勾选“自动分组”后，同一应用的窗口会合在一个组里。展开应用可查看它的窗口。"
                             ja="タブを使うアプリを選びます。「自動グループ化」をオンにすると、同じアプリのウィンドウが一つのグループに入ります。展開するとウィンドウを表示します。"
