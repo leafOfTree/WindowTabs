@@ -245,6 +245,9 @@ let main() =
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
             member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
+            member _.getGroupColor _ = None
+            member _.setGroupColor _ = ()
+            member _.canKeepGroupColor _ = false
             member _.handMadeGroups() = []
             member _.ungroupHandMade _ = ()
             member _.groupIcon _ = None
@@ -476,6 +479,16 @@ let main() =
         // A Chromium window looked at while it cloaks itself at start is grouped once it uncloaks,
         // not at the next full scan, behind the tab in front.
         check (List.contains WinEvent.EVENT_OBJECT_UNCLOAKED (Program.DiscoveryEvents.forWindow false)) "Discovery did not look again at a window uncloaked after it opened"
+        // A tab's group by its neighbours while it moves: listed by the group it left and the one
+        // it joins, the one holding the tabs beside it; listed by none yet, the same; else the one.
+        do
+            let w (value:int) = IntPtr(value)
+            let a,b,c = ("a",[w 1;w 2]),("b",[w 2;w 3;w 4]),("c",[w 5])
+            let pick = Program.GroupLookup.pick snd [a;b;c]
+            check (pick (w 2) [w 3;w 4;w 2]=Some b) "A tab listed by two groups was not given the group of the tabs beside it"
+            check (pick (w 2) [w 1;w 2]=Some a) "A tab listed by two groups was not given the group of its one neighbour"
+            check (pick (w 9) [w 3;w 9]=Some b) "A tab listed by no group yet was not given the group of the tabs beside it"
+            check (pick (w 5) []=Some c && pick (w 9) []=None && pick (w 9) [w 9]=None) "A tab in one group, or in none with no neighbours, was not found as such"
         // As the input hook decides: the key must match and the app's rule allow it.
         let allowed() = NumberShortcutRules.enabled @"C:\Apps\Unlisted.exe"
         let target msg key ctrl = onGroup(fun _ -> numeric.targetIndex(msg,key,ctrl) |> Option.filter(fun _ -> allowed()))

@@ -8,7 +8,9 @@ type TabColorChoice =
     | PaletteColor of int
     | CustomColor of Drawing.Color
 
-type AppGroupingTarget = { id:string; name:string }
+/// A group across apps. `color` is a tab colour as `Theme.formatTabColor` writes it, or empty:
+/// every tab in the group takes it unless the tab was given a colour of its own.
+type AppGroupingTarget = { id:string; name:string; color:string }
 
 /// What a grouping rule looks at beside the app: nothing, so the app's every window; or a window's
 /// title, its class name, or the command line its process was started with, for apps that run
@@ -167,6 +169,14 @@ type IProgram =
     abstract member getTabColor : IntPtr * IntPtr list -> TabColorChoice option
     /// Every tab's colour in one call, for a group whose tabs changed.
     abstract member getTabColors : IntPtr list * IntPtr list -> TabColorChoice option list
+    /// The colour kept for the window's group, which every tab in it takes: a group across apps
+    /// or one made by dragging, if it has one.
+    abstract member getGroupColor : IntPtr -> TabColorChoice option
+    /// Keeps a colour for the window's group, or with None forgets it; nothing for a group
+    /// that cannot keep one.
+    abstract member setGroupColor : (IntPtr * TabColorChoice option) -> unit
+    /// Whether the window's group can keep a colour: a group across apps, or one made by dragging.
+    abstract member canKeepGroupColor : IntPtr -> bool
     /// Groups made by dragging tabs, as remembered: each one's id and its windows' programs (the
     /// path last seen running, else the executable name), titles and, for a window that is open,
     /// its handle (zero when closed).

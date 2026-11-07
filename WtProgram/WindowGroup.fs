@@ -743,6 +743,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let colorModeSubscription = Services.settings.notifyValue "tabColorMode" (fun _ ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.refreshTabColors()))
         exitedEvent.Publish.Add(fun _ -> colorModeSubscription.Dispose())
+        // A group given a colour, or its colour taken away, recolours its tabs: a group across
+        // apps keeps it with its rule, one made by hand says so under "groupColors".
+        for key in ["appGroupingTargets";"groupColors"] do
+            let groupColorsSubscription = Services.settings.notifyValue key (fun _ ->
+                this.invokeAsync(fun() -> if not isDestroyed.value then this.refreshTabColors()))
+            exitedEvent.Publish.Add(fun _ -> groupColorsSubscription.Dispose())
         let colorStyleSubscription = Services.settings.notifyValue "tabColorStyle" (fun value ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.colorStyle <- unbox value))
         exitedEvent.Publish.Add(fun _ -> colorStyleSubscription.Dispose())

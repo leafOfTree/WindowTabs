@@ -219,11 +219,15 @@ type WindowTabColors() =
         overrides <- overrides.Remove hwnd
         paths <- paths.Remove hwnd
     /// Allocate in group order once; singleton previews do not reserve a colour.
-    member _.resolve hwnd (path:string) mode (remembered:Map<string,string>) (peers:IntPtr list) =
+    member this.resolve hwnd (path:string) mode (remembered:Map<string,string>) (peers:IntPtr list) =
+        this.resolveIn None hwnd path mode remembered peers
+    /// As `resolve`, in a group with a colour of its own: a colour chosen for the tab comes
+    /// first, then the group's, then the one remembered for its app, then the automatic ones.
+    member _.resolveIn (group:TabColorChoice option) hwnd (path:string) mode (remembered:Map<string,string>) (peers:IntPtr list) =
         let app = remembered |> Map.tryPick(fun key value ->
             if AppIdentity.same key path then Theme.parseTabColor value else None)
-        match overrides.TryFind hwnd,app with
-        | Some color,_ | _,Some color -> Some color
+        match overrides.TryFind hwnd,group,app with
+        | Some color,_,_ | _,Some color,_ | _,_,Some color -> Some color
         | _ ->
             match mode with
             | "ByWindow" ->

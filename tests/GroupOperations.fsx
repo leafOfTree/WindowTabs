@@ -367,6 +367,8 @@ let main() =
         let newTabRequests = Collections.Concurrent.ConcurrentQueue<IntPtr>()
         let names = Collections.Concurrent.ConcurrentDictionary<IntPtr,string>()
         let nameReads = ref 0
+        /// The colour the program keeps for the group, as a group made by hand would.
+        let groupColor = ref (None : TabColorChoice option)
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
             member _.isFirstRun = false
@@ -384,6 +386,9 @@ let main() =
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
             member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
+            member _.getGroupColor _ = groupColor.Value
+            member _.setGroupColor((_,color)) = groupColor.Value <- color
+            member _.canKeepGroupColor _ = true
             member _.handMadeGroups() = []
             member _.ungroupHandMade _ = ()
             member _.groupIcon _ = None
@@ -1630,6 +1635,29 @@ let main() =
                 check (List.findIndex ((=) closeToRight) alone = List.findIndex ((=) (Localization.tr Strings.TabMenu.closeOthers)) alone+1) "Close tabs to the right does not follow Close others"
                 check (not (List.contains MenuFlags.MF_GRAYED (closeAfter handles.Head).flags.list)) "Close tabs to the right is greyed for a tab with tabs after it"
                 check (List.contains MenuFlags.MF_GRAYED (closeAfter (List.last handles)).flags.list) "Close tabs to the right is not greyed for the last tab"
+                // Remember color for this group sits in the colour menu after the app's: greyed with
+                // nothing to keep, ticked while the group keeps a colour, and chosen again forgets it.
+                let colorItems hwnd = onGroup(fun group ->
+                    let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
+                                    |> fun field -> field.GetValue(group.ts)
+                    let images = ResizeArray<Img>()
+                    try
+                        let items = decorator.GetType().GetMethod("contextMenu",flags).Invoke(decorator,[|box hwnd;box images|]) :?> List2<ContextMenuItem>
+                        items.list |> List.pick(function CmiPopUp popup when popup.text=Localization.tr Strings.Settings.tabColors -> Some popup.items.list | _ -> None)
+                        |> List.choose(function CmiRegular item -> Some item | _ -> None)
+                    finally for image in images do image.bitmap.Dispose())
+                let groupColorItem hwnd = colorItems hwnd |> List.find(fun item -> item.text=Localization.tr Strings.Settings.rememberGroupColor)
+                let ticked (item:CmiRegular) = item.flags.list |> List.exists(fun flag -> flag &&& MenuFlags.MF_CHECKED<>0)
+                let texts = colorItems handles.Head |> List.map(fun item -> item.text)
+                check (List.findIndex ((=) (Localization.tr Strings.Settings.rememberGroupColor)) texts = List.findIndex ((=) (Localization.tr Strings.Settings.rememberTabColor)) texts+1)
+                      "Remember color for this group does not follow Remember color for this app"
+                check (List.contains MenuFlags.MF_GRAYED (groupColorItem handles.Head).flags.list && not (ticked (groupColorItem handles.Head)))
+                      "Remember color for this group is offered, or ticked, with no colour to keep"
+                groupColor.Value <- Some(PaletteColor 1)
+                check (ticked (groupColorItem handles.Head) && not (List.contains MenuFlags.MF_GRAYED (groupColorItem handles.Head).flags.list))
+                      "Remember color for this group is not ticked while the group keeps a colour"
+                (groupColorItem handles.Head).click()
+                check groupColor.Value.IsNone "Remember color for this group chosen again did not forget the group's colour"
                 check (not (List.contains (closeAllOf handles.Head) alone)) "A group of one program offers closing that program's windows"
                 (info :> IGroup).addWindow(foreignHwnd,false)
                 pumpUntil(fun () -> onGroup(fun group ->

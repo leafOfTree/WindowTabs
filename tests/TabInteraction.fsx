@@ -357,6 +357,17 @@ let main() =
         check (resolveAt @"C:\Other\EDITOR.EXE" a=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered colour did not apply to another installation of the same app"
         colors.setOverride a (Some red)
         check (resolveAt @"C:\Apps\EDITOR.EXE" a=Some red) "Remembered colour overrode window colour"
+        // A group across apps with a colour of its own: it comes before the app's remembered
+        // colour and the automatic ones, after a colour chosen for the tab itself.
+        let group = Some(PaletteColor 3)
+        colors.setOverride a None
+        check (colors.resolveIn group a @"C:\Apps\EDITOR.EXE" "ByWindow" remembered peers=group) "A group's colour did not come before the app's remembered colour"
+        check (colors.resolveIn group c "editor.exe" "Off" Map.empty peers=group) "A group's colour did not apply with automatic colours off"
+        check (colors.resolveIn None c "editor.exe" "ByWindow" Map.empty peers=existing.[2]) "A group without a colour changed the automatic colours"
+        colors.setOverride a (Some red)
+        check (colors.resolveIn group a @"C:\Apps\EDITOR.EXE" "ByWindow" remembered peers=Some red) "A group's colour overrode the colour chosen for the tab"
+        // Close tabs to the right: the tabs after one along the strip; none after the last, or for a tab not on it.
+        check (TabOrder.after [1;2;3;4] 2=[3;4] && TabOrder.after [1;2;3] 3=[] && TabOrder.after [1;2;3] 9=[]) "The tabs after one are not the rest of the strip"
         let loads = ref 0
         let load() = loads.Value <- loads.Value+1; @"C:\Apps\Editor.exe"
         for _ in 1..3 do colors.path a load |> ignore

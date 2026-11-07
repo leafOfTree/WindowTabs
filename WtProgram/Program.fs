@@ -29,6 +29,23 @@ type ProgramInput =
     | ShellEvent of (IntPtr * ShellEvent)
 
 /// What discovery watches on each app window, besides the shell's notices.
+/// The group a window is in, as the main thread's snapshots have it. While a tab moves between
+/// groups the snapshots can list it in both, or in neither yet, so the group is found by the
+/// tabs beside it: the one holding most of them, and the window itself where that ties.
+module GroupLookup =
+    let pick (windowsOf:'g -> IntPtr list) (groups:'g list) (hwnd:IntPtr) (peers:IntPtr list) =
+        let holding = groups |> List.filter(fun group -> List.contains hwnd (windowsOf group))
+        match holding with
+        | [only] -> Some only
+        | _ ->
+            let others = peers |> List.filter((<>) hwnd)
+            let candidates = if holding.IsEmpty then groups else holding
+            candidates
+            |> List.map(fun group -> group,(windowsOf group |> List.filter(fun window -> List.contains window others) |> List.length))
+            |> List.filter(fun (group,shared) -> shared>0 || List.contains group holding)
+            |> List.sortByDescending snd
+            |> List.tryHead |> Option.map fst
+
 module DiscoveryEvents =
     /// Shown and hidden; uncloaked too, as Chromium browsers cloak a new window themselves for a
     /// moment as it starts. Looked at then it is hidden and not grouped, and its uncloaking is the
@@ -585,7 +602,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 (live |> List.map(fun (info,members) -> info.group.groupToken,members))
                 ((elsewhere |> List.collect snd) @ List.ofSeq renamed) remembered
             |> RememberedGroups.withPaths running
-        let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members,group.paths)
+            |> RememberedGroups.withColors (live |> List.choose(fun (info,_) -> info.groupColor |> Option.map(fun color -> info.group.groupToken,color)))
+        let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members,group.paths,group.color)
         let changed = trimmed || learned || shape next <> shape remembered
         remembered <- next
         if changed then
@@ -1400,6 +1418,28 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         refreshQueue.Cancel()
         this.updateAppWindows()
 
+    member private this.groupInfoOf hwnd = this.groupInfoFor hwnd []
+
+    /// The window's group, told apart by the tabs beside it while it moves between groups.
+    member private this.groupInfoFor hwnd (peers:IntPtr list) =
+        let groups =
+            this.desktop.groups.list |> List.choose(fun group ->
+                match group with
+                | :? GroupInfo as info when not info.isExited && not info.isRetiring -> Some info
+                | _ -> None)
+        GroupLookup.pick (fun (info:GroupInfo) -> (info :> IGroup).windows.list) groups hwnd peers
+
+    /// The colour kept for a window's group: a group across apps keeps it with its rule, one made
+    /// by hand with its record, or as chosen this run before the record catches up.
+    member private this.groupColorOf hwnd (peers:IntPtr list) =
+        this.groupInfoFor hwnd peers |> Option.bind(fun info ->
+            match info.ruleGroupId with
+            | Some id -> settingsManager.settings.appGroupingTargets |> List.tryFind(fun target -> target.id=id) |> Option.map(fun target -> target.color)
+            | None when this.isHandMade info ->
+                info.groupColor |> Option.orElse (remembered |> List.tryFind(fun saved -> saved.id=info.group.groupToken) |> Option.map(fun saved -> saved.color))
+            | None -> None)
+        |> Option.bind Theme.parseTabColor
+
     interface IProgram with
         member x.version = version
         member x.isFirstRun = isFirstRun
@@ -1449,9 +1489,29 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
         member x.getTabColor(hwnd,peers) =
             let path = windowColors.path hwnd (fun () -> try os.windowFromHwnd(hwnd).pid.processPath with _ -> "")
-            windowColors.resolve hwnd path settingsManager.settings.tabColorMode settingsManager.settings.appTabColors peers
+            windowColors.resolveIn (this.groupColorOf hwnd peers) hwnd path settingsManager.settings.tabColorMode settingsManager.settings.appTabColors peers
 
         member x.getTabColors(hwnds,peers) = hwnds |> List.map(fun hwnd -> (x :> IProgram).getTabColor(hwnd,peers))
+
+        member _.getGroupColor hwnd = this.groupColorOf hwnd []
+
+        member _.canKeepGroupColor hwnd =
+            this.groupInfoOf hwnd |> Option.exists(fun info -> info.ruleGroupId.IsSome || this.isHandMade info)
+
+        // A group across apps keeps its colour with its rule, which tells the open groups; one
+        // made by hand keeps it on the group until its record is written, and is told here.
+        member _.setGroupColor((hwnd,color)) =
+            let value = color |> Option.map Theme.formatTabColor |> Option.defaultValue ""
+            this.groupInfoOf hwnd |> Option.iter(fun info ->
+                match info.ruleGroupId with
+                | Some id ->
+                    let targets = settingsManager.settings.appGroupingTargets |> List.map(fun target -> if target.id=id then {target with color=value} else target)
+                    (settingsManager :> ISettings).setValue("appGroupingTargets",box targets)
+                | None when this.isHandMade info ->
+                    info.groupColor <- Some value
+                    rememberSoon.Request()
+                    settingsManager.announce "groupColors"
+                | None -> ())
 
         member x.handMadeGroups() =
             let open' = Dictionary<RememberedMember,IntPtr>(HashIdentity.Structural)

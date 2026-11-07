@@ -331,6 +331,7 @@ module Strings =
         let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…"; ar="مخصص…" }
         let clearTabColor = { en="Clear color"; zh="清除颜色"; ja="色を解除"; ar="مسح اللون" }
         let rememberTabColor = { en="Remember color for this app"; zh="为此应用记住颜色"; ja="このアプリの色を記憶"; ar="تذكّر اللون لهذا التطبيق" }
+        let rememberGroupColor = { en="Remember color for this group"; zh="为此分组记住颜色"; ja="このグループの色を記憶"; ar="تذكّر اللون لهذه المجموعة" }
         /// Named for how they look: every colour is deep enough for white text, so the light hues
         /// show as their deep versions (mustard, not yellow).
         let tabColorNames = [|
@@ -694,6 +695,12 @@ module Strings =
                                                ja="アプリの新しいウィンドウにもこの色を使います。もう一度実行すると忘れます。"
                                                ar="تأخذ نوافذ التطبيق الجديدة لون علامة التبويب؛ ومرة أخرى ينساه التطبيق." }
                                  keywords=colorWords }
+        let rememberGroupColor = { caption={ en="Remember tab color for this group"; zh="为此分组记住标签颜色"; ja="このグループのタブの色を記憶"; ar="تذكّر لون علامة التبويب لهذه المجموعة" }
+                                   description={ en="Every tab in the group takes the tab's color, for a group across apps or one made by dragging; again, and the group forgets it."
+                                                 zh="分组中的每个标签沿用该颜色，适用于跨应用分组或拖拽形成的分组；再执行一次则忘记。"
+                                                 ja="グループのすべてのタブにこの色を使います。アプリをまたぐグループやドラッグで作ったグループが対象。もう一度実行すると忘れます。"
+                                                 ar="تأخذ كل علامات التبويب في المجموعة لون علامة التبويب، لمجموعة عبر التطبيقات أو مجموعة أُنشئت بالسحب؛ ومرة أخرى تنساه المجموعة." }
+                                   keywords=colorWords }
         let clearTabColor = { caption={ en="Clear tab color"; zh="清除标签颜色"; ja="タブの色を解除"; ar="مسح لون علامة التبويب" }
                               description={ en="No color on the tab in front, nor kept for its app."; zh="清除当前标签的颜色，并取消为其应用记住的颜色。"; ja="前面のタブの色と、そのアプリに記憶した色を解除します。"; ar="لا لون لعلامة التبويب الأمامية، ولا لون محفوظ لتطبيقها." }
                               keywords=colorWords }

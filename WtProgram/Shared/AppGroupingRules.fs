@@ -134,6 +134,8 @@ module AppGroupingRules =
                     JProperty("groupId",rule.groupId),JProperty("groupName",rule.groupName))))
 
     /// Old rules already identify their groups; merge them with explicit, possibly empty groups.
+    /// A group's colour is kept as written; one from before colours, or a value that is not a
+    /// colour, is no colour.
     let readTargets (root:JObject) =
         let saved =
             match root.["appGroupingTargets"] with
@@ -141,15 +143,24 @@ module AppGroupingRules =
                 items |> Seq.choose(fun item ->
                     try
                         let id,name = item.["id"].Value<string>(),item.["name"].Value<string>()
+                        let color =
+                            match item.["color"] with
+                            | value when not (isNull value) && value.Type=JTokenType.String ->
+                                let text = value.Value<string>()
+                                if isNull text || text.Length>16 then "" else text
+                            | _ -> ""
                         if String.IsNullOrWhiteSpace id || String.IsNullOrWhiteSpace name then None
-                        else Some {id=id;name=name}
+                        else Some {id=id;name=name;color=color}
                     with _ -> None) |> Seq.toList
             | _ -> []
-        let fromRules = read root |> List.map(fun rule -> {id=rule.groupId;name=rule.groupName})
+        let fromRules = read root |> List.map(fun rule -> {id=rule.groupId;name=rule.groupName;color=""})
         saved @ fromRules |> List.distinctBy(fun group -> group.id)
 
     let writeTargets (targets:AppGroupingTarget list) =
-        JArray(targets |> List.map(fun group -> JObject(JProperty("id",group.id),JProperty("name",group.name))))
+        JArray(targets |> List.map(fun group ->
+            let item = JObject(JProperty("id",group.id),JProperty("name",group.name))
+            if not (String.IsNullOrEmpty group.color) then item.Add("color",JValue(group.color))
+            item))
 
     /// Each pattern compiled once; one that cannot be compiled matches nothing.
     let private matchers = ConcurrentDictionary<struct(int * string),(string -> bool) option>()

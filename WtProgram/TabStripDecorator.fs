@@ -610,9 +610,13 @@ type TabStripDecorator(group:WindowGroup) as this =
         let currentColor = group.tabColor hwnd
         let dark = Theme.darkBar group.tabAppearance.tabNormalBgColor
         let saveAppColor color = AppTabColors.save processPath color
+        // The group's own colour, while it keeps one: a colour chosen goes to the group too.
+        let groupColor = Services.program.getGroupColor hwnd
+        let keepsGroupColor = Services.program.canKeepGroupColor hwnd
         let choose color =
             group.setTabColor(hwnd,Some color)
             AppTabColors.chosen processPath color
+            if groupColor.IsSome then Services.program.setGroupColor(hwnd,Some color)
         let colorItems =
             let palette = Theme.tabPalette dark
             Theme.tabColorOrder |> List.map(fun index ->
@@ -637,8 +641,13 @@ type TabStripDecorator(group:WindowGroup) as this =
             CmiRegular({text=tr Strings.Settings.rememberTabColor;image=None
                         flags=checkedFlag remembered |> fun flags -> if not remembered && currentColor.IsNone then flags.append(MenuFlags.MF_GRAYED) else flags
                         click=fun() -> saveAppColor (if remembered then None else currentColor)})
+            // For a group across apps or one made by dragging; greyed with nothing to keep.
+            CmiRegular({text=tr Strings.Settings.rememberGroupColor;image=None
+                        flags=checkedFlag groupColor.IsSome |> fun flags -> if not keepsGroupColor || (groupColor.IsNone && currentColor.IsNone) then flags.append(MenuFlags.MF_GRAYED) else flags
+                        click=fun() -> Services.program.setGroupColor(hwnd,(if groupColor.IsSome then None else currentColor))})
             CmiRegular({text=tr Strings.Settings.clearTabColor;image=None;flags=List2();click=fun() ->
                 saveAppColor None
+                Services.program.setGroupColor(hwnd,None)
                 group.setTabColor(hwnd,None)})])})
         let restoreTabNameItem =
             CmiRegular({

@@ -111,6 +111,15 @@ let main() =
     let second = {titled with id="second";title="project b"}
     let conditioned = JObject(JProperty("appGroupingRules",AppGroupingRules.write [broad;titled;second]))
     check (AppGroupingRules.read conditioned=[broad;titled;second]) "Rules for some of an app's windows were lost or merged on reading"
+    // A group's colour is kept with it; a group with none writes none, a group known only from
+    // its rules has none, and a file from before group colours reads none.
+    let colored = [{id="g1";name="Group 1";color="palette:3"};{id="g2";name="Group 2";color="#1A2B3C"};{id="g3";name="Group 3";color=""}]
+    let targetsRoot = JObject(JProperty("appGroupingTargets",AppGroupingRules.writeTargets colored),
+                              JProperty("appGroupingRules",AppGroupingRules.write [{broad with groupId="g4";groupName="Group 4"}]))
+    check (AppGroupingRules.readTargets targetsRoot=colored @ [{id="g4";name="Group 4";color=""}]) "A group's colour was not kept, or a rule's group got one"
+    check (isNull ((AppGroupingRules.writeTargets colored).[2].["color"])) "A group with no colour wrote one"
+    for item in targetsRoot.["appGroupingTargets"] :?> JArray do (item :?> JObject).Remove("color") |> ignore
+    check (AppGroupingRules.readTargets targetsRoot |> List.forall(fun group -> group.color="")) "A file from before group colours read a colour"
     let malformedRules = rootRules.DeepClone() :?> JObject
     (malformedRules.["appGroupingRules"] :?> JArray).Add(JObject(JProperty("processPath","broken")))
     let invalidPath = (AppGroupingRules.write [broad]).[0].DeepClone()

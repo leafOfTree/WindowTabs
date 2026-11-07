@@ -262,10 +262,11 @@ module Commands =
         | _ -> []
     /// The tab's colour now, picked or given by its app.
     let private currentTabColor hwnd = groupOf hwnd |> Option.bind(fun g -> Services.program.getTabColor(hwnd,g.windows.list))
-    /// A colour for the tab, and for its app too while the app remembers one.
+    /// A colour for the tab, and for its app or its group too while either remembers one.
     let private setTabColor hwnd color =
         onTab (fun g hwnd -> g.run(SetTabColor(hwnd,Some color))) hwnd
         AppTabColors.chosen (processPath hwnd) color
+        if (Services.program.getGroupColor hwnd).IsSome then Services.program.setGroupColor(hwnd,Some color)
     /// A colour of one's own, picked in the app's colour picker as the tab menu does: the tab
     /// takes each colour as it is picked, and Cancel or Esc gives it back the one it had.
     let private customTabColor hwnd =
@@ -284,9 +285,16 @@ module Commands =
     let private rememberTabColor hwnd =
         let path = processPath hwnd
         AppTabColors.save path (if AppTabColors.remembered path then None else currentTabColor hwnd)
-    /// No colour on the tab, nor for its app.
+    /// Something to keep for the group, or forget: a colour on the tab, or one the group keeps.
+    let private canRememberGroupColor hwnd =
+        hasGroup hwnd && Services.program.canKeepGroupColor hwnd && ((Services.program.getGroupColor hwnd).IsSome || (currentTabColor hwnd).IsSome)
+    /// Keeps the tab's colour for its group, or forgets the group's.
+    let private rememberGroupColor hwnd =
+        Services.program.setGroupColor(hwnd,(if (Services.program.getGroupColor hwnd).IsSome then None else currentTabColor hwnd))
+    /// No colour on the tab, nor for its app or its group.
     let private clearTabColor hwnd =
         AppTabColors.save (processPath hwnd) None
+        Services.program.setGroupColor(hwnd,None)
         onTab (fun g hwnd -> g.run(SetTabColor(hwnd,None))) hwnd
     /// Whether an app's own switch is on, for the app of the window in front. `read` reaches the
     /// services only when asked: the commands are listed before any service is there.
@@ -393,9 +401,12 @@ module Commands =
               // Off with nothing to remember, as the tab menu greys it.
               if canRememberTabColor hwnd then
                   yield choice (tr Strings.Settings.rememberTabColor) (if remembered then "✓" else "") (fun () -> rememberTabColor hwnd)
+              if canRememberGroupColor hwnd then
+                  yield choice (tr Strings.Settings.rememberGroupColor) (if (Services.program.getGroupColor hwnd).IsSome then "✓" else "") (fun () -> rememberGroupColor hwnd)
               yield choice (tr Strings.Settings.clearTabColor) "" (fun () -> clearTabColor hwnd) ])
         plain "custom-tab-color" Strings.Commands.customTabColor TabCommands hasGroup customTabColor
         plain "remember-tab-color" Strings.Commands.rememberTabColor TabCommands canRememberTabColor rememberTabColor
+        plain "remember-group-color" Strings.Commands.rememberGroupColor TabCommands canRememberGroupColor rememberGroupColor
         plain "clear-tab-color" Strings.Commands.clearTabColor TabCommands hasGroup clearTabColor
         plain "move-tab-left" Strings.Commands.moveTabLeft TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,-1))))
         plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))

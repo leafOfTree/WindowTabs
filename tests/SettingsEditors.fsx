@@ -482,6 +482,9 @@ let main() =
         member _.setTabColorOverride _ = ()
         member _.getTabColor(_,_) = None
         member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
+        member _.getGroupColor _ = None
+        member _.setGroupColor _ = ()
+        member _.canKeepGroupColor _ = false
         member _.handMadeGroups() = handMade.Value
         member _.ungroupHandMade id =
             ungrouped.Add id
@@ -1344,6 +1347,16 @@ otepad.exe"]},
             send "OnMouseDown"
             tip
         let clickAction item action = clickActionIn tree item action
+        // A group given a colour from a tab menu shows it as a dot on its row in place of the
+        // group mark; with the colour gone, the mark is back.
+        do
+            let chosen = PaletteColor Theme.tabColorOrder.Head
+            settingValues.["appGroupingTargets"] <- box (targets() |> List.map(fun group -> {group with color=Theme.formatTabColor chosen}))
+            groupView.Reload()
+            assertTrue (tree.Roots.[0].Swatch=Some(Theme.tabColor false chosen) && tree.Roots.[0].Glyph=NoGlyph) "A group's colour is not shown as a dot on its row"
+            settingValues.["appGroupingTargets"] <- box (targets() |> List.map(fun group -> {group with color=""}))
+            groupView.Reload()
+            assertTrue (tree.Roots.[0].Swatch.IsNone && tree.Roots.[0].Glyph=GroupGlyph) "A group with its colour gone kept the dot"
         /// Presses the part of a row's chips that a hit test finds, wherever the list drew it.
         let pressChipPart hitTest (item:TreeListItem) =
             tree.EnsureVisible(item)
