@@ -250,6 +250,27 @@ let main() =
                 // In the settings' face, Segoe UI Variable where Windows has it, as the page beside it.
                 let hintFont = typeof<GestureHint>.GetField("font",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetValue(hint) :?> Font
                 check (hintFont.Name=font.Name) (sprintf "The hint is set in %s, not %s" hintFont.Name font.Name)
+                // Ready to release, the action's row stands on a tint of the accent; a stroke still
+                // on its way, with nothing to run yet, has none.
+                let theme = name
+                let shot name =
+                    let image = new Bitmap(hint.Width,hint.Height)
+                    hint.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                    image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "gesture-hint-%s-%s.png" name theme))
+                    image
+                let tinted (image:Bitmap) =
+                    let surface = (SettingsColors.current()).surface
+                    let y = Dpi.scale 18
+                    [ for x in Dpi.scale 8..image.Width-Dpi.scale 8 -> image.GetPixel(x,y) ]
+                    |> List.exists(fun pixel -> abs(int pixel.R-int surface.R)+abs(int pixel.G-int surface.G)+abs(int pixel.B-int surface.B)>12)
+                hint.show(Some "U","Switch windows",false,["UL","Previous tab";"UR","Next tab"],pointer)
+                use readyWithNext = shot "ready-next"
+                hint.show(Some "UR","Switch to next tab",false,[],pointer)
+                use ready = shot "ready"
+                hint.show(Some "U","",true,["UL","Previous tab";"UR","Next tab"],pointer)
+                use onItsWay = shot "on-its-way"
+                check (SystemInformation.HighContrast || (tinted ready && tinted readyWithNext && not (tinted onItsWay)))
+                      "The action that runs on release does not stand out from a stroke still on its way"
                 render hint ("mouse-gestures-hint-"+name)
                 hint.hide()
             let everywhereColumns = editor.Columns
