@@ -466,6 +466,7 @@ type TaskBarButton(info) as this =
     member _.ownsApplication(hwnd:IntPtr) = windows.ContainsKey(WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER))
 
     /// Peek must own only the application represented by that preview, rather than every tab.
+    /// Whether the window took its owner, as `TabWindow.adoptWindow` says.
     member this.adoptWindow(hwnd:IntPtr, follow:bool) =
         match tabWindowsCell.value.tryFind(TaskBarButton.key hwnd) with
         | Some tab -> tab.adoptWindow(hwnd,follow)
@@ -473,6 +474,7 @@ type TaskBarButton(info) as this =
             // Discovery can announce a member before its preview joins the strip.
             if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>this.window.hwnd then
                 WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_HWNDPARENT,this.window.hwnd) |> ignore
+            WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=this.window.hwnd
 
     member this.createDwmWindow (dwmWindow:DwmWindow) : Window =
         let wndProc m =
@@ -573,17 +575,24 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
     // Owned by the group's taskbar window, except while the group's thumbnails are up: see
     // TaskBarButton.releasePreviews.
 
-    /// `follow`: the preview goes back just below its window if it is not there.
+    /// `follow`: the preview goes back just below its window if it is not there. Whether the
+    /// window now has the preview for its owner: a Store app's frame, as Windows Settings', keeps
+    /// none another process gives it.
     member this.adoptWindow(hwnd, follow:bool) =
-        if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>_window.hwnd then
+        let ownedByPreview() = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=_window.hwnd
+        if not (ownedByPreview()) then
             StartupTrace.measure "taskbar.owner" (fun () ->
                 WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_HWNDPARENT,_window.hwnd) |> ignore
                 // A new owner keeps its place in the z-order, which can be above the window it now
                 // owns. Activating that window then raised nothing: Windows raises a window by its
                 // top owner, already on top, so the window stayed under other tabs. The preview
-                // goes just below the window, as an owner would be.
-                WinUserApi.SetWindowPos(_window.hwnd,hwnd,0,0,0,0,
-                    SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore)
+                // goes just below the window, as an owner would be. Only once it is the owner:
+                // moved with its owner, the group's taskbar window, the preview took every other
+                // window of the group with it to just below a window that refused it, which came
+                // back over the tab in front at each change of foreground.
+                if ownedByPreview() then
+                    WinUserApi.SetWindowPos(_window.hwnd,hwnd,0,0,0,0,
+                        SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore)
         elif follow && WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_HWNDNEXT)<>_window.hwnd then
             // Activating a window raises every window of the group's taskbar window with it, each
             // just above its preview, in the previews' order. The group stacks its windows and
@@ -593,7 +602,9 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
             WinUserApi.SetWindowPos(_window.hwnd,hwnd,0,0,0,0,
                 SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE |||
                 SetWindowPosFlags.SWP_NOACTIVATE ||| SetWindowPosFlags.SWP_NOOWNERZORDER) |> ignore
-        ownedWindow <- hwnd
+        let owned = ownedByPreview()
+        if owned then ownedWindow <- hwnd
+        owned
 
     /// Destroying an owner also destroys its owned windows; a preview never owns their lifetime.
     member private this.releaseOwnedWindow() =
@@ -685,6 +696,8 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     let flashingTabs = Collections.Generic.HashSet<string>()
     /// The windows the taskbar window owns.
     let adopted = Collections.Generic.HashSet<IntPtr>()
+    /// Windows that kept no owner the group gave them, as a Store app's frame: each keeps its own button.
+    let refusedOwner = Collections.Generic.HashSet<IntPtr>()
     /// The taskbar window last placed on the group's desktop.
     let mutable placedOwner = IntPtr.Zero
     let desktopOf = defaultArg desktopOf VirtualDesktop.groupingDesktopId
@@ -788,8 +801,10 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                         // Not while the group minimizes or restores: Windows restores the windows
                         // one by one, by their previews' order, and previews moved to an order
                         // passing by in the meantime swapped tabs behind as the group came back.
-                        taskbarButton.adoptWindow(hwnd,not this.wtGroup.isChangingMinimizeState && not(WinUserApi.IsIconic hwnd))
-                        if adopted.Add hwnd then
+                        let owned = taskbarButton.adoptWindow(hwnd,not this.wtGroup.isChangingMinimizeState && not(WinUserApi.IsIconic hwnd))
+                        // A window that keeps no owner of ours is not taken over: it keeps its own button.
+                        if owned then refusedOwner.Remove hwnd |> ignore else refusedOwner.Add hwnd |> ignore
+                        if owned && adopted.Add hwnd then
                             this.os.windowFromHwnd(hwnd).parkIfMinimized()
                             this.wtGroup.prepareMinimizeAnchor hwnd
             placed
@@ -931,7 +946,9 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                     this.setCombineState Combined
                     placementRetry.Stop()
                     placementAttempts.Succeeded()
-                    members.iter(fun hwnd -> this.showInTaskbar(hwnd,false))
+                    // A window that refused the group's button, as a Store app's frame, keeps its own:
+                    // hidden, it could only be reached through its tab.
+                    members.iter(fun hwnd -> this.showInTaskbar(hwnd,refusedOwner.Contains hwnd))
                 else
                     this.setCombineState PlacementFailed
                     // Keep each application's desktop and button until the proxy is safely placed.
@@ -963,6 +980,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     member this.onRemoved(hwnd) =
         customIconKnown <- false
         apps.Remove hwnd |> ignore
+        refusedOwner.Remove hwnd |> ignore
         flashingTabs.Remove(TaskBarButton.key hwnd) |> ignore
         this.updateTaskbar()
         this.showInTaskbar(hwnd, true)

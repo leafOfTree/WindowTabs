@@ -1102,6 +1102,20 @@ let main() =
                     let previewOwner key = WinUserApi.GetWindow((button.tryTabWindow key).Value.hwnd,GetWindowConstants.GW_OWNER)
                     check (["a";"b"] |> List.forall(fun key -> previewOwner key=button.window.hwnd))
                         "A tab preview is not owned by the group's taskbar window"
+                    // Taking a window over says whether it took the owner: a window that keeps none,
+                    // as a Store app's frame, is neither counted taken over nor has the group's
+                    // windows moved below it, which brought it back over the tab in front.
+                    do
+                        use taken = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000))
+                        taken.Show()
+                        let gone = new Form(ShowInTaskbar=false)
+                        let goneHandle = gone.Handle
+                        gone.Dispose()
+                        check (button.adoptWindow(taken.Handle,false) && WinUserApi.GetWindow(taken.Handle,GetWindowConstants.GW_OWNER)=button.window.hwnd && button.ownsApplication taken.Handle)
+                            "A window that took the group's button is not reported taken over"
+                        check (not (button.adoptWindow(goneHandle,false)) && not (button.ownsApplication goneHandle))
+                            "A window that kept no owner is reported taken over"
+                        WinUserApi.SetWindowLong(taken.Handle,WindowLongFieldOffset.GWL_HWNDPARENT,IntPtr.Zero) |> ignore
                     pumpUntil "First preview order was not sent again" (fun () -> not button.isResendingTabOrder)
                     button.update(info ["a";"b";"c"])
                     button.update(info ["a";"b"])
