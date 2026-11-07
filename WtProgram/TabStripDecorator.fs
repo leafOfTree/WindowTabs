@@ -185,7 +185,9 @@ type TabStripDecorator(group:WindowGroup) as this =
                         let menuClosed () =
                             this.ts.refreshHover()
                             group.bb.write("contextMenuVisible", false)
-                        let menu = new ThemedContextMenu(this.contextMenu(hwnd,images),menuClosed,group.windows.contains)
+                        // Built again for a colour chosen, which keeps the menu up to remember it.
+                        let menu = new ThemedContextMenu(this.contextMenu(hwnd,images),menuClosed,group.windows.contains,
+                                                         rebuild=(fun fresh -> this.contextMenu(hwnd,fresh)))
                         contextMenu <- Some menu
                         menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y,os.windowFromHwnd(this.ts.hwnd).bounds.Rectangle)
                     with _ ->
@@ -617,14 +619,21 @@ type TabStripDecorator(group:WindowGroup) as this =
             group.setTabColor(hwnd,Some color)
             AppTabColors.chosen processPath color
             if groupColor.IsSome then Services.program.setGroupColor(hwnd,Some color)
+        // A colour chosen keeps the menu up, its swatch ticked, so the colour can be remembered
+        // for the app or the group right after; so does either of those, so both can be.
+        let staysOpen = List2([MenuItemFlags.staysOpen])
         let colorItems =
             let palette = Theme.tabPalette dark
             Theme.tabColorOrder |> List.map(fun index ->
                 let color = palette.[index]
-                let image = Img(MenuImages.colorTab (Dpi.scale 28) (Dpi.scale 16) color (tr Strings.Settings.tabColorSample))
+                let chosen = currentColor=Some(PaletteColor index)
+                // As wide as the menu's gutter, which every themed menu keeps.
+                let size = ThemeMenuRenderer.gutterSize()
+                let image = Img(if chosen then MenuImages.colorTabChosen size.Width size.Height color
+                                else MenuImages.colorTab size.Width size.Height color (tr Strings.Settings.tabColorSample))
                 images.Add(image)
                 CmiRegular({text=tr Strings.Settings.tabColorNames.[index];image=Some image
-                            flags=checkedFlag(currentColor=Some(PaletteColor index))
+                            flags=(checkedFlag chosen).appendList staysOpen
                             click=fun() -> choose (PaletteColor index)}))
             // The colours tabs are given automatically, then the ones only picked by hand.
             |> List.splitAt Theme.automaticColorCount |> fun (main,more) -> main @ [CmiSeparator] @ more
@@ -639,11 +648,11 @@ type TabStripDecorator(group:WindowGroup) as this =
                     (fun color -> last <- color; group.setTabColor(hwnd,Some(CustomColor color)))
                     (fun kept -> if kept && last<>initial then choose (CustomColor last) else group.setTabColor(hwnd,previous))})
             CmiRegular({text=tr Strings.Settings.rememberTabColor;image=None
-                        flags=checkedFlag remembered |> fun flags -> if not remembered && currentColor.IsNone then flags.append(MenuFlags.MF_GRAYED) else flags
+                        flags=(checkedFlag remembered).appendList staysOpen |> fun flags -> if not remembered && currentColor.IsNone then flags.append(MenuFlags.MF_GRAYED) else flags
                         click=fun() -> saveAppColor (if remembered then None else currentColor)})
             // For a group across apps or one made by dragging; greyed with nothing to keep.
             CmiRegular({text=tr Strings.Settings.rememberGroupColor;image=None
-                        flags=checkedFlag groupColor.IsSome |> fun flags -> if not keepsGroupColor || (groupColor.IsNone && currentColor.IsNone) then flags.append(MenuFlags.MF_GRAYED) else flags
+                        flags=(checkedFlag groupColor.IsSome).appendList staysOpen |> fun flags -> if not keepsGroupColor || (groupColor.IsNone && currentColor.IsNone) then flags.append(MenuFlags.MF_GRAYED) else flags
                         click=fun() -> Services.program.setGroupColor(hwnd,(if groupColor.IsSome then None else currentColor))})
             CmiRegular({text=tr Strings.Settings.clearTabColor;image=None;flags=List2();click=fun() ->
                 saveAppColor None
@@ -692,7 +701,8 @@ type TabStripDecorator(group:WindowGroup) as this =
         let closeTabItem = 
             let shortcut = SettingsShortcut.text (Services.program.getHotKey "closeTab")
             CmiRegular({
-                text = tr Strings.TabMenu.close + (if shortcut = "" then "" else "\t" + shortcut)
+                // Under Close, so named in full as the shortcut's setting is.
+                text = tr Strings.Settings.closeTab.caption + (if shortcut = "" then "" else "\t" + shortcut)
                 image = None
                 click = fun() -> this.onCloseWindow hwnd
                 flags = List2()
@@ -733,6 +743,13 @@ type TabStripDecorator(group:WindowGroup) as this =
                 flags = List2()
             })
 
+        // One Close entry, its ways of closing under it: the tab, the others, the ones after it,
+        // the app's (in a group of several apps) and all.
+        let closeMenu =
+            CmiPopUp({text=tr Strings.TabMenu.close;image=None
+                      items=List2([ Some closeTabItem; Some closeOtherTabsItem; Some closeTabsAfterItem
+                                    (if mixesApps then Some closeAllExeTabsItem else None); Some closeAllTabsItem ] |> List.choose id)})
+
         let managerItem =
             CmiRegular({
                 text = tr Strings.TabMenu.settings
@@ -760,11 +777,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             (if group.isSuperBarEnabled then Some(changeIconItem) else None)
             (if customIcon.IsSome then Some(restoreIconItem) else None)
             Some(CmiSeparator)
-            Some(closeTabItem)
-            Some(closeOtherTabsItem)
-            Some(closeTabsAfterItem)
-            (if mixesApps then Some(closeAllExeTabsItem) else None)
-            Some(closeAllTabsItem)
+            Some(closeMenu)
             // Named after the program itself, since these choices apply to all its windows.
             Some(CmiSection(pid.appName))
             Some(enableTabsItem)

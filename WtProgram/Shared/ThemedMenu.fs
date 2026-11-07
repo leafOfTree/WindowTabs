@@ -168,6 +168,9 @@ type ThemeMenuRenderer(p:SettingsPalette) =
     override _.OnRenderImageMargin(e) = fill e.Graphics p.surface e.AffectedBounds
     /// Windows 11 draws the outline itself, with the menu's rounded corners and shadow.
     member val DrawsOutline = true with get,set
+    /// Blank images that only hold a menu's gutter open: drawn as nothing, ticked as no image.
+    member val Placeholders = Collections.Generic.HashSet<Image>(HashIdentity.Reference) with get
+    member private this.isPlaceholder (image:Image) = not (isNull image) && this.Placeholders.Contains image
     override this.OnRenderToolStripBorder(e) =
         if this.DrawsOutline then
             use pen = new Pen(p.border)
@@ -184,33 +187,36 @@ type ThemeMenuRenderer(p:SettingsPalette) =
     /// The ink of a chosen item's tick: the accent, or the text's where the item cannot be taken.
     member private _.tickInk (item:ToolStripItem) =
         if not item.Enabled || SystemInformation.HighContrast then textColor item else p.accentText
-    /// A wide image, such as a tab colour swatch, fills the gutter with a sample of its own, so
-    /// its item's tick goes after the label instead. The room an item keeps for it.
-    static member tickAfterLabel (item:ToolStripMenuItem) = item.Checked && not(isNull item.Image) && item.Image.Width>item.Image.Height
-    static member tickAfterWidth() = Dpi.scale 8+MenuTick.size()
-    override this.OnRenderItemText(e) =
+    /// The gutter every themed menu keeps, wide enough for a tab colour swatch, so labels start
+    /// at one place from menu to menu.
+    static member gutterSize() = Size(Dpi.scale 24,Dpi.scale 16)
+    override _.OnRenderItemText(e) =
         let isNote = obj.ReferenceEquals(e.Item.Tag,ThemeMenuRenderer.noteTag)
         e.TextColor <- if isNote && not SystemInformation.HighContrast then p.muted else textColor e.Item
         // Keep the shortcut column fixed while bringing every label closer to its glyph.
         let label = e.TextFormat &&& TextFormatFlags.Right = enum<TextFormatFlags>(0)
         if label then
             let r = e.TextRectangle
-            let inset = Dpi.scale 6 - (if isNote then ThemeMenuRenderer.noteInset else 0)
+            let inset = Dpi.scale 10 - (if isNote then ThemeMenuRenderer.noteInset else 0)
             e.TextRectangle <- Rectangle(r.X-inset,r.Y,r.Width+inset,r.Height)
         base.OnRenderItemText(e)
-        match e.Item with
-        | :? ToolStripMenuItem as item when label && ThemeMenuRenderer.tickAfterLabel item ->
-            let r = e.TextRectangle
-            let width = TextRenderer.MeasureText(e.Graphics,e.Text,e.TextFont,Size.Empty,e.TextFormat).Width
-            let em = float32(MenuTick.size())
-            let box = RectangleF(float32(r.X+width+Dpi.scale 4),float32 r.Y+(float32 r.Height-em)/2.0f,em,em)
-            MenuTick.draw e.Graphics box (this.tickInk e.Item)
-        | _ -> ()
+    /// A submenu's arrow as a chevron in the tick's stroke, as Windows 11 draws it, in place of
+    /// the renderer's small filled triangle.
     override _.OnRenderArrow(e) =
-        e.ArrowColor <- textColor e.Item
-        base.OnRenderArrow(e)
-    override _.OnRenderItemImage(e) =
-        if not(isNull e.Image) then
+        let state = e.Graphics.Save()
+        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        e.Graphics.PixelOffsetMode <- Drawing2D.PixelOffsetMode.HighQuality
+        use pen = new Pen(textColor e.Item,float32(Dpi.scaleF 1.5))
+        pen.StartCap <- Drawing2D.LineCap.Round
+        pen.EndCap <- Drawing2D.LineCap.Round
+        pen.LineJoin <- Drawing2D.LineJoin.Round
+        let r = e.ArrowRectangle
+        let cx,cy = float32 r.X+float32 r.Width/2.0f,float32 r.Y+float32 r.Height/2.0f
+        let half = float32(Dpi.scaleF 3.5)
+        e.Graphics.DrawLines(pen,[|PointF(cx-half/2.0f,cy-half);PointF(cx+half/2.0f,cy);PointF(cx-half/2.0f,cy+half)|])
+        e.Graphics.Restore(state)
+    override this.OnRenderItemImage(e) =
+        if not(isNull e.Image) && not (this.isPlaceholder e.Image) then
             if e.Item.Enabled then e.Graphics.DrawImage(e.Image,e.ImageRectangle)
             else ControlPaint.DrawImageDisabled(e.Graphics,e.Image,e.ImageRectangle.X,e.ImageRectangle.Y,p.surface)
     override _.OnRenderSeparator(e) =
@@ -234,17 +240,14 @@ type ThemeMenuRenderer(p:SettingsPalette) =
             TextRenderer.DrawText(e.Graphics,e.Item.Text,e.Item.Font,Rectangle(Point.Empty,e.Item.Size),
                                   (if SystemInformation.HighContrast then p.text else p.muted),flags)
     /// The tick in the gutter of a chosen item without an image; one with an image carries its
-    /// own mark, over the image or after the label.
+    /// own mark on the image.
     override this.OnRenderItemCheck(e) =
-        if isNull e.Item.Image then
+        if isNull e.Item.Image || this.isPlaceholder e.Item.Image then
             let r = e.ImageRectangle
             let em = float32(MenuTick.size())
             let box = RectangleF(float32 r.X+(float32 r.Width-em)/2.0f,float32 r.Y+(float32 r.Height-em)/2.0f,em,em)
             MenuTick.draw e.Graphics box (this.tickInk e.Item)
 
-/// Own image copies until the menu loop has finished closing, then dispatch the command.
-/// ownsForeground: windows whose activation must not close the menu, such as the tab's own
-/// window that the click which opened it is still bringing forward.
 /// Whether any themed menu is open, on any thread, so a tab's title tip does not cover it.
 module OpenMenus =
     let private count = ref 0
@@ -261,13 +264,24 @@ module ForegroundOverlays =
     let remove (hwnd:IntPtr) = lock windows (fun () -> windows.Remove hwnd |> ignore)
     let contains (hwnd:IntPtr) = lock windows (fun () -> windows.Contains hwnd)
 
-type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsForeground:IntPtr -> bool) as this =
+/// Own image copies until the menu loop has finished closing, then dispatch the command.
+/// ownsForeground: windows whose activation must not close the menu, such as the tab's own
+/// window that the click which opened it is still bringing forward.
+/// rebuild: the items again, as they are now, for a menu kept open by an item that stays
+/// (`MenuItemFlags.staysOpen`); the images it makes are disposed once copied.
+type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsForeground:IntPtr -> bool,?rebuild:ResizeArray<Img> -> List2<ContextMenuItem>) as this =
     inherit ContextMenuStrip()
     let palette = SettingsColors.current()
     let renderer = new ThemeMenuRenderer(palette)
     let images = ResizeArray<Bitmap>()
+    /// What a staying item does, run while the menu is up.
+    let staying = Collections.Generic.Dictionary<ToolStripItem,unit -> unit>(HashIdentity.Reference)
+    /// A staying item was chosen: the menus do not close for it.
+    let mutable keepOpen = false
     let font = new Font(SystemFonts.MenuFont.FontFamily, (SystemFonts.MenuFont.Size+1.0f) * float32(Dpi.value()) / float32(Dpi.system()))
     let sectionFont = new Font(font.FontFamily,max 8.0f (font.Size-1.0f),font.Style)
+    /// The name of a chosen item whose image carries its tick, so it is found at a glance.
+    let boldFont = new Font(font,FontStyle.Bold)
     let mutable action = None
     /// An item was clicked in this menu or a submenu. WinForms says so before closing the menu,
     /// and only afterwards raises the item's Click that records its command.
@@ -298,12 +312,16 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
         menu.ItemClicked.Add(fun e ->
             match e.ClickedItem with
             | :? ToolStripMenuItem as item when item.HasDropDownItems -> ()
+            | item when staying.ContainsKey item -> keepOpen <- true
             | _ -> chosen <- true)
+        // The closes a chosen item brings, this menu's and its owners', are let go for a staying one.
+        menu.Closing.Add(fun e -> if keepOpen && e.CloseReason=ToolStripDropDownCloseReason.ItemClicked then e.Cancel <- true)
         menu.Renderer <- renderer
         menu.BackColor <- palette.surface
         menu.ForeColor <- palette.text
         menu.Font <- font
-        menu.ImageScalingSize <- Size(Dpi.scale 16,Dpi.scale 16)
+        // One gutter for every menu, so labels line up from menu to submenu.
+        menu.ImageScalingSize <- ThemeMenuRenderer.gutterSize()
         let dropdown = menu :?> ToolStripDropDownMenu
         // Checks and colour dots share one gutter instead of reserving two columns.
         dropdown.ShowCheckMargin <- false
@@ -359,26 +377,42 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
                 entry.Checked <- flags |> List.exists(fun flag -> flag &&& MenuFlags.MF_CHECKED<>0)
                 if parts.Length=2 then entry.ShortcutKeyDisplayString <- parts.[1]
                 image |> Option.iter(fun source ->
-                    // A wide image, such as a tab colour swatch, is drawn at its own size and the
-                    // gutter widens for it, rather than being squeezed square. Its sample is kept
-                    // clear of the mark, which the renderer draws after the label instead.
+                    // Drawn at its own size in the gutter, not scaled to it: a tab colour swatch
+                    // fills the gutter's width and carries its own mark; a square image is marked here.
                     let wide = source.bitmap.Width>source.bitmap.Height
                     let copy = if entry.Checked && not wide then MenuImages.checkedCopy source.bitmap else new Bitmap(source.bitmap)
                     images.Add(copy)
-                    if wide then entry.ImageScaling <- ToolStripItemImageScaling.None
+                    entry.ImageScaling <- ToolStripItemImageScaling.None
                     entry.Image <- copy
-                    if ThemeMenuRenderer.tickAfterLabel entry then entry.Padding <- Padding(0,0,ThemeMenuRenderer.tickAfterWidth(),0))
-                click |> Option.iter(fun run -> entry.Click.Add(fun _ -> action <- Some run))
+                    // A tick in a swatch is small: the chosen colour's name is bold as well.
+                    if entry.Checked && wide then entry.Font <- boldFont)
+                let stays = flags |> List.contains MenuItemFlags.staysOpen
+                click |> Option.iter(fun run ->
+                    if stays then
+                        staying.[entry] <- run
+                        entry.Click.Add(fun _ -> this.runStaying(entry,target))
+                    else entry.Click.Add(fun _ -> action <- Some run))
                 entry.MouseEnter.Add(fun _ -> hovered <- Some entry; hoverOpen.Stop(); hoverOpen.Start())
                 if not children.IsEmpty then
                     configure entry.DropDown
                     add entry.DropDownItems children
+        holdGutter target
+    /// WinForms sizes a menu's gutter by its images, so a menu without one would set its labels
+    /// nearer its edge than a menu with: a blank image on the first item keeps every gutter the same.
+    and holdGutter (target:ToolStripItemCollection) =
+        let entries = target |> Seq.cast<ToolStripItem> |> Seq.choose(function :? ToolStripMenuItem as entry -> Some entry | _ -> None) |> List.ofSeq
+        if not entries.IsEmpty && entries |> List.forall(fun entry -> isNull entry.Image) then
+            let size = ThemeMenuRenderer.gutterSize()
+            let blank = new Bitmap(size.Width,size.Height)
+            images.Add(blank)
+            renderer.Placeholders.Add(blank) |> ignore
+            entries.Head.ImageScaling <- ToolStripItemImageScaling.None
+            entries.Head.Image <- blank
     do
         hoverOpen.Tick.Add(fun _ ->
             hoverOpen.Stop()
             this.openHovered(Control.MousePosition))
         configure this
-        this.ImageScalingSize <- Size(Dpi.scale 16,Dpi.scale 16)
         timer.Tick.Add(fun _ ->
             let run = action
             action <- None
@@ -414,6 +448,42 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             timer.Start())
         try add this.Items items.list
         with _ -> this.Dispose(); reraise()
+    /// A staying item chosen: runs it with the menu up, then shows the items of its menu as
+    /// they are now, so its tick and what it made possible show at once.
+    member private this.runStaying(entry:ToolStripItem, target:ToolStripItemCollection) =
+        try
+            match staying.TryGetValue entry with
+            | true,run -> (try run() with _ -> ())
+            | _ -> ()
+            rebuild |> Option.iter(fun rebuild ->
+                let sources = ResizeArray<Img>()
+                try
+                    let fresh = rebuild sources
+                    // The menu the item is in: the top level, or the submenu of the item named as its owner.
+                    let rec find (path:string list) (items:ContextMenuItem list) =
+                        match path with
+                        | [] -> Some items
+                        | name::rest ->
+                            items |> List.tryPick(function CmiPopUp popup when popup.text=name -> find rest popup.items.list | _ -> None)
+                    let rec pathTo (strip:ToolStrip) =
+                        match strip with
+                        | :? ToolStripDropDown as dropDown when not (isNull dropDown.OwnerItem) ->
+                            pathTo dropDown.OwnerItem.Owner @ [dropDown.OwnerItem.Text]
+                        | _ -> []
+                    let owner = entry.Owner
+                    find (pathTo owner) fresh.list |> Option.iter(fun items ->
+                        owner.SuspendLayout()
+                        let old = target |> Seq.cast<ToolStripItem> |> List.ofSeq
+                        target.Clear()
+                        for item in old do
+                            staying.Remove item |> ignore
+                            item.Dispose()
+                        hovered <- None
+                        add target items
+                        owner.ResumeLayout(true)
+                        owner.PerformLayout())
+                finally for source in sources do source.bitmap.Dispose())
+        finally keepOpen <- false
     /// WinForms owns a menu by the window it last saw active on this thread, and a tab strip's
     /// thread never has one: the owner stayed whatever was active when the first menu opened,
     /// often another tab's window behind the current one. Showing the menu raised that window
@@ -491,4 +561,5 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             for image in images do image.Dispose()
             images.Clear()
             sectionFont.Dispose()
+            boldFont.Dispose()
             font.Dispose()

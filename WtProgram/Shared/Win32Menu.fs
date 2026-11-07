@@ -61,6 +61,41 @@ module MenuImages =
         g.DrawString(text,font,Brushes.White,RectangleF(0.0f,h*0.06f,w,h),format)
         bitmap
 
+    /// A chosen tab colour: the swatch with its sample, inside a white ring, so the mark sits in
+    /// the gutter with the other items' ticks.
+    let colorTabChosen (width:int) (height:int) (color:Color) =
+        let bitmap = new Bitmap(width,height)
+        use g = Graphics.FromImage(bitmap)
+        g.Clear(Color.Transparent)
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        g.PixelOffsetMode <- Drawing2D.PixelOffsetMode.HighQuality
+        let w,h = float32 width,float32 height
+        let rounded (x:float32) (y:float32) (w:float32) (h:float32) =
+            let corner = max 2.0f (h/2.0f)
+            let path = new Drawing2D.GraphicsPath()
+            path.AddArc(x,y,corner,corner,180.0f,90.0f)
+            path.AddArc(x+w-corner,y,corner,corner,270.0f,90.0f)
+            path.AddArc(x+w-corner,y+h-corner,corner,corner,0.0f,90.0f)
+            path.AddArc(x,y+h-corner,corner,corner,90.0f,90.0f)
+            path.CloseFigure()
+            path
+        // The colour inside a white ring at the swatch's edge, so the chosen colour stands out
+        // from its neighbours, with a white tick in place of its sample; the swatch keeps its
+        // size, and so the gutter.
+        let ring = max 1.0f (h/12.0f)
+        use inner = rounded ring ring (w-2.0f*ring) (h-2.0f*ring)
+        use brush = new SolidBrush(color)
+        g.FillPath(brush,inner)
+        use outline = rounded (ring/2.0f) (ring/2.0f) (w-ring) (h-ring)
+        use pen = new Pen(Color.White,ring)
+        g.DrawPath(pen,outline)
+        use tick = new Pen(Color.White,max 1.5f (h/8.0f))
+        tick.StartCap <- Drawing2D.LineCap.Round
+        tick.EndCap <- Drawing2D.LineCap.Round
+        tick.LineJoin <- Drawing2D.LineJoin.Round
+        g.DrawLines(tick,[|PointF(w*0.32f,h*0.52f);PointF(w*0.45f,h*0.70f);PointF(w*0.68f,h*0.30f)|])
+        bitmap
+
     /// A menu item's image takes the place of its check mark, so a checked item needs a mark
     /// of its own: drawn over a copy, in black or white, whichever stands out from the image.
     let checkedCopy (source:Bitmap) =
@@ -73,6 +108,13 @@ module MenuImages =
         use pen = new Pen((if dark then Color.White else Color.Black),max 1.5f (w/7.0f))
         g.DrawLines(pen,[|PointF(w*0.24f,h*0.52f);PointF(w*0.42f,h*0.70f);PointF(w*0.76f,h*0.32f)|])
         copy
+
+/// Flags of the menus here, beside Windows' MF_ ones, outside the bits those use.
+module MenuItemFlags =
+    /// Chosen, the item runs at once and the themed menu stays open, its items built again, so
+    /// a colour can be picked and then remembered without opening the menu twice.
+    let staysOpen = 0x20000000
+    let native (flags:List2<int>) = flags.where(fun flag -> flag<>staysOpen)
 
 /// Owns native menus and their copied bitmaps; source images remain the caller's.
 type NativeContextMenu(items:List2<ContextMenuItem>) =
@@ -110,7 +152,7 @@ type NativeContextMenu(items:List2<ContextMenuItem>) =
             match item with
             | CmiRegular item ->
                 nextId <- nextId+1
-                WinUserApi.AppendMenu(menu,item.flags.append(MenuFlags.MF_STRING).reduce((|||)),nextId,item.text) |> ignore
+                WinUserApi.AppendMenu(menu,(MenuItemFlags.native item.flags).append(MenuFlags.MF_STRING).reduce((|||)),nextId,item.text) |> ignore
                 handlers.Add(nextId,item.click)
                 imageAt position (item.flags.list |> List.exists(fun flag -> flag &&& MenuFlags.MF_CHECKED <> 0)) item.image
             | CmiSeparator -> WinUserApi.AppendMenu(menu,MenuFlags.MF_SEPARATOR,0,"") |> ignore
