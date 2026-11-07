@@ -737,6 +737,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                         StartupTrace.measure "scan.group" (fun () -> this.ensureWindowIsGrouped(window))
             this.destroyEmptyGroups()
             this.removeUntabableWindows()
+            this.forgetClosedWindows()
 
         this.exitIfNeeded() )
 
@@ -752,6 +753,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 else
                     this.desktop.groups.iter(fun group ->
                         if group.windows.contains((=)hwnd) then group.removeWindow(hwnd))
+                    if not exists then this.forgetWindow hwnd
             this.destroyEmptyGroups()
         this.exitIfNeeded() )
 
@@ -1016,21 +1018,35 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             // The shell also says so when a window only loses its taskbar button, as one does when a
             // group with combined icons takes it; forgetting that window let ungrouped windows be
             // put back together by their saved group.
-            | ShellEvent.HSHELL_WINDOWDESTROYED when not (WinUserApi.IsWindow hwnd) ->
-                isSubscribed.Remove(hwnd)
-                subscribedFullScreen.Remove hwnd |> ignore
-                groupedThisRun.Remove hwnd |> ignore
-                appKeys.Remove hwnd |> ignore
-                newTabAnchors.Remove hwnd |> ignore
-                settling.Remove hwnd |> ignore
-                this.noteClosed hwnd
-                isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
-                windowNameOverride <- windowNameOverride.remove hwnd
-                windowColors.remove hwnd
-                VirtualDesktop.forget hwnd
-                awaitingDesktop.Remove hwnd |> ignore
+            | ShellEvent.HSHELL_WINDOWDESTROYED when not (WinUserApi.IsWindow hwnd) -> this.forgetWindow hwnd
             | _ ->()
             refreshQueue.RequestWindow(hwnd)
+
+    /// What was kept about a window that is gone. The shell says a window closed only while it has
+    /// a taskbar button of its own, which a window in a group with combined icons no longer has:
+    /// its event hooks, three to a window, were kept for as long as WindowTabs ran.
+    member private this.forgetWindow(hwnd:IntPtr) =
+        isSubscribed.Remove(hwnd)
+        subscribedFullScreen.Remove hwnd |> ignore
+        groupedThisRun.Remove hwnd |> ignore
+        appKeys.Remove hwnd |> ignore
+        newTabAnchors.Remove hwnd |> ignore
+        settling.Remove hwnd |> ignore
+        this.noteClosed hwnd
+        isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
+        windowNameOverride <- windowNameOverride.remove hwnd
+        windowColors.remove hwnd
+        VirtualDesktop.forget hwnd
+        awaitingDesktop.Remove hwnd |> ignore
+
+    /// A full scan lets go of windows that closed with no word from the shell or an event since.
+    member private this.forgetClosedWindows() =
+        let known = isSubscribed.Keys @ List.ofSeq appKeys.Keys @ List.ofSeq settling.Keys @ List.ofSeq awaitingDesktop.Keys
+        for hwnd in List.distinct known do
+            if not (WinUserApi.IsWindow hwnd) then this.forgetWindow hwnd
+
+    /// How many windows have their events watched, one set of hooks each.
+    member this.watchedWindowCount = isSubscribed.Count
 
     member this.exitIfNeeded() =
         if inShutdown.value then

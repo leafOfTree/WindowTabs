@@ -81,6 +81,20 @@ jobs:
           if ($env:E2E_EXECUTABLE) {
               $options.ReleaseExecutable = $env:E2E_EXECUTABLE
           }
+          # The runner's console windows, this step's own among them, are the only other windows on
+          # the desktop. Left up, one came to the front when every test window was minimized and
+          # stayed over the tabs as they came back.
+          Add-Type -Namespace E2E -Name Consoles -MemberDefinition @'
+          [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+          public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
+          [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+          [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
+          '@
+          $console = [IntPtr]::Zero
+          while (($console = [E2E.Consoles]::FindWindowEx([IntPtr]::Zero, $console, 'ConsoleWindowClass', $null)) -ne [IntPtr]::Zero) {
+              # SW_MINIMIZE
+              if ([E2E.Consoles]::IsWindowVisible($console)) { [E2E.Consoles]::ShowWindow($console, 6) | Out-Null }
+          }
           ./tests/Run-DesktopE2E.ps1 @options
 
       - name: Clean up this test's processes

@@ -164,6 +164,49 @@ let main() =
                             let scans,_,_ = RuntimeMetrics.snapshot()
                             check (scans>scansBefore) "Production startup installed input hooks before its queued discovery ran"} :> IPlugin
         program.initializePlugins(List2([input]))
+        // Another app's window that closes with no word from the shell, as one in a group with
+        // combined taskbar icons does (the test desktop has no shell at all), has its event hooks
+        // let go: at its next event, or else at the next full scan. They were kept for good.
+        do
+            let others = ResizeArray<Diagnostics.Process>()
+            let otherAppWindow () =
+                let title = "Watched window " + Guid.NewGuid().ToString("N")
+                let script = "Add-Type -AssemblyName System.Windows.Forms; $f=New-Object Windows.Forms.Form; $f.Text='" + title +
+                             "'; $f.StartPosition='Manual'; $f.Location=New-Object Drawing.Point(-20000,-20000); [Windows.Forms.Application]::Run($f)"
+                let other = Diagnostics.Process.Start(Diagnostics.ProcessStartInfo("powershell.exe","-NoProfile -NonInteractive -Command \"" + script + "\"",
+                                                                                   UseShellExecute=false,CreateNoWindow=true))
+                others.Add other
+                let started = Diagnostics.Stopwatch.StartNew()
+                let mutable hwnd = IntPtr.Zero
+                while hwnd=IntPtr.Zero && started.ElapsedMilliseconds<30000L do
+                    Application.DoEvents()
+                    Thread.Sleep(50)
+                    other.Refresh()
+                    if other.MainWindowTitle=title then hwnd <- other.MainWindowHandle
+                check (hwnd<>IntPtr.Zero) "Another app's window did not open"
+                other,hwnd
+            let close (other:Diagnostics.Process,hwnd) =
+                other.Kill()
+                other.WaitForExit()
+                pumpUntil "Another app's window did not close" (fun () -> not (WinUserApi.IsWindow hwnd))
+            try
+                let before = program.watchedWindowCount
+                let first = otherAppWindow ()
+                program.updateChangedWindows [|snd first|]
+                check (program.watchedWindowCount=before+1) "Another app's window was not watched"
+                close first
+                program.updateChangedWindows [|snd first|]
+                check (program.watchedWindowCount=before) "A window that closed kept its event hooks after its last event"
+                let second = otherAppWindow ()
+                program.updateChangedWindows [|snd second|]
+                check (program.watchedWindowCount=before+1) "Another app's second window was not watched"
+                close second
+                program.refresh()
+                pumpUntil "A window that closed kept its event hooks after a full scan" (fun () -> program.watchedWindowCount=before)
+            finally
+                for other in others do
+                    if not other.HasExited then (try other.Kill() with _ -> ())
+                    other.Dispose()
         // A program started with --group gives the group one window for each start; a second
         // window of it opened by hand meanwhile is grouped as usual.
         do

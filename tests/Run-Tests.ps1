@@ -177,6 +177,8 @@ public sealed class DesktopProcess : IDisposable {
         }
         [pscustomobject]@{ ExitCode = $exitCode }
     }
+    # A suite writes its main thread's stack out shortly before it would be killed (TestInit.fsx).
+    $env:WINDOWTABS_TEST_STACK_SECONDS = [Math]::Max(5, $TimeoutSeconds - 10)
     # Native UI tests share desktop focus and must not run in parallel.
     Set-Content -LiteralPath (Join-Path $output 'test-results.jsonl') -Value ''
     $failures = @()

@@ -328,7 +328,7 @@ let main() =
         (live :> IGroup).run(SetTabDock TabDockTop)
         check (onGroup(fun group -> group.ts.dock)=TabDockTop) "A group command did not move the tabs back to the top"
         check (Commands.find "rename-tab" |> Option.exists(fun command -> command.category=TabCommands && command.shortcut=Some "rename-tab")) "The tab menu's rename must be a command"
-        check (Commands.find "group-tab-position" |> Option.exists(fun command -> match command.run IntPtr.Zero with Choose options -> options.Length=3 | Done -> false)) "Tab position must offer its three places"
+        check (Commands.find "group-tab-position" |> Option.exists(fun command -> match command.run IntPtr.Zero with Choose options -> options.Length=3 | _ -> false)) "Tab position must offer its three places"
         // One name for each of an app's options, in the tab menu, the palette and the settings.
         for (menu:LocalizedText),(others:LocalizedText list) in
                 [ Strings.TabMenu.enableTabs,[Strings.Commands.tabsForApp.caption;Strings.Settings.enableTabsByDefault.caption]

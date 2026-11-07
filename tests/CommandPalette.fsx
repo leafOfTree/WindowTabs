@@ -92,7 +92,7 @@ let main() =
                 | Some color -> tabColors.[hwnd] <- color
                 | None -> tabColors.TryRemove(hwnd) |> ignore
             member _.getTabColor(hwnd,_) = match tabColors.TryGetValue hwnd with | true,color -> Some color | _ -> None
-            member this.getTabColors(hwnds,peers) = hwnds |> List.map(fun hwnd -> (this :> IProgram).getTabColor(hwnd,peers))
+            member this.getTabColors(hwnds,peers) = hwnds |> List.map(fun hwnd -> this.getTabColor(hwnd,peers))
             member _.getGroupColor _ = groupColor.Value
             member _.setGroupColor((_,color)) = groupColor.Value <- color
             member _.canKeepGroupColor _ = true
