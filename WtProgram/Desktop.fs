@@ -33,7 +33,8 @@ module AutoGroup =
 
 /// What the group's tab menu shows ticked, read on the group's thread for the palette: its tabs'
 /// side and alignment, and its own auto-hide mode, None while it follows the setting.
-type GroupChoicesShown = { dock:TabDock; alignment:Bemo.TabAlignment; autoHide:string option; iconOnly:bool }
+/// `placed`: the tabs were dragged to a place of their own, so no alignment is theirs.
+type GroupChoicesShown = { dock:TabDock; alignment:Bemo.TabAlignment; placed:bool; autoHide:string option; iconOnly:bool }
 
 type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =
     let Cell = CellScope(true, true)
@@ -81,6 +82,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                     let ts : TabStrip = _group.ts
                     Some { dock=ts.dock
                            alignment=ts.getAlignment(if ts.isVertical then TabUp else ts.direction)
+                           placed=ts.position.IsSome
                            autoHide=Option.ofObj(_group.bb.read<string>("autoHideMode",null))
                            iconOnly=ts.isIconOnly }
                 with _ -> None

@@ -221,6 +221,9 @@ type TabStripDecorator(group:WindowGroup) as this =
         let iconsOnlySubscription = Services.settings.notifyValue "showIconsOnly" (fun value ->
             let iconsOnly = value.cast<bool>()
             group.invokeAsync(fun () -> if not disposed then this.ts.isIconOnly <- iconsOnly))
+        // The app's next groups start where its tabs were dragged to.
+        this.ts.rowDragged.Add(fun (Tab hwnd,fraction) ->
+            group.appPathOf hwnd |> Option.iter(fun path -> AppTabPositions.remember path fraction))
 
         group.exited.Add <| fun() ->
             contextMenu |> Option.iter(fun menu -> menu.Dispose())
@@ -247,11 +250,14 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.updateTsSlide() =
         this.ts.slide <- this.tabSlide
 
-    member private this.updateTsPlacement() = 
+    member private this.updateTsPlacement() =
         if group.bounds.value.IsNone then
             this.ts.visible <- false
         else
-            this.ts.setPlacement(this.placement)
+            let placement,span = this.placementAndSpan
+            // A column dragged along the side needs its room to know where it is let go.
+            span |> Option.iter(fun span -> this.ts.columnSpan <- span)
+            this.ts.setPlacement(placement)
             this.ts.visible <- true
         // An empty pane keeps clear of tabs shown inside the title bars, wherever they now are.
         group.refreshSplitChrome()
@@ -259,7 +265,11 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.invokeAsync f = group.invokeAsync f
     member private this.invokeSync f = group.invokeSync f
 
-    member this.placement =
+    member this.placement = fst this.placementAndSpan
+
+    /// Where the strip goes and, for a column, the room it has along the side. A column being
+    /// dragged sits where the pointer holds it; otherwise where it was dragged to, else aligned.
+    member private this.placementAndSpan =
         let decorator =  {
             windowBounds = group.bounds.value.def(Rect())
             monitorBounds = Mon.all.map(fun m -> m.workRect)
@@ -270,10 +280,14 @@ type TabStripDecorator(group:WindowGroup) as this =
         }
         if this.ts.isVertical then
             let width = Dpi.scale (if this.ts.isIconOnly then 48 else this.ts.columnWidth)
-            decorator.sidePlacement(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
-                                    alignment=this.ts.getAlignment TabUp,maximized=group.isMaximized.value)
+            let position = match this.ts.columnSlide with Some fraction -> Some fraction | None -> this.ts.position
+            let placed = decorator.sidePlacement(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
+                                                 alignment=this.ts.getAlignment TabUp,maximized=group.isMaximized.value,?position=position)
+            let span = decorator.sideSpan(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
+                                          alignment=this.ts.getAlignment TabUp,maximized=group.isMaximized.value,?position=position)
+            placed,Some span
         else
-            { showInside=decorator.shouldShowInside; bounds=decorator.bounds }
+            { showInside=decorator.shouldShowInside; bounds=decorator.bounds },None
 
     member this.beginRename(hwnd) =
         let tab = Tab(hwnd)
@@ -443,25 +457,34 @@ type TabStripDecorator(group:WindowGroup) as this =
         let alignmentItem =
             let direction = if this.ts.isVertical then TabUp else this.ts.direction
             let currentAlignment = this.ts.getAlignment direction
-            // Both places at once: chosen over a normal window, it held only until the window
-            // was maximized or went full screen and the tabs moved inside.
-            let setAlignment newAlignment = fun() ->
-                for each in [TabUp;TabDown] do this.ts.setAlignment(each, newAlignment)
+            // Tabs dragged to a place of their own are on no alignment.
+            let placed = this.ts.position.IsSome
+            let setAlignment newAlignment = fun() -> group.chooseAlignment(newAlignment, hwnd)
 
             let alignmentMenuItem(text,alignment) = CmiRegular({
                 text = text
                 image = None
-                flags = checkedFlag(currentAlignment = alignment)
+                flags = checkedFlag(not placed && currentAlignment = alignment)
                 click = setAlignment alignment
             })
-            CmiPopUp({
-                text = tr Strings.Settings.tabAlignment.caption
-                image = None
-                items = List2([
+            let alignments =
+                List2([
                     (tr (if this.ts.isVertical then Strings.Common.top else Strings.Common.left), TabLeft)
                     (tr Strings.Common.center, TabCenter)
                     (tr (if this.ts.isVertical then Strings.Common.bottom else Strings.Common.right),TabRight)
                 ]).map(alignmentMenuItem)
+            CmiPopUp({
+                text = tr Strings.Settings.tabAlignment.caption
+                image = None
+                items =
+                    // Under a line, in line with the alignments: the dragged place ticked as they
+                    // are, or else how to drag, dimmed as a line that is not a choice.
+                    let dragged = CmiRegular({
+                        text = tr (if placed then Strings.TabMenu.draggedPlace else Strings.TabMenu.dragToPlace)
+                        image = None
+                        flags = if placed then checkedFlag true else grayed true
+                        click = ignore })
+                    List2(alignments.list @ [CmiSeparator; dragged])
             })
 
         let autoHideItem =

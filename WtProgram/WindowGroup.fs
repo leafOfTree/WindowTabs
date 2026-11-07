@@ -186,18 +186,22 @@ module WindowTabLayout =
         let dock = match layout.dock with TabDockTop -> 0 | TabDockBottom -> 1 | TabDockLeft -> 2 | TabDockRight -> 3
         let alignment = function TabLeft -> 0 | TabCenter -> 1 | TabRight -> 2
         let width = between SettingsCatalog.columnWidthRange layout.columnWidth
-        let value = marker ||| width ||| (dock <<< 9) ||| (alignment layout.normalAlignment <<< 11) ||| (alignment layout.insideAlignment <<< 13) ||| (if layout.iconOnly then 1 <<< 15 else 0)
+        // A dragged row's place in 254 steps above the alignments; 0 for none, as before it was kept.
+        let placed = match layout.position with Some fraction -> 1+int(Math.Round(254.0*max 0.0 (min 1.0 fraction))) | None -> 0
+        let value = marker ||| width ||| (dock <<< 9) ||| (alignment layout.normalAlignment <<< 11) ||| (alignment layout.insideAlignment <<< 13) ||| (if layout.iconOnly then 1 <<< 15 else 0) ||| (placed <<< 16)
         WinUserApi.SetProp(hwnd,key,IntPtr(value)) |> ignore
 
     let read hwnd =
         let value = WinUserApi.GetProp(hwnd,key).ToInt64()
         let width = int(value &&& 511L)
         let normal,inside = int((value >>> 11) &&& 3L),int((value >>> 13) &&& 3L)
-        if value &&& ~~~65535L <> int64 marker || width<fst SettingsCatalog.columnWidthRange || width>snd SettingsCatalog.columnWidthRange || normal>2 || inside>2 then None
+        let placed = int((value >>> 16) &&& 255L)
+        if value &&& ~~~0xFFFFFFL <> int64 marker || width<fst SettingsCatalog.columnWidthRange || width>snd SettingsCatalog.columnWidthRange || normal>2 || inside>2 then None
         else
             let alignment = function 0 -> TabLeft | 1 -> TabCenter | _ -> TabRight
             let dock = match int((value >>> 9) &&& 3L) with 0 -> TabDockTop | 1 -> TabDockBottom | 2 -> TabDockLeft | _ -> TabDockRight
-            Some {dock=dock;columnWidth=width;normalAlignment=alignment normal;insideAlignment=alignment inside;iconOnly=value &&& 32768L <> 0L}
+            Some {dock=dock;columnWidth=width;normalAlignment=alignment normal;insideAlignment=alignment inside;iconOnly=value &&& 32768L <> 0L
+                  position=(if placed=0 then None else Some(float(placed-1)/254.0))}
 
 /// A pane window's place in its group's split view, kept on the window itself as the group
 /// token is, so a restarted WindowTabs shows the split again as the windows come back.
@@ -1263,14 +1267,28 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.tabLayout : GroupTabLayout = {
         dock=this.ts.dock; columnWidth=this.ts.columnWidth
         normalAlignment=this.ts.getAlignment TabUp; insideAlignment=this.ts.getAlignment TabDown
-        iconOnly=this.isIconOnly }
+        iconOnly=this.isIconOnly; position=this.ts.position }
 
     member this.applyTabLayout(layout:GroupTabLayout) =
         this.ts.dock <- layout.dock
         this.ts.columnWidth <- layout.columnWidth
         this.ts.setAlignment(TabUp,layout.normalAlignment)
         this.ts.setAlignment(TabDown,layout.insideAlignment)
+        this.ts.position <- layout.position
         this.isIconOnly <- layout.iconOnly
+
+    /// The program a window belongs to, for what is remembered by app.
+    member this.appPathOf(hwnd:IntPtr) =
+        match (try this.os.windowFromHwnd(hwnd).pid.processPath with _ -> "") with
+        | "" -> None
+        | path -> Some path
+
+    /// An alignment picked from the tab menu or the palette: over the window and inside it
+    /// alike, as a choice made over a normal window held only until it was maximized and the
+    /// tabs moved inside. It replaces a dragged place, for this group and the app's next groups.
+    member this.chooseAlignment(alignment:Bemo.TabAlignment, hwnd:IntPtr) =
+        for direction in [TabUp;TabDown] do this.ts.setAlignment(direction,alignment)
+        this.appPathOf hwnd |> Option.iter AppTabPositions.forget
 
     member this.menuChoices = {
         iconOnly = this.isIconOnly
@@ -2003,7 +2021,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             | ToggleIconsOnly -> this.isIconOnly <- not this.isIconOnly
             | SetTabDock dock -> this.ts.dock <- dock
             // The tabs' direction in view, as the tab menu's alignment items set.
-            | SetTabAlignment alignment -> for direction in [TabUp;TabDown] do this.ts.setAlignment(direction,alignment)
+            | SetTabAlignment alignment -> this.chooseAlignment(alignment,zorderCell.value.tryHead |> Option.defaultValue IntPtr.Zero)
             | SetAutoHide mode -> this.bb.write("autoHideMode",mode)
             | RenameTab _ | CloseOtherTabs _ | CloseAppTabs _ | CloseAllTabs | SortTabs -> commandRequestedEvent.Trigger(command)
     member _.commandRequested = commandRequestedEvent.Publish
@@ -2495,7 +2513,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if withDelay then System.Threading.Thread.Sleep(250)
             let window = this.os.windowFromHwnd(hwnd)                
             let window = this.os.windowFromHwnd(hwnd)
-            if this.windows.isEmpty && not hasSavedTabLayout then WindowTabLayout.read hwnd |> Option.iter this.applyTabLayout
+            if this.windows.isEmpty && not hasSavedTabLayout then
+                match WindowTabLayout.read hwnd with
+                | Some layout -> this.applyTabLayout layout
+                // The app's tabs were dragged along their row before: its next group starts there.
+                | None -> this.appPathOf hwnd |> Option.bind AppTabPositions.tryFind |> Option.iter(fun fraction -> this.ts.position <- Some fraction)
             this.setWindows(this.windows.add hwnd)
             WindowGroupToken.save hwnd this.groupToken
             WindowGroupToken.saveMadeByHand hwnd isMadeByHand

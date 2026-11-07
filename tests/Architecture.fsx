@@ -295,6 +295,27 @@ let main() =
         // Over the window and inside it alike, or a maximized or full-screen window kept the old one.
         (live :> IGroup).run(SetTabAlignment TabLeft)
         check (positions()=(TabLeft,TabLeft)) "A group command did not set the tabs' alignment for inside the window too"
+        // A row dragged to a place of its own keeps it in the group's layout, over the alignments,
+        // until an alignment is chosen. The place survives on a window in 254 steps, and goes
+        // with the app by its program's name, forgotten once an alignment is chosen.
+        onGroup(fun group -> group.ts.position <- Some 0.3)
+        check (onGroup(fun group -> group.tabLayout.position)=Some 0.3) "A dragged place was not kept in the group's layout"
+        (live :> IGroup).run(SetTabAlignment TabCenter)
+        check (onGroup(fun group -> group.ts.position).IsNone) "An alignment chosen did not put the dragged row back"
+        do
+            use carrier = new Form(ShowInTaskbar=false)
+            let layout = {dock=TabDockTop;columnWidth=220;normalAlignment=TabLeft;insideAlignment=TabCenter;iconOnly=false;position=Some 0.37}
+            WindowTabLayout.save carrier.Handle layout
+            let read = WindowTabLayout.read carrier.Handle
+            check (read |> Option.exists(fun kept -> {kept with position=None}={layout with position=None} && kept.position |> Option.exists(fun fraction -> abs(fraction-0.37)<0.003)))
+                  (sprintf "A dragged place did not survive on the window: %A" read)
+            WindowTabLayout.save carrier.Handle {layout with position=None}
+            check (WindowTabLayout.read carrier.Handle=Some {layout with position=None}) "A row on an alignment came back with a dragged place"
+        let editor = @"C:\Apps\Editor\editor.exe"
+        AppTabPositions.remember editor 0.4
+        check (AppTabPositions.tryFind @"D:\Other\EDITOR.EXE"=Some 0.4) "An app's dragged place was not found by its program's name"
+        AppTabPositions.forget editor
+        check ((AppTabPositions.tryFind editor).IsNone) "An app's dragged place was not forgotten"
         (live :> IGroup).run ToggleIconsOnly
         check (onGroup(fun group -> group.isIconOnly)) "A group command did not switch to icons only"
         (live :> IGroup).run ToggleIconsOnly
@@ -929,6 +950,26 @@ let main() =
             onGroup(fun group -> group.removeWindow(testWindow.Handle); testWindow.Dispose())
             (live :> IGroup).destroy()
             pumpUntil "Live settings group did not exit" (fun () -> desktop.retainedGroupCount=0)
+        // A new group of an app starts where its tabs were dragged to, by its program's name.
+        do
+            let host = Application.ExecutablePath
+            AppTabPositions.remember host 0.4
+            let placedGroup = apiDesktop.createGroup(false) :?> GroupInfo
+            let onPlaced action =
+                let mutable result = None
+                placedGroup.invokeGroup(fun () -> result <- Some(try Choice1Of2(action placedGroup.group) with error -> Choice2Of2 error))
+                pumpUntil "Placed group deadlocked" (fun () -> result.IsSome)
+                match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
+            let probe = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Text="Dragged place probe")
+            probe.Show()
+            try
+                onPlaced(fun group -> group.addWindow(probe.Handle,false))
+                check (onPlaced(fun group -> group.ts.position)=Some 0.4) "A new group of the app did not start where its tabs were dragged to"
+            finally
+                AppTabPositions.forget host
+                onPlaced(fun group -> group.removeWindow(probe.Handle))
+                probe.Dispose()
+                (placedGroup :> IGroup).destroy()
         // A tab whose window is hidden or closed stops counting at once, before discovery takes it
         // out of the group: Next tab, and its key, go back to the app with the tab left alone.
         let spare = apiDesktop.createGroup(false) :?> GroupInfo

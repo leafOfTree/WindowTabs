@@ -48,6 +48,13 @@ let main() =
                             let offset = match alignment with TabLeft -> 0 | TabCenter -> spare/2 | TabRight -> spare
                             check (placed.showInside=inside && placed.bounds.height=height) "Vertical column did not fit its tabs within the available height"
                             check (placed.bounds.y=bounds.y+inset+offset) "Vertical alignment ignored available height or the title-bar inset"
+                        // A column dragged down the side takes that share of the room left beside
+                        // it, whatever its alignment, and its room is reported for the drag.
+                        for fraction in [0.0;0.25;1.0] do
+                            let placed = decorator.sidePlacement(dock,Dpi.scale 220,contentHeight=content,alignment=TabRight,position=fraction)
+                            let spare = bounds.height-inset-height
+                            check (placed.bounds.y=bounds.y+inset+int(System.Math.Round(float spare*fraction))) "A dragged column was not placed at its share of the room"
+                            check (decorator.sideSpan(dock,Dpi.scale 220,contentHeight=content,position=fraction)=(bounds.y+inset,spare)) "A column's room along the side was misreported"
                             if inside && dock=TabDockRight then
                                 check (placed.bounds.right=area.right) "Right overlay left an unwanted edge gap"
                             if not inside then

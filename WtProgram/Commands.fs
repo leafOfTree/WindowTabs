@@ -219,15 +219,16 @@ module Commands =
         groupOf hwnd |> Option.bind(fun group -> match group with :? GroupInfo as info -> info.shownChoices | _ -> None)
     let private readAgain (group:IGroup) = match group with :? GroupInfo as info -> info.readShownChoices ignore | _ -> ()
     /// A group setting's choices, the one it has now ticked as a setting's are, and its name now.
-    let private groupChoice (options:(LocalizedText * 'value) list) (now:GroupChoicesShown -> 'value) (set:'value -> GroupCommand) =
+    /// `now`: the group's own value, or none when no option is its value.
+    let private groupChoice (options:(LocalizedText * 'value) list) (now:GroupChoicesShown -> 'value option) (set:'value -> GroupCommand) =
         let current hwnd =
-            shownChoices hwnd |> Option.bind(fun shown -> options |> List.tryFind(fun (_,value) -> value=now shown))
+            shownChoices hwnd |> Option.bind now |> Option.bind(fun current -> options |> List.tryFind(fun (_,value) -> value=current))
             |> Option.map(fun (text,_) -> tr text) |> Option.defaultValue ""
         let options hwnd =
             let ticked = current hwnd
             let apply value = fun () -> onGroup (fun g -> g.run(set value); readAgain g) hwnd
             // Tried only once the group's own value is known, to be put back.
-            let before = shownChoices hwnd |> Option.map now
+            let before = shownChoices hwnd |> Option.bind now
             [ for text,value in options ->
                 { choice (tr text) (if tr text=ticked then "✓" else "") (apply value)
                     with preview=before |> Option.map(fun _ -> apply value); undo=before |> Option.map apply } ]
@@ -235,11 +236,12 @@ module Commands =
     let private positions = [Strings.TabMenu.top,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight]
     let private alignments = [Strings.Common.left,TabLeft; Strings.Common.center,TabCenter; Strings.Common.right,TabRight]
     let private autoHides = [Strings.Common.never,"Never"; Strings.Common.whenMaximized,"Maximized"; Strings.Common.always,"Always"]
-    let private positionChoice = groupChoice positions (fun shown -> shown.dock) SetTabDock
-    let private alignmentChoice = groupChoice alignments (fun shown -> shown.alignment) SetTabAlignment
+    let private positionChoice = groupChoice positions (fun shown -> Some shown.dock) SetTabDock
+    /// A row dragged to a place of its own is on no alignment.
+    let private alignmentChoice = groupChoice alignments (fun shown -> if shown.placed then None else Some shown.alignment) SetTabAlignment
     /// A group following the setting shows the setting's mode.
     let private autoHideChoice =
-        groupChoice autoHides (fun shown -> shown.autoHide |> Option.defaultWith(fun () -> Services.settings.getValue "autoHideMode" :?> string)) SetAutoHide
+        groupChoice autoHides (fun shown -> Some(shown.autoHide |> Option.defaultWith(fun () -> Services.settings.getValue "autoHideMode" :?> string))) SetAutoHide
     /// A colour of the tab palette, as it shows on the bars of the current look.
     let private tabColour index =
         Theme.tabColor (Theme.darkBar (ThemeService.currentAppearance().tabNormalBgColor)) (PaletteColor index)

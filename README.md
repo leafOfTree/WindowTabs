@@ -25,6 +25,9 @@ It runs in the system tray.
 
 - **Group windows:** drag a tab onto another window's tab bar. Drag it away to ungroup.
 - **Group an app automatically:** right-click its tab → **Enable auto-grouping**.
+- **Put the tabs where you like:** hold the right mouse button on a tab and drag the tabs
+  along the window's edge, across the top or down the side. New windows of that app start
+  there; **Align tabs** in the tab menu puts them back.
 - **Run any command or change any setting:** press **Ctrl + Alt + P** and type its name
   (see [Command palette](#command-palette-and-command-line)).
 - **Settings:** right-click a tab or the tray icon.

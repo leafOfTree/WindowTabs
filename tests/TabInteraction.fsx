@@ -576,6 +576,71 @@ let main() =
                 send WindowMessages.WM_MBUTTONDOWN background
                 send WindowMessages.WM_MBUTTONUP background
                 check (not heldWhenOff && held()) "Middle-click did not follow its setting"
+                // The right button held on a tab drags the row along the strip. Let go, the row
+                // stays as a share of the width beside it, so it keeps its place as the strip
+                // widens, and the release opens no menu; let go in place, the press reaches the
+                // menu as before. The row stays exactly where it is let go, and an alignment
+                // chosen puts a dragged row back.
+                do
+                    strip.isIconOnly <- true
+                    let at x = Pt(Dpi.scale x,Dpi.scale 14)
+                    let rowX() = (fst strip.tabSprites.head).x
+                    let rowLength() =
+                        let first,(last,lastSprite) = strip.tabSprites.head,strip.tabSprites.list |> List.last
+                        last.x+lastSprite.size.width-(fst first).x
+                    let menuClicks() = clicks |> Seq.filter(fun (button,_,_,action,_) -> button=MouseRight && action=MouseUp) |> Seq.length
+                    let span() = size.width-rowLength()
+                    let opened = menuClicks()
+                    send WindowMessages.WM_RBUTTONDOWN (at 20)
+                    send WindowMessages.WM_RBUTTONUP (at 20)
+                    check (menuClicks()=opened+1 && strip.position.IsNone) "A right click let go in place did not reach the menu, or moved the row"
+                    // The layout held from the close above, with the tabs at full length, is let go.
+                    send WindowMessages.WM_RBUTTONDOWN (at 20)
+                    check (not (held())) "A press to drag the row kept the layout held from a close"
+                    send WindowMessages.WM_MOUSEMOVE (at 320)
+                    check (abs(rowX()-Dpi.scale 300)<=1) (sprintf "The row did not follow the right button: at %d" (rowX()))
+                    send WindowMessages.WM_RBUTTONUP (at 320)
+                    let placed = strip.position
+                    check (menuClicks()=opened+1) "Letting go of a dragged row opened the menu"
+                    check (placed |> Option.exists(fun fraction -> abs(fraction*float(span())-float(Dpi.scale 300))<=1.0) && abs(rowX()-Dpi.scale 300)<=1)
+                          (sprintf "The row let go at %d was placed at %A of %d" (rowX()) placed (span()))
+                    let wider = Dpi.scaleSize(Sz(1600,28))
+                    strip.setPlacement(placement start wider false)
+                    let expected = placed.Value*float(wider.width-rowLength())
+                    check (abs(float(rowX())-expected)<=1.0) (sprintf "A dragged row did not keep its share of a wider strip: at %d, not %.0f" (rowX()) expected)
+                    strip.setPlacement(placement start size false)
+                    // Let go a few pixels from the middle, the row stays there: nothing pulls it onto an alignment.
+                    let nearMiddle = span()/2+Dpi.scale 5
+                    let grab = rowX()+Dpi.scale 10
+                    send WindowMessages.WM_RBUTTONDOWN (Pt(grab,Dpi.scale 14))
+                    send WindowMessages.WM_MOUSEMOVE (Pt(grab+(nearMiddle-rowX()),Dpi.scale 14))
+                    send WindowMessages.WM_RBUTTONUP (Pt(grab+(nearMiddle-rowX()),Dpi.scale 14))
+                    check (abs(rowX()-nearMiddle)<=1) (sprintf "A row let go near the middle was moved: at %d, not %d" (rowX()) nearMiddle)
+                    strip.setAlignment(TabUp,TabLeft)
+                    check (strip.position.IsNone && rowX()=0) "An alignment chosen did not put the dragged row back"
+                    // A column is dragged down the side of its window: it asks its owner to place
+                    // it at the pointer's share of the room it has, and keeps that share once let
+                    // go, exactly where it was.
+                    strip.dock <- TabDockLeft
+                    strip.setPlacement(placement start (Dpi.scaleSize(Sz(220,400))) false)
+                    strip.columnSpan <- (0,Dpi.scale 400)
+                    let placements = ref 0
+                    use _moves = strip.dockChanged.Subscribe(fun () -> incr placements)
+                    let down = Pt(Dpi.scale 20,Dpi.scale 20)
+                    send WindowMessages.WM_RBUTTONDOWN down
+                    send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 120))
+                    check (strip.columnSlide=Some 0.25 && placements.Value=1) (sprintf "A column did not follow the right button down its side: held at %A, placed %d times" strip.columnSlide placements.Value)
+                    send WindowMessages.WM_RBUTTONUP (Pt(Dpi.scale 20,Dpi.scale 120))
+                    check (strip.position=Some 0.25 && strip.columnSlide.IsNone) (sprintf "A column let go did not keep its share of the side: %A" strip.position)
+                    send WindowMessages.WM_RBUTTONDOWN down
+                    send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20+(Dpi.scale 200-Dpi.scale 100)+Dpi.scale 4))
+                    send WindowMessages.WM_RBUTTONUP (Pt(Dpi.scale 20,Dpi.scale 20+(Dpi.scale 200-Dpi.scale 100)+Dpi.scale 4))
+                    check (strip.position=Some 0.51) (sprintf "A column let go near the middle was moved: %A" strip.position)
+                    strip.setAlignment(TabUp,TabLeft)
+                    check (strip.position.IsNone) "An alignment chosen did not put the dragged column back"
+                    strip.dock <- TabDockTop
+                    strip.setPlacement(placement start size false)
+                    strip.isIconOnly <- false
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 check (not strip.isMouseOver.value) "Mouse leave retained hover"
                 // A menu over the strip ends hover without a move. When it goes with the pointer still

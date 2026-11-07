@@ -107,7 +107,7 @@ let main () =
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
-        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0
+        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; position=None; rowSlide=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0
         transparent=true; appearance=appearance; hover=None; captured=None }
     let originalVerticalDpi = Dpi.value()
     try

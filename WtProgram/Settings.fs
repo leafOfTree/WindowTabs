@@ -175,6 +175,14 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                             settingsJson.getObject("appTabColors").def(JObject()).Properties()
                             |> Seq.choose(fun p -> if p.Value.Type=JTokenType.String then Theme.parseTabColor (p.Value.Value<string>()) |> Option.map(fun color -> p.Name,Theme.formatTabColor color) else None)
                             |> Map.ofSeq
+                        appTabPositions =
+                            settingsJson.getObject("appTabPositions").def(JObject()).Properties()
+                            |> Seq.choose(fun p ->
+                                if p.Value.Type=JTokenType.Float || p.Value.Type=JTokenType.Integer then
+                                    let fraction = p.Value.Value<float>()
+                                    if fraction>=0.0 && fraction<=1.0 then Some(p.Name,fraction) else None
+                                else None)
+                            |> Map.ofSeq
                         // Development builds called the by-window mode "Rainbow".
                         tabColorMode = settingsJson.getString("tabColorMode").def(SettingsCatalog.choiceDefault "tabColorMode") |> (fun mode -> if mode="Rainbow" then "ByWindow" else mode) |> SettingsCatalog.normalizeChoice "tabColorMode"
                         tabColorStyle = settingsJson.getString("tabColorStyle").def(SettingsCatalog.choiceDefault "tabColorStyle") |> SettingsCatalog.normalizeChoice "tabColorStyle"
@@ -282,6 +290,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             for KeyValue(path,color) in settings.appTabColors do
                 Theme.parseTabColor color |> Option.iter(fun parsed -> appColors.[path] <- JValue(Theme.formatTabColor parsed))
             settingsJson.setObject("appTabColors",appColors)
+            let appPositions = JObject()
+            for KeyValue(path,fraction) in settings.appTabPositions do appPositions.[path] <- JValue(fraction)
+            settingsJson.setObject("appTabPositions",appPositions)
             settingsJson.setString("tabColorMode",settings.tabColorMode)
             settingsJson.setString("tabColorStyle",settings.tabColorStyle)
             settingsJson.setStringArray("disabledNumberShortcutPaths", settings.disabledNumberShortcutPaths.items)

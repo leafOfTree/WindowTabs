@@ -322,10 +322,11 @@ let main() =
     let roundTrip = WorkspaceGroup.deserialize(savedGroup.serialize())
     check roundTrip.tabLayout.IsNone "Legacy workspace acquired an unintended tab layout"
     for dock in [TabDockTop;TabDockLeft;TabDockRight] do
-        let layout = {dock=dock;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabLeft;iconOnly=(dock=TabDockLeft)}
+        // A row's dragged place goes with the layout; a column has none.
+        let layout = {dock=dock;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabLeft;iconOnly=(dock=TabDockLeft);position=(if dock=TabDockTop then Some 0.25 else None)}
         savedGroup.tabLayout <- Some layout
         let restored = WorkspaceGroup.deserialize(savedGroup.serialize())
-        check (restored.tabLayout=Some layout) "Workspace lost tab position, logical width or alignment"
+        check (restored.tabLayout=Some layout) "Workspace lost tab position, logical width, alignment or the row's dragged place"
     let invalidLayout = root.DeepClone() :?> JObject
     invalidLayout.["workspaces"].[0].["groups"].[0].["tabLayout"] <- JObject(JProperty("position","invalid"))
     let originalLayout = invalidLayout.ToString()

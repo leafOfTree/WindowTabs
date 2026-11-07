@@ -76,3 +76,13 @@ module AppTabColors =
         Services.settings.setValue("appTabColors",box next)
     /// A colour chosen for one of the app's tabs: the app's own too, while it remembers one.
     let chosen path color = if remembered path then save path (Some color)
+
+/// Where an app's tabs were dragged to along their row, in `appTabPositions` by its program's
+/// path as a share of the width left beside them: a new group of the app starts there.
+module AppTabPositions =
+    let private positions() = Services.settings.getValue("appTabPositions") :?> Map<string,float>
+    let tryFind path = positions() |> Map.tryPick(fun saved fraction -> if AppIdentity.same saved path then Some fraction else None)
+    let private without path = positions() |> Map.filter(fun saved _ -> not (AppIdentity.same saved path))
+    let remember path (fraction:float) = Services.settings.setValue("appTabPositions",box ((without path).Add(path,fraction)))
+    /// An alignment chosen for the app's tabs puts its next groups back on the setting.
+    let forget path = if (tryFind path).IsSome then Services.settings.setValue("appTabPositions",box (without path))
