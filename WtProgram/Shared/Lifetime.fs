@@ -37,6 +37,7 @@ type SingleInstance(name:string) =
 type OwnedSubscriptions<'key when 'key : equality>() =
     let items = Dictionary<'key, IDisposable>()
     member _.Count = items.Count
+    member _.Keys = List.ofSeq items.Keys
     member _.Contains key = items.ContainsKey(key)
     member _.Remove key =
         match items.TryGetValue(key) with
