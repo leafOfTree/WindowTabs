@@ -1675,6 +1675,22 @@ let main() =
                     not(obj.ReferenceEquals(group.ts.tabInfo(Tab(foreignHwnd)).iconSmall,SystemIcons.Application))))
                 check (List.contains (closeAllOf handles.Head) (closeTexts handles.Head)) "A mixed group does not offer closing one program's windows"
                 check (List.contains (closeAllOf foreignHwnd) (closeTexts foreignHwnd)) "The foreign tab's menu does not name its own program"
+                // A dragged tab joins the row well past its last tab, about a tab's width, so a tab
+                // let go just past the end joins rather than splits; across the row the margin is small.
+                do
+                    let nearTabs (pt:Pt) = onGroup(fun group ->
+                        let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
+                                        |> fun field -> field.GetValue(group.ts)
+                        decorator.GetType().GetMethod("nearTabs",flags).Invoke(decorator,[|box pt|]) :?> IntPtr option)
+                    let rects = onGroup(fun group ->
+                        let strip = OS().windowFromHwnd(group.ts.hwnd)
+                        group.ts.tabSprites.list |> List.map(fun (location:Pt,sprite) -> Rect(strip.ptToScreen(location),sprite.size)))
+                    let right = rects |> List.map(fun r -> r.right) |> List.max
+                    let top,bottom = rects |> List.map(fun r -> r.top) |> List.min,rects |> List.map(fun r -> r.bottom) |> List.max
+                    let middle = (top+bottom)/2
+                    check ((nearTabs (Pt(right+Dpi.scale 60,middle))).IsSome) "A tab just past the end of the row is not taken in"
+                    check ((nearTabs (Pt(right+Dpi.scale (DragRouting.stripReach+10),middle))).IsNone) "A tab well past the end of the row is still taken in"
+                    check ((nearTabs (Pt(right+Dpi.scale 60,bottom+Dpi.scale (DragRouting.stripMargin+10)))).IsNone) "A tab below the row is taken in"
                 // Sorting puts each program's tabs together in title order, and is then greyed out.
                 do
                     let sortItem() = menu handles.Head |> List.find(fun item -> item.text=Localization.tr Strings.TabMenu.sortTabs)

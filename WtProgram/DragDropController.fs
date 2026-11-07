@@ -28,6 +28,11 @@ module DragRouting =
     /// joining it there and leaving it only beyond. Just below another group's tabs, over its
     /// title bar, a tab carried to join them was offered that window's top edge instead.
     let stripMargin = 24
+    /// Along a row, past its first and last tab, how far a dragged tab still joins it, in
+    /// logical pixels: about a tab's width, so a tab let go just past the end of the row joins
+    /// the tabs rather than splitting the window. Not down a column, where past the last tab
+    /// is how a tab is dragged out.
+    let stripReach = 120
 
     /// Whether the strip window under the pointer takes a tab at that point, near its tabs;
     /// elsewhere on it, the whole width of the group, the tab is over the group as any window.

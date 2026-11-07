@@ -990,18 +990,21 @@ type TabStripDecorator(group:WindowGroup) as this =
         layoutDrop <- None
         layoutPreview |> Option.iter(fun window -> window.fadeOut())
 
-    /// The strip, when the point lies within `DragRouting.stripMargin` of its tabs in sight, and
-    /// only there: running the group's whole width, or a column's whole height, the strip took in
-    /// a tab carried anywhere over the window's title bar or along its side. The rest of the
-    /// window's edge offers a split, once the pointer rests there.
+    /// The strip, when the point lies within `DragRouting.stripMargin` of its tabs in sight, or
+    /// `DragRouting.stripReach` along a row, and only there: running the group's whole
+    /// width, or a column's whole height, the strip took in a tab carried anywhere over the
+    /// window's title bar or along its side. The rest of the window's edge offers a split, once
+    /// the pointer rests there.
     member private this.nearTabs(pt:Pt) =
         let sprites = this.ts.tabSprites.list
         if not sprites.IsEmpty && this.ts.visible && WinUserApi.IsWindowVisible this.ts.hwnd then
             let strip = os.windowFromHwnd(this.ts.hwnd)
             let rects = sprites |> List.map(fun (location:Pt,sprite) -> Rect(strip.ptToScreen(location),sprite.size))
-            let margin = Dpi.scale DragRouting.stripMargin
-            let left,right = (rects |> List.map(fun r -> r.left) |> List.min)-margin,(rects |> List.map(fun r -> r.right) |> List.max)+margin
-            let top,bottom = (rects |> List.map(fun r -> r.top) |> List.min)-margin,(rects |> List.map(fun r -> r.bottom) |> List.max)+margin
+            let margin,reach = Dpi.scale DragRouting.stripMargin,Dpi.scale DragRouting.stripReach
+            // Along a row only: down a column, past its last tab is where a tab is dragged out.
+            let dx,dy = if this.ts.isVertical then margin,margin else reach,margin
+            let left,right = (rects |> List.map(fun r -> r.left) |> List.min)-dx,(rects |> List.map(fun r -> r.right) |> List.max)+dx
+            let top,bottom = (rects |> List.map(fun r -> r.top) |> List.min)-dy,(rects |> List.map(fun r -> r.bottom) |> List.max)+dy
             if pt.x>=left && pt.x<right && pt.y>=top && pt.y<bottom then Some this.ts.hwnd else None
         else None
 
