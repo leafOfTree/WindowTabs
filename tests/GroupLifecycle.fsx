@@ -711,7 +711,7 @@ let main() =
             pumpUntil "Regrouping did not restore its window" (fun () -> nativeOrder source=handles)
             check (onGroup source (fun group -> group.ts.isShrunk)) "A background z-order change opened auto-hidden tabs"
             api.setValue("autoHideMode",box "Never")
-            let localLayout = {dock=TabDockRight;columnWidth=264;normalAlignment=TabRight;insideAlignment=TabCenter;iconOnly=false}
+            let localLayout = {dock=TabDockRight;columnWidth=264;normalAlignment=TabRight;insideAlignment=TabCenter;iconOnly=false;position=None}
             onGroup source (fun group -> group.applyTabLayout localLayout)
             api.setValue("tabPosition",box "Left")
             pumpUntil "Global position did not replace the group's menu choice" (fun () ->
@@ -948,7 +948,7 @@ let main() =
             (remembered :> IGroup).addWindow(a,false)
             pumpUntil "Remembered group did not acquire its window" (fun () -> nativeOrder remembered=[a])
             // Icons only too, so a window leaving its group takes that choice to the next one.
-            let rememberedLayout = {dock=TabDockRight;columnWidth=308;normalAlignment=TabRight;insideAlignment=TabLeft;iconOnly=true}
+            let rememberedLayout = {dock=TabDockRight;columnWidth=308;normalAlignment=TabRight;insideAlignment=TabLeft;iconOnly=true;position=None}
             onGroup remembered (fun group -> group.applyTabLayout rememberedLayout)
             check (WindowTabLayout.read a=Some rememberedLayout) "Menu layout was not saved immediately on its window"
             onGroup remembered (fun group -> group.removeWindow a)
@@ -981,8 +981,8 @@ let main() =
             // Save and restore the production workspace across group STAs, after defaults change.
             let left = desktopApi.createGroup(false) :?> GroupInfo
             let right = desktopApi.createGroup(false) :?> GroupInfo
-            let leftLayout = {dock=TabDockLeft;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabCenter;iconOnly=true}
-            let rightLayout = {dock=TabDockRight;columnWidth=316;normalAlignment=TabLeft;insideAlignment=TabRight;iconOnly=false}
+            let leftLayout = {dock=TabDockLeft;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabCenter;iconOnly=true;position=None}
+            let rightLayout = {dock=TabDockRight;columnWidth=316;normalAlignment=TabLeft;insideAlignment=TabRight;iconOnly=false;position=None}
             for info,hwnd,layout in [left,a,leftLayout;right,b,rightLayout] do
                 onGroup info (fun group -> group.applyTabLayout layout)
                 (info :> IGroup).addWindow(hwnd,false)

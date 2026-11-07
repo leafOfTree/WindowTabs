@@ -50,6 +50,8 @@ type SettingsRec = {
     enableCtrlNumberHotKey: bool
     enableNumberLeader: bool
     appTabColors: Map<string,string>
+    /// Where each app's tabs were dragged to along their row (`AppTabPositions`).
+    appTabPositions: Map<string,float>
     tabColorMode: string
     tabColorStyle: string
     numberLeaderKeys: string

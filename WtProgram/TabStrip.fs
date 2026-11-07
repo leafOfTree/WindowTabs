@@ -74,6 +74,24 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let hoverCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
     let slideCell = Cell.create(None)
     let heldLayoutCell = Bemo.Cell<(float * float) option>(Cell, None, (=))
+    /// Where the row was dragged to, over its alignment; none until it is dragged.
+    let positionCell = Bemo.Cell<float option>(Cell, None, (=))
+    /// The row's left edge while the right button drags it along the strip.
+    let rowSlideCell = Bemo.Cell<float option>(Cell, None, (=))
+    /// The right button down on a tab: the pointer's place along the strip (on screen for a
+    /// column, which moves under it), the tabs' offset then, and the tab. The tabs follow the
+    /// pointer once it moves a few pixels; let go in place, the press opens the tab menu as before.
+    let mutable rowPress : (int * float * Tab) option = None
+    let mutable rowDragging = false
+    let rowDraggedEvent = Event<Tab * float>()
+    /// A column's room along the side, from its owner: the top and how far it can move down.
+    let mutable columnRoom = 0,0
+    /// Where the column is held while dragged, as a share of its room; its owner places it there.
+    let mutable columnHeld : float option = None
+    /// Follows the pointer while the right button holds the row. A strip behind the foreground
+    /// window gets mouse messages only while the pointer is over its painted pixels, whatever
+    /// the capture, so a quick drag off the tabs would stop short and miss the release.
+    let rowDragTimer = new Timer(Interval=15)
     let ptCell = Cell.create(None)
     let tabInfoCell = Cell.create(Map2():Map2<Tab,TabInfo>)
     let layeredWindowCell = Cell.create(None)
@@ -149,6 +167,18 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         showInsideExport.init()
 
         revealTimer.Tick.Add(fun _ -> this.stepReveal())
+        rowDragTimer.Tick.Add(fun _ ->
+            match rowPress with
+            | None -> rowDragTimer.Stop()
+            | Some _ when Control.MouseButtons &&& MouseButtons.Right <> MouseButtons.Right ->
+                // Let go off the strip: the row stays where it got to, and no menu opens.
+                rowDragTimer.Stop()
+                this.endRowDrag() |> ignore
+                this.refreshHover()
+            | Some _ when rowDragging ->
+                let cursor = pointerSource()
+                this.moveRowDrag(Pt(cursor.X-location.x,cursor.Y-location.y)) |> ignore
+            | Some _ -> ())
         dragScrollTimer.Tick.Add(fun _ ->
             match dragScrollLocation with
             | Some pt when this.isVertical && slideCell.value.IsSome ->
@@ -227,6 +257,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             dock = dockCell.value
             scrollOffset = scrollOffsetCell.value
             held = heldLayoutCell.value
+            position = positionCell.value
+            rowSlide = rowSlideCell.value
             centerShift =
                 if this.showInside then float(this.appearance.tabIndentFlipped - this.appearance.tabIndentNormal) / 2.0
                 else 0.0
@@ -382,15 +414,17 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         let mousePt() = msg.lParam.location.add(this.renderedShift)
         let mouseDown btn =
             let pt = mousePt()
+            if btn=MouseRight then this.beginRowDrag(pt)
             if btn<>MouseLeft || not (this.beginColumnInteraction(pt)) then
                 this.processMouse(MouseClick(pt, btn, MouseDown))
             msg.def()
-        let mouseUp btn = 
+        let mouseUp btn =
             if btn=MouseLeft && (columnResize.IsSome || columnScroll.IsSome) then
                 columnResize <- None
                 columnScroll <- None
                 this.window.releaseCapture()
                 this.refreshHover()
+            elif btn=MouseRight && this.endRowDrag() then this.refreshHover()
             else this.processMouse(MouseClick(mousePt(), btn, MouseUp))
             msg.def()
         let mouseDblClick btn =
@@ -418,6 +452,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | WindowMessages.WM_MOUSEMOVE ->
             let pt = mousePt()
             match columnResize,columnScroll with
+            | _ when this.moveRowDrag(pt) -> ()
             | Some(start,width,growsRight),_ ->
                 let delta = this.window.ptToScreen(pt).x-start
                 let logical = int(Math.Round(float delta*96.0/float(Dpi.value())))
@@ -434,7 +469,19 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | 0x0215 -> // Another window took the capture; stop before the next movement.
             columnResize <- None
             columnScroll <- None
+            // A row still held is let go where it is; one just let go has been placed already.
+            if rowPress.IsSome then
+                rowPress <- None
+                rowDragging <- false
+                rowDragTimer.Stop()
+                rowSlideCell.set(None)
+                if columnHeld.IsSome then
+                    columnHeld <- None
+                    dockChangedEvent.Trigger()
             msg.def()
+        | 0x0020 when rowDragging -> // WM_SETCURSOR: the tabs move along their edge under the pointer.
+            Cursor.Current <- this.dragCursor
+            1
         | WindowMessages.WM_LBUTTONDOWN -> mouseDown MouseLeft
         | WindowMessages.WM_LBUTTONUP -> mouseUp MouseLeft
         | WindowMessages.WM_LBUTTONDBLCLK -> mouseDblClick(MouseLeft)
@@ -442,6 +489,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | WindowMessages.WM_RBUTTONUP -> mouseUp MouseRight
         | WindowMessages.WM_MBUTTONDOWN -> mouseDown MouseMiddle
         | WindowMessages.WM_MBUTTONUP -> mouseUp MouseMiddle
+        | WindowMessages.WM_MOUSELEAVE when rowPress.IsSome ->
+            // The pointer off the strip while the right button holds the row: the timer keeps
+            // the row with the pointer, and ends the press when the button is let go.
+            msg.def()
         | WindowMessages.WM_MOUSELEAVE ->
             // Pressing a tab hands the capture to the drag check, and Windows reports that as the
             // pointer leaving while it is still on the tab: auto-hide then began to collapse the
@@ -791,11 +842,125 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// The alignments chosen for this strip alone, which the default no longer changes.
     member this.alignmentChoices = alignmentOverrides |> Set.toList |> List.map(fun direction -> direction, alignment.value.find direction)
 
+    /// An alignment chosen puts a dragged row back on it.
     member this.setAlignment((direction, newAlignment)) =
         alignmentOverrides <- alignmentOverrides.Add(direction)
         alignment.map(fun m -> m.add direction newAlignment)
+        positionCell.set(None)
         if this.isVertical then dockChangedEvent.Trigger()
         layoutChangedEvent.Trigger(true)
+
+    /// Where the tabs were dragged to, as a share of the room left beside them along their
+    /// edge, in place of their alignment: a row's offset in the strip, a column's place down
+    /// the side of the window.
+    member this.position
+        with get() = positionCell.value
+        and set(value:float option) =
+            let value = value |> Option.map(fun fraction -> max 0.0 (min 1.0 fraction))
+            if value<>positionCell.value then
+                positionCell.set(value)
+                if this.isVertical then dockChangedEvent.Trigger()
+                layoutChangedEvent.Trigger(true)
+
+    /// The tabs let go after a drag, with the tab they were dragged by and where they are now.
+    member this.rowDragged = rowDraggedEvent.Publish
+
+    /// A column's room along the side, set by its owner with each placement.
+    member this.columnSpan with get() = columnRoom and set(value:int*int) = columnRoom <- value
+
+    /// Where a column is held while dragged, as a share of its room; none otherwise.
+    member this.columnSlide = columnHeld
+
+    member private this.dragCursor = if this.isVertical then Cursors.SizeNS else Cursors.SizeWE
+
+    /// The pointer's place along the strip: across it for a row, and down the screen for a
+    /// column, which moves under the pointer as it is dragged.
+    member private this.alongStrip(pt:Pt) = if this.isVertical then pt.y+location.y else pt.x
+
+    /// Where a column sits in its room now, in pixels: as dragged to, else as aligned.
+    member private this.columnOffset =
+        let _,spare = columnRoom
+        match positionCell.value with
+        | Some fraction -> fraction*float spare
+        | None -> match alignment.value.find TabUp with TabLeft -> 0.0 | TabCenter -> float spare/2.0 | TabRight -> float spare
+
+    /// The right button down on a tab: the tabs follow the pointer along their edge once it
+    /// moves, so they can be put anywhere beside the window. A tab's close button, and a
+    /// column collapsed by auto-hide, keep the press for the menu alone.
+    member private this.beginRowDrag(pt:Pt) =
+        if not (this.isVertical && this.isShrunk) then
+            match this.hitAt(pt) with
+            | Some(tab,(TabBackground | TabIcon)) ->
+                // A layout held from a close is let go: the row is being laid out anew.
+                heldLayoutCell.set(None)
+                let offset = if this.isVertical then this.columnOffset else snd this.ts.layout
+                rowPress <- Some(this.alongStrip pt,offset,tab)
+                rowDragging <- false
+                this.window.setCapture()
+                rowDragTimer.Start()
+            | _ -> ()
+
+    /// True while the right button holds the tabs: the move is theirs, not a hover.
+    member private this.moveRowDrag(pt:Pt) =
+        match rowPress with
+        | Some(start,startOffset,_) ->
+            let moved = this.alongStrip pt-start
+            if not rowDragging && abs moved>=Dpi.scale 4 then
+                rowDragging <- true
+                this.hideTitle()
+            if rowDragging then
+                Cursor.Current <- this.dragCursor
+                if this.isVertical then
+                    let _,spare = columnRoom
+                    let offset = max 0.0 (min (float spare) (startOffset+float moved))
+                    let held = Some(if spare<=0 then 0.0 else offset/float spare)
+                    if held<>columnHeld then
+                        columnHeld <- held
+                        dockChangedEvent.Trigger()
+                else this.withUpdate(fun () -> rowSlideCell.set(Some(max 0.0 (min this.ts.rowSpan (startOffset+float moved)))))
+            true
+        | None -> false
+
+    /// The right button let go. Dragged tabs stay where they are, as a share of the room
+    /// beside them. True when they were dragged, so the release opens no menu.
+    member private this.endRowDrag() =
+        match rowPress with
+        | None -> false
+        | Some(_,_,tab) ->
+            rowPress <- None
+            rowDragTimer.Stop()
+            let dragged = rowDragging
+            rowDragging <- false
+            // The tabs are put in their place in the same frame the drag ends, before the capture
+            // goes: let go first, they were drawn back where they started for a frame.
+            let placed =
+                match rowSlideCell.value, columnHeld with
+                | Some offset, _ when dragged && not this.isVertical ->
+                    let ts = this.ts
+                    let fraction = if ts.rowSpan<=0.0 then 0.0 else max 0.0 (min 1.0 (offset/ts.rowSpan))
+                    this.withUpdate(fun () ->
+                        rowSlideCell.set(None)
+                        capturedCell.set(None)
+                        positionCell.set(Some fraction))
+                    Some fraction
+                | _, Some held when dragged && this.isVertical ->
+                    columnHeld <- None
+                    this.withUpdate(fun () ->
+                        capturedCell.set(None)
+                        positionCell.set(Some held))
+                    dockChangedEvent.Trigger()
+                    Some held
+                | _ ->
+                    rowSlideCell.set(None)
+                    columnHeld <- None
+                    None
+            this.window.releaseCapture()
+            match placed with
+            | Some fraction ->
+                layoutChangedEvent.Trigger(true)
+                rowDraggedEvent.Trigger(tab,fraction)
+                true
+            | None -> dragged
 
     member this.setDefaultAlignment(value:string) =
         let next = alignmentMap.TryFind(value) |> Option.defaultValue TabCenter
@@ -1020,6 +1185,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         dragScrollTimer.Dispose()
         destroyingEvent.Trigger()
         revealTimer.Dispose()
+        rowDragTimer.Dispose()
         captureWatch.Dispose()
         titleTimer.Dispose()
         tipRequest <- tipRequest+1

@@ -38,14 +38,23 @@ module WorkspaceData =
             match obj.["iconsOnly"] with
             | null -> false
             | value when value.Type=JTokenType.Boolean -> value.Value<bool>()
-            | _ -> invalidArg "iconsOnly" (tr Strings.Workspaces.invalidTabLayout) }
+            | _ -> invalidArg "iconsOnly" (tr Strings.Workspaces.invalidTabLayout)
+          // Where the row was dragged to, as a share of the width beside it; left out when on an alignment.
+          position=
+            match obj.["rowPosition"] with
+            | null -> None
+            | value when (value.Type=JTokenType.Float || value.Type=JTokenType.Integer) && value.Value<float>()>=0.0 && value.Value<float>()<=1.0 -> Some(value.Value<float>())
+            | _ -> invalidArg "rowPosition" (tr Strings.Workspaces.invalidTabLayout) }
 
     let writeTabLayout (layout:GroupTabLayout) =
         let position = match layout.dock with TabDockTop -> "Horizontal" | TabDockBottom -> "Bottom" | TabDockLeft -> "Left" | TabDockRight -> "Right"
         let alignment = function TabLeft -> "Left" | TabCenter -> "Center" | TabRight -> "Right"
-        JObject(JProperty("position",position),JProperty("columnWidth",between SettingsCatalog.columnWidthRange layout.columnWidth),
-                JProperty("normalAlignment",alignment layout.normalAlignment),JProperty("insideAlignment",alignment layout.insideAlignment),
-                JProperty("iconsOnly",layout.iconOnly))
+        let written =
+            JObject(JProperty("position",position),JProperty("columnWidth",between SettingsCatalog.columnWidthRange layout.columnWidth),
+                    JProperty("normalAlignment",alignment layout.normalAlignment),JProperty("insideAlignment",alignment layout.insideAlignment),
+                    JProperty("iconsOnly",layout.iconOnly))
+        layout.position |> Option.iter(fun fraction -> written.["rowPosition"] <- JValue(fraction))
+        written
 
     /// A rectangle kept inside one of the areas: the one it overlaps most, else the nearest.
     let fitRect (areas:Rect list) (bounds:Rect) =

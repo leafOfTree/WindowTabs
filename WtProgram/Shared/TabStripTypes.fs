@@ -120,7 +120,10 @@ type GroupTabLayout = {
     columnWidth: int
     normalAlignment: TabAlignment
     insideAlignment: TabAlignment
-    iconOnly: bool }
+    iconOnly: bool
+    /// Where a row of tabs was dragged to, as a share of the width left beside it, in place of
+    /// its alignment; none for a column.
+    position: float option }
 
 /// How the tabs are drawn. Joined: one bar, the active tab told apart by its fill. Folder: the
 /// active tab rises out of the bar like the tab of a paper folder, with curved feet into its

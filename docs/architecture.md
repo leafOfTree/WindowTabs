@@ -211,7 +211,8 @@ client areas, rather than their outer bounds. Windows can trim a proxy at the
 work-area edge; even a one-pixel excess makes DWM reject the live preview.
 Failed bitmap submissions emit a diagnostic trace with the HRESULT and sizes.
 
-Explicit tab position, width and alignment choices are also stored immediately in
+Explicit tab position, width and alignment choices, and the place a row of tabs was
+dragged to (a share of the width beside it, in 254 steps), are also stored immediately in
 a versioned native property on each managed application HWND. It packs bounded
 logical values, not a memory pointer. Group discovery reads it before attaching the
 first window; an explicit workspace/rebuild layout takes precedence. The property
@@ -460,7 +461,8 @@ after the app name.
 ## Workspace data and background work
 
 Workspace schema 3 stores placement points and rectangles as separate objects
-and an optional per-group tab layout (position, logical width and both alignments).
+and an optional per-group tab layout (position, logical width, both alignments and,
+for a row dragged to a place of its own, `rowPosition`).
 Saving collects layouts asynchronously on their group STAs and publishes the
 workspace once all snapshots complete. Restore queues the saved layout before
 adding windows. Schemas 1 and 2 still load; absent or damaged layouts use current

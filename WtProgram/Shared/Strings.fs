@@ -53,6 +53,10 @@ module Strings =
 
     /// Tab context menu.
     module TabMenu =
+        /// Under the alignments: the tabs can also be dragged along their edge with the right button.
+        let dragToPlace = { en="Hold the right button on a tab, then drag anywhere"; zh="在标签上按住右键，拖动到任意位置"; ja="タブを右ボタンで押したまま、好きな位置へドラッグ"; ar="اضغط بالزر الأيمن على علامة تبويب، ثم اسحب إلى أي مكان" }
+        /// In place of the hint once the row has been dragged, marked as the alignments are.
+        let draggedPlace = { en="Dragged to a place of its own"; zh="已拖动到自定义位置"; ja="ドラッグした位置に配置済み"; ar="تم سحبها إلى موضع خاص" }
         let split = { en="Split view"; zh="组内分屏"; ja="分割表示"; ar="العرض المقسّم" }
         /// A window chosen from a list goes on that side of the tab.
         let splitPickRight = { en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…"; ar="نافذة على اليمين…" }
@@ -209,7 +213,7 @@ module Strings =
                                description=none
                                keywords={ en="vertical sidebar width size"; zh="垂直 侧栏 宽度 大小"; ja="縦 サイドバー 幅 サイズ"; ar="رأسي شريط جانبي عرض حجم" } }
         let tabAlignment = { caption={ en="Align tabs"; zh="对齐标签"; ja="タブを揃える"; ar="محاذاة علامات التبويب" }
-                             description=none
+                             description={ en="Or hold the right button on a tab and drag the tabs where you like."; zh="也可按住右键拖动标签，放到任意位置。"; ja="タブを右ボタンで押しながらドラッグして好きな位置に置くこともできます。"; ar="أو اضغط بالزر الأيمن على علامة تبويب واسحب علامات التبويب حيث تشاء." }
                              keywords={ en="alignment position"; zh="对齐 位置"; ja="配置 位置"; ar="محاذاة موضع" } }
         let combineTaskbarIcons = { caption={ en="Combine taskbar icons per group"; zh="合并每个分组的任务栏图标"; ja="グループのタスクバーアイコンをまとめる"; ar="دمج أيقونات شريط المهام لكل مجموعة" }
                                     description=none

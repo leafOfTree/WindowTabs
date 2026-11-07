@@ -882,6 +882,10 @@ type TabStripSprite<'id> when 'id : equality = {
     centerShift: float
     /// Stretches of the strip, left and right, that the app's own bars cover.
     blocked: (float * float) list
+    /// Where the row was dragged to, as a share of the width left beside it, over the alignment.
+    position: float option
+    /// The row's left edge while it is being dragged along the strip.
+    rowSlide: float option
     dock: TabDock
     scrollOffset: int
     } with
@@ -1049,10 +1053,17 @@ type TabStripSprite<'id> when 'id : equality = {
 
     /// Centred tabs leave the caption buttons' room free on the left too, so they stay on the
     /// window's middle even when they fill the row.
-    member private this.leftReserve =
-        match this.alignment with
+    member private this.leftReserveOf alignment =
+        match alignment with
         | TabCenter -> min (2.0 * this.centerShift) (float this.size.width)
         | _ -> 0.0
+
+    /// A dragged row takes its share of the whole width, so it can reach the left edge.
+    member private this.leftReserve =
+        if this.isPlaced then 0.0 else this.leftReserveOf this.alignment
+
+    /// A row put where it was dragged to; a column keeps its alignment.
+    member private this.isPlaced = this.position.IsSome && not this.isVertical
 
     /// The pinned tabs at the front of the strip.
     member private this.leadingPinned =
@@ -1086,18 +1097,30 @@ type TabStripSprite<'id> when 'id : equality = {
         let tabOffset = this.tabLength - this.tabOverlap
         float(index) * tabOffset
 
-    /// Never negative: when the tabs fill the strip the first one stays in view.
+    /// The row's left edge for an alignment. Never negative: when the tabs fill the strip the
+    /// first one stays in view.
+    member this.offsetOf alignment =
+        let reserve = this.leftReserveOf alignment
+        let widthOfEmptySpace = float(this.size.width) - reserve - this.rightOf this.tabLength 0.0
+        let offset =
+            match alignment with
+            | TabLeft -> 0.0
+            | TabCenter -> widthOfEmptySpace / 2.0
+            | TabRight -> widthOfEmptySpace - 60.0
+        reserve + max 0.0 offset
+
+    /// How far the row can move along the strip: the width left beside it.
+    member this.rowSpan = max 0.0 (float(this.size.width) - this.rightOf this.tabLength 0.0)
+
     member private this.alignmentOffset =
-        match this.heldLayout with
-        | Some(_,offset) -> offset
-        | None ->
-            let widthOfEmptySpace = float(this.size.width) - this.leftReserve - this.rightOf this.tabLength 0.0
-            let offset =
-                match this.alignment with
-                | TabLeft -> 0.0
-                | TabCenter -> widthOfEmptySpace / 2.0
-                | TabRight -> widthOfEmptySpace - 60.0
-            let wanted = this.leftReserve + max 0.0 offset
+        match this.rowSlide, this.heldLayout with
+        | Some offset, _ when not this.isVertical -> offset
+        | _, Some(_,offset) -> offset
+        | _, None ->
+            let wanted =
+                match this.position with
+                | Some fraction when not this.isVertical -> fraction * this.rowSpan
+                | _ -> this.offsetOf this.alignment
             if this.blocked.IsEmpty || this.isVertical then wanted
             else StripRoom.place this.blocked (float this.size.width) (this.rightOf this.tabLength 0.0) wanted
 

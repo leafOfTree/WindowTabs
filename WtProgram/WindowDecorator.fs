@@ -40,13 +40,26 @@ type WindowDecorator = {
             onMonitorInsideRegion.box.height > onMonitorOutsideRegion.box.height
 
     /// Prefer the chosen outside edge; an inset overlay keeps snapped windows reachable.
-    member this.sidePlacement(dock:TabDock,width:int,?contentHeight:int,?alignment:TabAlignment,?maximized:bool) : TabStripPlacment =
+    /// `position`: where the column was dragged to, as a share of the height left beside it,
+    /// in place of the alignment.
+    member this.sidePlacement(dock:TabDock,width:int,?contentHeight:int,?alignment:TabAlignment,?maximized:bool,?position:float) : TabStripPlacment =
+        fst (this.sideFit(dock,width,contentHeight,alignment,maximized,position))
+
+    /// The top of the room the column has along the side, and how far it can move down it.
+    member this.sideSpan(dock:TabDock,width:int,?contentHeight:int,?alignment:TabAlignment,?maximized:bool,?position:float) : int*int =
+        snd (this.sideFit(dock,width,contentHeight,alignment,maximized,position))
+
+    member private this.sideFit(dock:TabDock,width:int,contentHeight:int option,alignment:TabAlignment option,maximized:bool option,position:float option) =
         let source = this.windowBounds
         let left = dock=TabDockLeft
+        let heightIn (area:Rect) = min area.height (max 1 (defaultArg contentHeight area.height))
         let fit (area:Rect) =
-            let height = min area.height (max 1 (defaultArg contentHeight area.height))
+            let height = heightIn area
             let spare = area.height-height
-            let offset = match defaultArg alignment TabCenter with TabLeft -> 0 | TabRight -> spare | TabCenter -> spare/2
+            let offset =
+                match position with
+                | Some fraction -> int(Math.Round(float spare*max 0.0 (min 1.0 fraction)))
+                | None -> match defaultArg alignment TabCenter with TabLeft -> 0 | TabRight -> spare | TabCenter -> spare/2
             Rect(Pt(area.x,area.y+offset),Sz(area.width,height))
         // Stay on the owner's monitor even when a neighboring screen has outside space.
         let ownerArea =
@@ -60,16 +73,19 @@ type WindowDecorator = {
         let width = min width (max 1 rect.width)
         // Cover the visible frame's antialiased border instead of stopping just before it.
         let seam = min width (Dpi.scale 1)
-        let outside = fit (Rect(Pt((if left then rect.left-width+seam else rect.right-seam),rect.top),Sz(width,rect.height)))
+        let outsideArea = Rect(Pt((if left then rect.left-width+seam else rect.right-seam),rect.top),Sz(width,rect.height))
+        let outside = fit outsideArea
         let fits = ownerArea.completlyContains outside
         // Maximized HWND bounds include an invisible frame beyond the screen edge.
         let overlap = rect.intersection ownerArea
         let visible = if overlap.size.isEmptyArea then rect else overlap
         let inset = min visible.height (Dpi.scale 32)
         let insideWidth = min width (max 1 visible.width)
-        let inside = fit (Rect(Pt((if left then visible.left else visible.right-insideWidth),visible.top+inset),
-                               Sz(insideWidth,max 1 (visible.height-inset))))
-        { showInside=not fits; bounds=if fits then outside else inside }
+        let insideArea = Rect(Pt((if left then visible.left else visible.right-insideWidth),visible.top+inset),
+                              Sz(insideWidth,max 1 (visible.height-inset)))
+        let inside = fit insideArea
+        let area = if fits then outsideArea else insideArea
+        { showInside=not fits; bounds=if fits then outside else inside }, (area.y, area.height-heightIn area)
 
     member this.bounds : Rect =
         if this.shouldShowInside then this.insideBounds else this.outsideBounds
