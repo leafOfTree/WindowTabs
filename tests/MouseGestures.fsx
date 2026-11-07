@@ -124,6 +124,19 @@ let pressKey (control:Control) (keys:Keys) =
     let processKey = control.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
     unbox<bool>(processKey.Invoke(control,[|box msg;box keys|]))
 
+/// WindowTabs' own windows take gestures where they have a title bar and can be activated, as
+/// Settings, where gestures are tried just after turning them on; not tab strips, menus or popups.
+let ownWindows() =
+    let caption,popup = int64 WindowsStyles.WS_CAPTION,int64 WindowsStyles.WS_POPUP
+    let tool,noActivate = int64 WindowsExtendedStyles.WS_EX_TOOLWINDOW,int64 WindowsExtendedStyles.WS_EX_NOACTIVATE
+    check (GestureTargets.ordinary caption 0L) "A window of WindowTabs with a title bar, as Settings, takes no gestures"
+    check (not (GestureTargets.ordinary popup tool) && not (GestureTargets.ordinary popup noActivate) && not (GestureTargets.ordinary caption tool) && not (GestureTargets.ordinary popup 0L))
+          "A tab strip, menu, popup or tool window of WindowTabs takes gestures"
+    // Settings itself, as the app builds it, takes them.
+    use form = new Form(ShowInTaskbar=false)
+    let style index = WinUserApi.GetWindowLong(form.Handle,index).ToInt64()
+    check (GestureTargets.ordinary (style WindowLongFieldOffset.GWL_STYLE) (style WindowLongFieldOffset.GWL_EXSTYLE)) "An ordinary window of the app takes no gestures"
+
 /// Another button pressed while a stroke is drawn gives the gesture up and clicks nothing: its
 /// press and release, and the right button's release, are all kept from the app.
 let cancelling() =
@@ -192,6 +205,7 @@ let main() =
         MouseGestureRules.setEnabled "firefox.exe" true
         MouseGestureRules.save (MouseGestures.addApp (MouseGestureRules.table()) @"C:\Windows\explorer.exe" MouseGesturePresets.explorer)
         cancelling()
+        ownWindows()
         // The commands a gesture can run are listed as the palette lists them: the one used last
         // first, then by category, each in the order defined.
         CommandPalette.remember "close-tab"
@@ -226,9 +240,10 @@ let main() =
             do
                 use hint = new GestureHint()
                 let pointer = Screen.PrimaryScreen.WorkingArea.Location
-                hint.show(Some "U",tr Strings.MouseGestures.noAction,true,[],pointer)
+                hint.show(Some "U","Next tab",false,[],pointer)
                 let alone = hint.Height
-                hint.show(Some "U",tr Strings.MouseGestures.noAction,true,["UL","Previous tab";"UR","A much longer action name"],pointer)
+                // A stroke that does nothing by itself has no caption, only where it could go on to.
+                hint.show(Some "U","",true,["UL","Previous tab";"UR","A much longer action name"],pointer)
                 check (hint.Height>=alone+Dpi.scale 52) (sprintf "Two strokes to follow made the hint %d high, from %d" hint.Height alone)
                 use font = new Font(UiFace.text "Segoe UI",10.0f)
                 check (hint.Width>=TextRenderer.MeasureText("A much longer action name",font).Width+Dpi.scale 34) "A stroke to follow did not fit in the hint"

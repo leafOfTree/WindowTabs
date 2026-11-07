@@ -16,6 +16,16 @@ type GesturePress =
     /// release is kept from the app as the press was.
     | Cancelled
 
+module GestureTargets =
+    /// Whether one of WindowTabs' own windows takes gestures, by its styles: one with a title bar
+    /// that can be activated, as Settings, where someone who has just turned gestures on tries
+    /// them; not a tab strip, menu, popup or the hint, which have none or never take the focus.
+    let ordinary (style:int64) (exStyle:int64) =
+        let caption = int64 WindowsStyles.WS_CAPTION
+        style &&& caption=caption &&
+        exStyle &&& int64 WindowsExtendedStyles.WS_EX_TOOLWINDOW=0L &&
+        exStyle &&& int64 WindowsExtendedStyles.WS_EX_NOACTIVATE=0L
+
 /// Holding the right button and drawing a stroke. The low-level mouse hook hands each event here
 /// first, on the main thread, and nothing slow happens in it: what a gesture does runs after.
 /// A press is kept from the app until it is plainly a gesture or plainly not. Released where it
@@ -84,13 +94,16 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
                 for modifier in List.rev modifiers do yield key modifier true false |]
         let inputs = codes |> Seq.collect press |> Array.ofSeq
         if inputs.Length>0 then send inputs
-    /// The window a press lands on, and its app, where gestures are on for it: not one of this
-    /// app's own windows, nor the taskbar or the desktop, whose menus belong to Windows.
+    /// The window a press lands on, and its app, where gestures are on for it: of this app's own
+    /// windows only those with a title bar, as Settings, not the tab strips, menus and popups; not
+    /// the taskbar or the desktop, whose menus belong to Windows.
     let target (x:int) (y:int) =
         if not enabled || FullScreenPause.isPaused() || Services.desktop.isDragging then None
         else
             let hwnd = WinUserApi.GetAncestor(WinUserApi.WindowFromPoint(POINT(x,y)),GetAncestorConstants.GA_ROOT)
-            if hwnd=IntPtr.Zero || Win32Helper.GetWindowProcessId(hwnd)=currentProcess then None
+            let own = hwnd<>IntPtr.Zero && Win32Helper.GetWindowProcessId(hwnd)=currentProcess
+            let style index = WinUserApi.GetWindowLong(hwnd,index).ToInt64()
+            if hwnd=IntPtr.Zero || (own && not (GestureTargets.ordinary (style WindowLongFieldOffset.GWL_STYLE) (style WindowLongFieldOffset.GWL_EXSTYLE))) then None
             else
                 let shell = try List.contains (OS().windowFromHwnd(hwnd).className) ["Shell_TrayWnd";"Shell_SecondaryTrayWnd";"Progman";"WorkerW"] with _ -> true
                 let path = if shell then "" else pathFor hwnd
@@ -140,15 +153,17 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
                     hinted <- now
                     let window = match hint with Some window -> window | None -> (let window = new GestureHint() in hint <- Some window; window)
                     match reading() with
-                    | NoGesture -> window.hide()
-                    | Unrecognized -> window.show(None,tr Strings.MouseGestures.unrecognized,true,[],snd now)
+                    | NoGesture | Unrecognized -> window.hide()
                     | Gesture gesture ->
                         // After one stroke, where a second one would lead, so the gestures can be
                         // found by drawing rather than looked up.
                         let next = MouseGestures.continuations table path gesture |> List.map(fun binding -> binding.gesture,Commands.gestureAction binding)
+                        // A stroke that does nothing shows nothing: no note saying so. Only where a
+                        // further stroke would do something, the stroke and those, with no caption.
                         match MouseGestures.resolve table path gesture with
                         | Some binding -> window.show(Some gesture,Commands.gestureAction binding,false,next,snd now)
-                        | None -> window.show(Some gesture,tr Strings.MouseGestures.noAction,true,next,snd now)
+                        | None when not next.IsEmpty -> window.show(Some gesture,"",true,next,snd now)
+                        | None -> window.hide()
             | _ -> hideHint())
 
     /// Whether the hook takes the event from the app.
