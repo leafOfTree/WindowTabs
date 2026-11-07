@@ -1310,6 +1310,9 @@ otepad.exe"]},
                    "Groups across apps has a heading as large as the page's"
         let tree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list when list.Name<>"dragged-groups" -> Some list | _ -> None)
         let draggedTree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list when list.Name="dragged-groups" -> Some list | _ -> None)
+        /// App rules' own list, whose apps open to their windows, keeps its chevrons.
+        let appListShowsExpanders (view:ISettingsView) =
+            descendants view.control |> Seq.exists(function :? SettingsTreeList as list -> list.ShowExpanders && not (obj.ReferenceEquals(list,tree)) && not (obj.ReferenceEquals(list,draggedTree)) | _ -> false)
         let draggedHeader = descendants groupView |> Seq.find(fun control -> control.Name="dragged-header")
         let draggedCard = descendants groupView |> Seq.find(fun control -> control.Name="dragged-card")
         let saved() = settingValues.["appGroupingRules"] :?> AppGroupingRule list
@@ -1335,6 +1338,9 @@ otepad.exe"]},
             emptyImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-empty-%A.png" mode))
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
         // A group has no name: its row is its apps in order, with one button, delete.
+        // Their rows never open, so the group lists keep no room for a chevron: their marks line
+        // up with App rules' chevrons rather than one place to the right of them.
+        assertTrue (not tree.ShowExpanders && not draggedTree.ShowExpanders && appListShowsExpanders view) "A group list keeps room for a chevron its rows never have"
         assertTrue (tree.RowActions=[DeleteGlyph] && tree.Roots.Count=1 && tree.Roots.[0].Text=""
                     && descendants groupView |> Seq.forall(fun control -> control.Name<>"group-name"))
                    (sprintf "A new group has a name, or can be renamed: %s" tree.Roots.[0].Text)

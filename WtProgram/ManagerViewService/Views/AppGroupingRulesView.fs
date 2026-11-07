@@ -612,6 +612,8 @@ type AppGroupingRulesView() as this =
         dragged.ExpandOnDoubleClick <- false
         dragged.SoftHighlight <- true
         dragged.ShowHeader <- false
+        // Its rows never open: no room kept for a chevron, so the marks line up with App rules' chevrons.
+        dragged.ShowExpanders <- false
         dragged.GlyphTips <- Map.ofList [UngroupGlyph,tr Strings.AppRules.ungroup]
         dragged.ActionInvoked.Add(fun (item,action) ->
             match item.Tag :?> GroupApplicationNode,action with
@@ -625,6 +627,7 @@ type AppGroupingRulesView() as this =
         tree.EmptyText <- tr Strings.AppRules.noGroups
         // Only names and buttons: a heading row would just say "Name".
         tree.ShowHeader <- false
+        tree.ShowExpanders <- false
         tree.ChipAddTip <- tr Strings.AppRules.chooseApplication
         tree.ActionInvoked.Add(fun (item,action) ->
             match item.Tag :?> GroupApplicationNode,action with
