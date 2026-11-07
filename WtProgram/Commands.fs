@@ -401,6 +401,7 @@ module Commands =
         plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))
         plain "sort-tabs" Strings.Commands.sortTabs TabCommands hasOtherTabs (onGroup(fun g -> g.run SortTabs))
         plain "close-other-tabs" Strings.Commands.closeOtherTabs TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(CloseOtherTabs hwnd)))
+        plain "close-tabs-after" Strings.Commands.closeTabsAfter TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(CloseTabsAfter hwnd)))
         plain "close-app-tabs" Strings.Commands.closeAppTabs TabCommands hasGroup (onTab(fun g hwnd -> g.run(CloseAppTabs hwnd)))
         plain "close-all-tabs" Strings.Commands.closeAllTabs TabCommands hasGroup (onGroup(fun g -> g.run CloseAllTabs))
         plain "detach-tab" Strings.Commands.detachTab TabCommands hasOtherTabs
@@ -547,7 +548,11 @@ module Commands =
     let forGestures() = all |> List.filter(fun command -> command.listed && not command.chooses)
     /// What a command is called for the window in front: pinning says which way it goes.
     let textFor (command:Command) (hwnd:IntPtr) =
-        if command.id="pin-tab" && PinnedTabs.contains hwnd then Strings.Commands.unpinTab else command.text
+        if command.id="pin-tab" && PinnedTabs.contains hwnd then Strings.Commands.unpinTab
+        // With the tabs in a column, the tabs after one are below it.
+        elif command.id="close-tabs-after" && (shownChoices hwnd |> Option.exists(fun shown -> shown.dock=TabDockLeft || shown.dock=TabDockRight)) then
+            { command.text with caption=Strings.TabMenu.closeBelow }
+        else command.text
     /// The command a shortcut key belongs to.
     let byShortcut key = all |> List.tryFind(fun command -> command.shortcut=Some key)
     let categoryOf key = byShortcut key |> Option.map(fun command -> command.category)

@@ -112,6 +112,8 @@ module Strings =
         let autoGroupWindows = { en="Auto-group windows"; zh="自动分组"; ja="ウィンドウを自動グループ化"; ar="تجميع النوافذ تلقائيًا" }
         let close = { en="Close"; zh="关闭"; ja="閉じる"; ar="إغلاق" }
         let closeOthers = { en="Close others"; zh="关闭其他"; ja="他を閉じる"; ar="إغلاق علامات التبويب الأخرى" }
+        let closeToRight = { en="Close tabs to the right"; zh="关闭右侧标签"; ja="右側のタブを閉じる"; ar="إغلاق علامات التبويب على اليمين" }
+        let closeBelow = { en="Close tabs below"; zh="关闭下方标签"; ja="下のタブを閉じる"; ar="إغلاق علامات التبويب أدناه" }
         let closeAllOf exe = { en=sprintf "Close all '%s' tabs" exe; zh=sprintf "关闭所有“%s”标签" exe; ja=sprintf "「%s」のタブをすべて閉じる" exe; ar=sprintf "إغلاق جميع علامات تبويب «%s»" exe }
         let closeAll = { en="Close all"; zh="关闭全部"; ja="すべて閉じる"; ar="إغلاق الكل" }
         let settings = { en="Settings…"; zh="设置…"; ja="設定…"; ar="الإعدادات…" }
@@ -705,6 +707,9 @@ module Strings =
         let closeOtherTabs = { caption={ en="Close other tabs"; zh="关闭其他标签"; ja="他のタブを閉じる"; ar="إغلاق علامات التبويب الأخرى" }
                                description={ en="Closes every other window of the group but the pinned ones."; zh="关闭分组中的其他窗口，固定的标签除外。"; ja="グループの他のウィンドウを、固定したタブを除いてすべて閉じます。"; ar="يغلق كل النوافذ الأخرى في المجموعة عدا المثبتة." }
                                keywords=tabWords }
+        let closeTabsAfter = { caption=TabMenu.closeToRight
+                               description={ en="Closes every window after the tab in front, but the pinned ones; below, with tabs at the side."; zh="关闭当前标签之后的所有窗口，固定的标签除外；标签在侧边时为下方。"; ja="前面のタブより後ろのウィンドウを、固定したタブを除いてすべて閉じます。タブが横にあるときは下側。"; ar="يغلق كل النوافذ بعد علامة التبويب الأمامية عدا المثبتة؛ وأسفلها عندما تكون علامات التبويب على الجانب." }
+                               keywords={ en="tab right below after"; zh="标签 右侧 下方 之后"; ja="タブ 右 下 後ろ"; ar="علامة تبويب يمين أسفل بعد" } }
         let closeAppTabs = { caption={ en="Close all tabs of this app"; zh="关闭此应用的全部标签"; ja="このアプリのタブをすべて閉じる"; ar="إغلاق جميع علامات تبويب هذا التطبيق" }
                              description={ en="Every window of the group from the app of the tab in front, but the pinned ones."; zh="分组中属于当前标签所在应用的所有窗口，固定的标签除外。"; ja="グループ内で、前面のタブのアプリのウィンドウを、固定したタブを除いてすべて。"; ar="كل نوافذ المجموعة من تطبيق علامة التبويب الأمامية، عدا المثبتة." }
                              keywords=tabWords }

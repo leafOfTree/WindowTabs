@@ -507,6 +507,12 @@ let main() =
             let four = hwndOf "Close four"
             runDone "close-tab" four
             pumpUntil "Closing a tab" (fun () -> not (WinUserApi.IsWindow four)))
+        // The pinned tab is first, so after "Close one" come "Close two" and nothing else.
+        attempt "close-tabs-after" (fun () ->
+            runDone "close-tabs-after" (hwndOf "Close one")
+            pumpUntil "Closing the tabs to the right" (fun () -> not (WinUserApi.IsWindow (hwndOf "Close two")))
+            pump 200
+            note (WinUserApi.IsWindow (hwndOf "Close one") && WinUserApi.IsWindow three) "Close tabs to the right closed the tab itself or the pinned tab before it")
         attempt "close-other-tabs" (fun () ->
             runDone "close-other-tabs" (hwndOf "Close one")
             pumpUntil "Closing the other tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "Close two")))

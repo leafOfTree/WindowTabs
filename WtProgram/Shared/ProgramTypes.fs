@@ -241,6 +241,8 @@ type GroupCommand =
     | RenameTab of IntPtr
     | ResetTabName of IntPtr
     | CloseOtherTabs of IntPtr
+    /// Every tab after the window's along the strip: to its right, or below it in a column.
+    | CloseTabsAfter of IntPtr
     /// Every tab of the window's program.
     | CloseAppTabs of IntPtr
     | CloseAllTabs

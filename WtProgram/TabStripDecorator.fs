@@ -148,6 +148,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 group.isIconOnly <- false
                 try this.beginRename(hwnd) with _ -> ()
             | CloseOtherTabs hwnd -> this.onCloseOtherWindows hwnd
+            | CloseTabsAfter hwnd -> this.onCloseWindowsAfter hwnd
             | CloseAppTabs hwnd -> this.onCloseAllExeWindows (os.windowFromHwnd(hwnd).pid.exeName)
             | CloseAllTabs -> this.onCloseAllWindows()
             | SortTabs -> this.sortTabs()
@@ -376,6 +377,12 @@ type TabStripDecorator(group:WindowGroup) as this =
 
     member private this.onCloseOtherWindows hwnd =
         this.closeTogether(group.windows.items.where((<>)hwnd))
+
+    /// The tabs after this one along the strip, as a browser's Close tabs to the right.
+    member private this.windowsAfter hwnd = TabOrder.after group.lorder.list hwnd
+
+    member private this.onCloseWindowsAfter hwnd =
+        this.closeTogether(List2(this.windowsAfter hwnd))
 
     member private this.onCloseAllExeWindows exeName =
         let matchesExe hwnd = os.windowFromHwnd(hwnd).pid.exeName = exeName
@@ -690,6 +697,15 @@ type TabStripDecorator(group:WindowGroup) as this =
                 flags = List2()
             })
 
+        // Named for where the tabs are: to the right in a row, below in a column; greyed for the last tab.
+        let closeTabsAfterItem =
+            CmiRegular({
+                text = tr (if this.ts.isVertical then Strings.TabMenu.closeBelow else Strings.TabMenu.closeToRight)
+                image = None
+                click = fun() -> this.onCloseWindowsAfter hwnd
+                flags = (if List.isEmpty (this.windowsAfter hwnd) then List2([MenuFlags.MF_GRAYED]) else List2())
+            })
+
         // With every tab from the same program, closing its windows is just "Close all".
         let mixesApps = group.windows.items.any(fun other -> os.windowFromHwnd(other).pid.exeName <> exeName)
         let closeAllExeTabsItem =
@@ -737,6 +753,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(CmiSeparator)
             Some(closeTabItem)
             Some(closeOtherTabsItem)
+            Some(closeTabsAfterItem)
             (if mixesApps then Some(closeAllExeTabsItem) else None)
             Some(closeAllTabsItem)
             // Named after the program itself, since these choices apply to all its windows.

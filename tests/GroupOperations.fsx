@@ -1624,6 +1624,12 @@ let main() =
                 check (renameWith (Some (onGroup(fun group -> group.windowName handles.Head))) |> fst |> not) "Typing the window's own name keeps the tab renamed"
                 check (renameWith (Some "") |> fst |> not) "An empty name keeps the tab renamed"
                 check (List.contains (Localization.tr Strings.TabMenu.closeAll) alone) "The tab menu lost Close all"
+                // Close tabs to the right follows Close others; greyed for the last tab, which has none after it.
+                let closeToRight = Localization.tr Strings.TabMenu.closeToRight
+                let closeAfter hwnd = menu hwnd |> List.find(fun item -> item.text=closeToRight)
+                check (List.findIndex ((=) closeToRight) alone = List.findIndex ((=) (Localization.tr Strings.TabMenu.closeOthers)) alone+1) "Close tabs to the right does not follow Close others"
+                check (not (List.contains MenuFlags.MF_GRAYED (closeAfter handles.Head).flags.list)) "Close tabs to the right is greyed for a tab with tabs after it"
+                check (List.contains MenuFlags.MF_GRAYED (closeAfter (List.last handles)).flags.list) "Close tabs to the right is not greyed for the last tab"
                 check (not (List.contains (closeAllOf handles.Head) alone)) "A group of one program offers closing that program's windows"
                 (info :> IGroup).addWindow(foreignHwnd,false)
                 pumpUntil(fun () -> onGroup(fun group ->
