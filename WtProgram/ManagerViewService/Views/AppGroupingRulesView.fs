@@ -455,8 +455,10 @@ type AppGroupingRulesView() as this =
             draggedChevron.AccessibleName <- draggedCaption.Text
             draggedHeader.Visible <- not handMade.IsEmpty
             showDragged()
-            handMade |> List.iter(fun (id,members) ->
-                let row = TreeListItem("",Tag=HandMadeNode id,Glyph=TabsGlyph,IconTip=tr Strings.AppRules.handMadeGroups,
+            handMade |> List.iter(fun (id,color,members) ->
+                // A group given a colour shows it as a dot in place of its mark, as a group across apps does.
+                let swatch = Theme.parseTabColor color |> Option.map(Theme.tabColor false)
+                let row = TreeListItem("",Tag=HandMadeNode id,Glyph=(if swatch.IsSome then NoGlyph else TabsGlyph),Swatch=swatch,IconTip=tr Strings.AppRules.handMadeGroups,
                                        Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true,ChipColumns=3)
                 row.Chips <- members |> List.map(fun (app,title,hwnd,kept) ->
                     // An open window's own icon; a closed one's app icon in grey, as another of its

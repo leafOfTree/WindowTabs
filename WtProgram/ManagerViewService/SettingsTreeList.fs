@@ -61,6 +61,9 @@ type TreeListItem(text:string) =
     member val Switch : bool option = None with get,set
     /// A note just after the name, in the muted colour, such as the row's shortcut.
     member val Suffix = "" with get,set
+    /// A colour dot just after the name, for a row whose icon is its own: the colour an app's
+    /// tabs take. A row with no icon shows its colour in the icon's place (`Swatch`) instead.
+    member val NameSwatch : Color option = None with get,set
     /// Runs of the suffix to light up as the name's are, (start,length).
     member val SuffixHighlights : (int * int) list = [] with get,set
     /// A down arrow after the last column's text, for a value picked from a list, as drop-downs show.
@@ -902,7 +905,21 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         g.DrawEllipse(edge,dot)
                     if not editing then
                         let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
-                        if item.Suffix="" then this.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p,item.Dimmed)
+                        if item.Suffix="" && item.NameSwatch.IsNone then this.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p,item.Dimmed)
+                        elif item.Suffix="" then
+                            // The dot right after the name, which gives way to it when room is short.
+                            let side,gap = Dpi.scale 8,Dpi.scale 6
+                            let measured = TextRenderer.MeasureText(g,item.Text,this.Font,Size(Int32.MaxValue,rowHeight),flags).Width
+                            let nameWidth = min (measured+Dpi.scale 2) (max 0 (nameBounds.Width-side-gap))
+                            this.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p,item.Dimmed)
+                            let dot = Rectangle(nameBounds.X+nameWidth+gap,nameBounds.Y+(nameBounds.Height-side)/2,side,side)
+                            let state = g.Save()
+                            g.SmoothingMode <- SmoothingMode.AntiAlias
+                            use fill = new SolidBrush(item.NameSwatch.Value)
+                            g.FillEllipse(fill,dot)
+                            use edge = new Pen(Color.FromArgb(60,p.text))
+                            g.DrawEllipse(edge,dot)
+                            g.Restore(state)
                         else
                             // The note right after the name, which gives way to it when room is short.
                             // Measured as drawn, with the padding the text is drawn with.
