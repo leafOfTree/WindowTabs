@@ -50,25 +50,30 @@ type GestureHint() =
     override this.OnPaintBackground(e) = e.Graphics.Clear((SettingsColors.current()).surface)
     override this.OnPaint(e) =
         let p = SettingsColors.current()
-        if not SystemCorners.supported.Value then
-            e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
-            use outline = rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (corner this.Height)
-            use pen = new Pen(p.border)
-            e.Graphics.DrawPath(pen,outline)
         let accent = if SystemInformation.HighContrast then SystemColors.Highlight else p.accent
         // Ready: releasing now runs the action. The row sits on a tint of the accent, as a chosen
         // item does, its name in bold, so it reads apart from a stroke still on its way.
         let ready = not muted && text<>""
         let readyInk =
             if ready then
-                let inset = float32(px 4.0f)
-                let band = RectangleF(inset,inset,float32 this.Width-2.0f*inset,float32(px first)-2.0f*inset)
-                e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
-                use shape = rounded band (if next.IsEmpty then band.Height/2.0f else float32(px 6.0f))
                 use fill = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else Color.FromArgb(52,p.accent))
-                e.Graphics.FillPath(fill,shape)
+                // Alone, the row is the whole hint: tinted to its edge, which the window's own
+                // rounded shape and border close. Over rows to follow, a band inside the card.
+                if next.IsEmpty then e.Graphics.FillRectangle(fill,Rectangle(0,0,this.Width,this.Height))
+                else
+                    let inset = float32(px 4.0f)
+                    let band = RectangleF(inset,inset,float32 this.Width-2.0f*inset,float32(px first)-2.0f*inset)
+                    e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
+                    use shape = rounded band (float32(px 6.0f))
+                    e.Graphics.FillPath(fill,shape)
                 if SystemInformation.HighContrast then SystemColors.HighlightText else p.text
             else p.muted
+        // Windows 10 draws no border of its own: drawn here, over a tint that reaches the edge.
+        if not SystemCorners.supported.Value then
+            e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
+            use outline = rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (corner this.Height)
+            use pen = new Pen(p.border)
+            e.Graphics.DrawPath(pen,outline)
         let left =
             match gesture with
             | Some route ->
