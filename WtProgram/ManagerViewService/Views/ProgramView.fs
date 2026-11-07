@@ -25,6 +25,9 @@ type ProgramView() as this=
                               TreeListColumn(tr Strings.AppRules.autoGroup,130,CheckColumn)])
     let apps() = list.Roots |> List.ofSeq
     let path (item:TreeListItem) = item.Tag :?> string
+    /// The colour each app's tabs take, as a dot after its name. On this thread: the settings are read here.
+    let showColors (items:TreeListItem seq) =
+        for item in items do item.NameSwatch <- AppTabColors.colorOf (path item) |> Option.map(Theme.tabColor false)
     /// The default only applies when an application is first discovered.
     let footer =
         let table = new TableLayoutPanel(ColumnCount=2,RowCount=1,Margin=Padding.Empty,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink)
@@ -55,6 +58,7 @@ type ProgramView() as this=
             ImgHelper.disposeItems list.Roots
             list.Roots.Clear()
             for item in items do item.Expanded <- expanded.Contains(AppIdentity.key (path item))
+            showColors items
             list.Roots.AddRange(items)
             list.Rebuild()
             panel.Status <- ""),
@@ -84,6 +88,13 @@ type ProgramView() as this=
         this.populateNodes()
         let subscription = Services.settings.notifyValue "enableTabbingByDefault" (fun _ ->
             if not panel.IsDisposed then invoker.asyncInvoke(fun () -> if not panel.IsDisposed then this.populateNodes()))
+        // A colour remembered for an app from a tab menu shows at once.
+        let colorSubscription = Services.settings.notifyValue "appTabColors" (fun _ ->
+            if not panel.IsDisposed then
+                invoker.asyncInvoke(fun () ->
+                    if not panel.IsDisposed then
+                        showColors (apps())
+                        list.Invalidate()))
         // Apps opened since the last look join the list when the page is shown again or the
         // settings window comes back to the front.
         let rescan = EventHandler(fun _ _ -> if panel.Visible then this.populateNodes())
@@ -103,6 +114,7 @@ type ProgramView() as this=
             if not (isNull owner) then owner.Activated.RemoveHandler(rescan)
             (scanner :> IDisposable).Dispose()
             subscription.Dispose()
+            colorSubscription.Dispose()
             ImgHelper.disposeItems list.Roots)
 
     member private this.populateNodes() =

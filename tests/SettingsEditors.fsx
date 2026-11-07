@@ -465,7 +465,7 @@ let main() =
     // An open window with an icon of its own stands for the Downloads folder.
     let openWindow = new Form(ShowInTaskbar=false,Icon=SystemIcons.Information)
     openWindow.CreateControl()
-    let draggedTogether() = [4711,["NOTEPAD.EXE","Notes - Notepad",IntPtr.Zero,true;"EXPLORER.EXE","Downloads",openWindow.Handle,false]]
+    let draggedTogether() = [4711,"",["NOTEPAD.EXE","Notes - Notepad",IntPtr.Zero,true;"EXPLORER.EXE","Downloads",openWindow.Handle,false]]
     let handMade = ref (draggedTogether())
     let windowKeys : WindowShortcut list ref = ref []
     let ungrouped = Collections.Generic.List<int>()
@@ -488,7 +488,7 @@ let main() =
         member _.handMadeGroups() = handMade.Value
         member _.ungroupHandMade id =
             ungrouped.Add id
-            handMade.Value <- handMade.Value |> List.filter(fun (group,_) -> group<>id)
+            handMade.Value <- handMade.Value |> List.filter(fun (group,_,_) -> group<>id)
         member _.groupIcon _ = None
         member _.setGroupIcon(_,_) = ()
         member _.appWindows = List2()
@@ -969,6 +969,25 @@ let main() =
                 if before.GetPixel(x,y)<>after.GetPixel(x,y) then changed <- changed+1
         assertTrue (changed=0) (sprintf "Scrolled row text changed %d header pixels" changed)
         host.Close()
+    // An app's colour: a dot just after its name, the name drawn as before.
+    do
+        use host = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ClientSize=Size(420,120))
+        let list = new SettingsTreeList([TreeListColumn("Name",0,TextColumn)],Dock=DockStyle.Fill)
+        host.Controls.Add(list)
+        SettingsUi.apply host
+        host.Show()
+        let dotColor = Color.FromArgb(220,40,40)
+        list.Roots.AddRange([TreeListItem("editor.exe",Glyph=WindowGlyph,NameSwatch=Some dotColor);TreeListItem("other.exe",Glyph=WindowGlyph)])
+        list.Rebuild()
+        use image = new Bitmap(list.Width,list.Height)
+        list.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        let near (pixel:Color) = abs(int pixel.R-int dotColor.R)+abs(int pixel.G-int dotColor.G)+abs(int pixel.B-int dotColor.B)<30
+        let rowOf y = list.ItemAt(Point(Dpi.scale 20,y)) |> Option.map(fun row -> row.Text)
+        let dotted = [ for y in 0..image.Height-1 do for x in 0..image.Width-1 do if near (image.GetPixel(x,y)) then yield x,y ]
+        let nameEnd = Dpi.scale 20+TextRenderer.MeasureText("editor.exe",list.Font).Width
+        assertTrue (not dotted.IsEmpty && dotted |> List.forall(fun (x,y) -> rowOf y=Some "editor.exe" && x>=nameEnd))
+                   "An app's colour is not a dot after its name on its own row"
+        host.Close()
     // Row actions: buttons beside the name of the row under the pointer. A press selects the row
     // and acts, and a double-click on one does not also open the row.
     do
@@ -1291,6 +1310,9 @@ otepad.exe"]},
                    "Groups across apps has a heading as large as the page's"
         let tree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list when list.Name<>"dragged-groups" -> Some list | _ -> None)
         let draggedTree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list when list.Name="dragged-groups" -> Some list | _ -> None)
+        /// App rules' own list, whose apps open to their windows, keeps its chevrons.
+        let appListShowsExpanders (view:ISettingsView) =
+            descendants view.control |> Seq.exists(function :? SettingsTreeList as list -> list.ShowExpanders && not (obj.ReferenceEquals(list,tree)) && not (obj.ReferenceEquals(list,draggedTree)) | _ -> false)
         let draggedHeader = descendants groupView |> Seq.find(fun control -> control.Name="dragged-header")
         let draggedCard = descendants groupView |> Seq.find(fun control -> control.Name="dragged-card")
         let saved() = settingValues.["appGroupingRules"] :?> AppGroupingRule list
@@ -1316,6 +1338,9 @@ otepad.exe"]},
             emptyImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-empty-%A.png" mode))
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
         // A group has no name: its row is its apps in order, with one button, delete.
+        // Their rows never open, so the group lists keep no room for a chevron: their marks line
+        // up with App rules' chevrons rather than one place to the right of them.
+        assertTrue (not tree.ShowExpanders && not draggedTree.ShowExpanders && appListShowsExpanders view) "A group list keeps room for a chevron its rows never have"
         assertTrue (tree.RowActions=[DeleteGlyph] && tree.Roots.Count=1 && tree.Roots.[0].Text=""
                     && descendants groupView |> Seq.forall(fun control -> control.Name<>"group-name"))
                    (sprintf "A new group has a name, or can be renamed: %s" tree.Roots.[0].Text)
@@ -1555,13 +1580,19 @@ otepad.exe"]},
         do
             let dragged = handMade.Value
             menu.UpdateApplications []
-            handMade.Value <- [4712,[Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe"),"Closed notes",IntPtr.Zero,true
-                                     "NOT-RUNNING-APP.EXE","",IntPtr.Zero,true]]
+            handMade.Value <- [4712,"",[Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe"),"Closed notes",IntPtr.Zero,true;
+                                        "NOT-RUNNING-APP.EXE","",IntPtr.Zero,true]]
             groupView.Reload()
             let row = draggedTree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
             assertTrue (row.Chips |> List.map(fun chip -> chip.Text)=["Closed notes";"NOT-RUNNING-APP.EXE"]
                         && row.Chips |> List.forall(fun chip -> not(isNull chip.Icon) && isGrey chip.Icon))
                        "A closed window of an app not running had no icon, or not a grey one"
+            // A dragged group with a colour shows it as a dot in place of its mark.
+            let chosen = PaletteColor Theme.tabColorOrder.Head
+            handMade.Value <- [4713,Theme.formatTabColor chosen,["NOTEPAD.EXE","Notes - Notepad",IntPtr.Zero,true;"EXPLORER.EXE","Downloads",IntPtr.Zero,true]]
+            groupView.Reload()
+            assertTrue (draggedTree.Roots.Count=1 && draggedTree.Roots.[0].Swatch=Some(Theme.tabColor false chosen) && draggedTree.Roots.[0].Glyph=NoGlyph)
+                       "A dragged group's colour is not shown as a dot on its row"
             handMade.Value <- dragged
         menu.UpdateApplications [Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe")]
         groupView.Reload()

@@ -413,6 +413,10 @@ let main() =
         check (colors.resolveIn group a @"C:\Apps\EDITOR.EXE" "ByWindow" remembered peers=Some red) "A group's colour overrode the colour chosen for the tab"
         // Close tabs to the right: the tabs after one along the strip; none after the last, or for a tab not on it.
         check (TabOrder.after [1;2;3;4] 2=[3;4] && TabOrder.after [1;2;3] 3=[] && TabOrder.after [1;2;3] 9=[]) "The tabs after one are not the rest of the strip"
+        // A Store app's frame never owns the strip, which took no clicks while it did; any other
+        // window does, where the strip may share its input.
+        check (not (StripOwner.mayOwn "ApplicationFrameWindow" true) && StripOwner.mayOwn "Chrome_WidgetWin_1" true && not (StripOwner.mayOwn "Notepad" false))
+              "A Store app's frame may own the tab strip, or another window may not"
         let loads = ref 0
         let load() = loads.Value <- loads.Value+1; @"C:\Apps\Editor.exe"
         for _ in 1..3 do colors.path a load |> ignore

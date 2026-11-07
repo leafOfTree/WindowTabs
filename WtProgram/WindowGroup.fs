@@ -169,6 +169,13 @@ module TabNavigation =
         |> Option.bind(fun hwnd -> order |> List.tryFindIndex ((=) hwnd) |> Option.map(fun index -> hwnd,index + (if right then 1 else -1)))
         |> Option.filter(fun (_,index) -> index>=0 && index<order.Length)
 
+module StripOwner =
+    /// Whether a window may own the tab strip, which then rises with it: one whose input the strip
+    /// may share, but not a Store app's frame, as Windows Settings'. Owned by one, the strip shared
+    /// its thread's input queue and took no clicks while the app was in front; owned by nothing it
+    /// is watched instead, as for a window with other rights.
+    let mayOwn (className:string) (sharesInput:bool) = sharesInput && className<>"ApplicationFrameWindow"
+
 module TabOrder =
     /// The tabs after one along the strip; none for a tab not on it.
     let after (order:'a list) (tab:'a) =
@@ -1072,7 +1079,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.setTsOwner(owner:Window) =
         let strip = this.os.windowFromHwnd(this.ts.hwnd)
-        let shared = this.canShareInput owner.hwnd
+        let className = try owner.className with _ -> ""
+        let shared = StripOwner.mayOwn className (this.canShareInput owner.hwnd)
         StartupTrace.measure "group.owner" (fun () ->
             strip.setOwner(if shared then owner else this.os.nullWindow))
         // Windows raises an owned strip with its window; one owned by nothing is watched instead.

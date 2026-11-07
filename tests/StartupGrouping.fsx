@@ -310,7 +310,7 @@ let main() =
         late.Close()
         pumpUntil "Closing a window of a group made by hand did not tell App rules" (fun () ->
             announced.Value>0 &&
-            (program :> IProgram).handMadeGroups() |> List.exists(fun (id,members) ->
+            (program :> IProgram).handMadeGroups() |> List.exists(fun (id,_,members) ->
                 id=5151 && members |> List.exists(fun (_,title,hwnd,_) -> title="Remembered C" && hwnd=IntPtr.Zero)))
         // Closed by hand rather than by Windows signing out, it leaves the group once the grace is
         // over, as a tab dragged out does.
@@ -333,7 +333,7 @@ let main() =
         // App rules shows the group as it is: its open windows, the one whose title is no longer
         // kept among them, said not to come back after a restart; its closed ones after them.
         do
-            let shown = (program :> IProgram).handMadeGroups() |> List.tryFind(fun (id,_) -> id=5151) |> Option.map snd |> Option.defaultValue []
+            let shown = (program :> IProgram).handMadeGroups() |> List.tryFind(fun (id,_,_) -> id=5151) |> Option.map(fun (_,_,members) -> members) |> Option.defaultValue []
             let openOnes = shown |> List.filter(fun (_,_,hwnd,_) -> hwnd<>IntPtr.Zero)
             check (openOnes |> List.exists(fun (_,_,hwnd,kept) -> hwnd=reopenedB.Handle && not kept))
                   (sprintf "An open window of the group whose title is no longer kept is missing or said to come back: %A" shown)

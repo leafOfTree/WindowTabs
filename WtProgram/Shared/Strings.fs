@@ -938,10 +938,6 @@ module Strings =
               zh=sprintf "已在 %s 中关闭手势，包括全局手势。打开左边的开关即可恢复。" app
               ja=sprintf "%s ではジェスチャーがオフです (全体のものも含む)。左のスイッチをオンにすると戻ります。" app
               ar=sprintf "الإيماءات متوقفة في %s، بما فيها إيماءات كل التطبيقات. شغّل مفتاحه لاستخدامها مجددًا." app }
-        /// The note by the pointer for a stroke that is no gesture, and for one bound to nothing.
-        /// By the pointer, where an action's name goes: releasing does nothing.
-        let unrecognized = { en="Not recognized"; zh="无法识别"; ja="認識できません"; ar="غير معروفة" }
-        let noAction = { en="No action"; zh="无操作"; ja="操作なし"; ar="لا إجراء" }
         /// A gesture's strokes in words, as a screen reader says it and the dialog names it.
         let drawn (gesture:string) =
             let word index (en:string[]) (zh:string[]) (ja:string[]) (ar:string[]) =

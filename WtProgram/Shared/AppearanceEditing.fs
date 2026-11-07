@@ -69,6 +69,8 @@ module PaletteEditing =
 module AppTabColors =
     let private colors() = Services.settings.getValue("appTabColors") :?> Map<string,string>
     let remembered path = colors() |> Map.exists(fun saved _ -> AppIdentity.same saved path)
+    /// The colour the app remembers, if any.
+    let colorOf path = colors() |> Map.tryPick(fun saved value -> if AppIdentity.same saved path then Theme.parseTabColor value else None)
     /// Remembers a colour for the app, or with None forgets it.
     let save path (color:TabColorChoice option) =
         let others = colors() |> Map.filter(fun saved _ -> not (AppIdentity.same saved path))

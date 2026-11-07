@@ -1549,14 +1549,17 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     let app = match this.rememberedMember hwnd with Some m -> appOf paths m | None -> this.appKey hwnd
                     app,os.windowFromHwnd(hwnd).text,hwnd,kept hwnd))
                 @ (saved |> List.filter(fun m -> not (liveMembers.Contains m)) |> List.map(fun m -> appOf paths m,m.title,hwndOf m,true))
-            let recorded = remembered |> List.map(fun group -> group.id,members group.id group.members group.paths)
+            // The colour chosen this run, before the record catches up, else the record's.
+            let colorOf (token:int) (saved:string) =
+                this.liveGroupWithToken token |> Option.bind(fun info -> info.groupColor) |> Option.defaultValue saved
+            let recorded = remembered |> List.map(fun group -> group.id,colorOf group.id group.color,members group.id group.members group.paths)
             // A group made by hand whose windows are not kept, or not yet: shown all the same.
             let unrecorded =
                 this.desktop.groups.list |> List.choose(fun group ->
                     match group with
                     | :? GroupInfo as info when info.group.isManual && not info.isExited && not info.isRetiring && group.windows.count>1
                                                 && not (remembered |> List.exists(fun saved -> saved.id=info.group.groupToken)) ->
-                        Some(info.group.groupToken,members info.group.groupToken [] Map.empty)
+                        Some(info.group.groupToken,colorOf info.group.groupToken "",members info.group.groupToken [] Map.empty)
                     | _ -> None)
             recorded @ unrecorded
 
