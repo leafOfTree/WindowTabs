@@ -68,6 +68,8 @@ let main() =
         let called (text:string) = calls |> Seq.contains text
         let names = ConcurrentDictionary<IntPtr,string>()
         let tabColors = ConcurrentDictionary<IntPtr,TabColorChoice>()
+        /// The colour the program keeps for the group, as a group made by hand would.
+        let groupColor = ref (None : TabColorChoice option)
         let hotKeys = ConcurrentDictionary<string,int>()
         let heldElsewhere = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F12)
         let autoGrouped = ConcurrentDictionary<string,bool>(StringComparer.OrdinalIgnoreCase)
@@ -91,6 +93,9 @@ let main() =
                 | None -> tabColors.TryRemove(hwnd) |> ignore
             member _.getTabColor(hwnd,_) = match tabColors.TryGetValue hwnd with | true,color -> Some color | _ -> None
             member this.getTabColors(hwnds,peers) = hwnds |> List.map(fun hwnd -> (this :> IProgram).getTabColor(hwnd,peers))
+            member _.getGroupColor _ = groupColor.Value
+            member _.setGroupColor((_,color)) = groupColor.Value <- color
+            member _.canKeepGroupColor _ = true
             member _.handMadeGroups() = []
             member _.ungroupHandMade _ = ()
             member _.groupIcon _ = None
@@ -204,7 +209,7 @@ let main() =
                 note (not withNone) (sprintf "%s is offered with no tab in front" command.id)
             else note withNone (sprintf "%s is dimmed with no tab in front, though it needs none" command.id)
             // These wait on the tab's colour or the group's combined taskbar button.
-            if not (needsWorkspace.Contains command.id) && command.id<>"change-group-icon" && command.id<>"restore-group-icon" && command.id<>"remember-tab-color" then
+            if not (needsWorkspace.Contains command.id) && command.id<>"change-group-icon" && command.id<>"restore-group-icon" && command.id<>"remember-tab-color" && command.id<>"remember-group-color" then
                 note withTab (sprintf "%s is dimmed with a tab in front" command.id)
         for command in Commands.all do
             // Settings toggles are walked below, each turned and turned back.
@@ -253,6 +258,12 @@ let main() =
             note (AppTabColors.remembered path) "Remember tab color did not remember the app's colour"
             runDone "remember-tab-color" active
             note (not (AppTabColors.remembered path)) "Remember tab color run again did not forget it")
+        attempt "remember-group-color" (fun () ->
+            note ((Commands.find "remember-group-color").Value.enabled active) "Remember tab color for this group is dimmed on a coloured tab"
+            runDone "remember-group-color" active
+            note (groupColor.Value=Some(PaletteColor Theme.tabColorOrder.Head)) "Remember tab color for this group did not keep the tab's colour for the group"
+            runDone "remember-group-color" active
+            note groupColor.Value.IsNone "Remember tab color for this group run again did not forget it")
         attempt "clear-tab-color" (fun () ->
             runDone "clear-tab-color" active
             settle active
@@ -507,6 +518,12 @@ let main() =
             let four = hwndOf "Close four"
             runDone "close-tab" four
             pumpUntil "Closing a tab" (fun () -> not (WinUserApi.IsWindow four)))
+        // The pinned tab is first, so after "Close one" come "Close two" and nothing else.
+        attempt "close-tabs-after" (fun () ->
+            runDone "close-tabs-after" (hwndOf "Close one")
+            pumpUntil "Closing the tabs to the right" (fun () -> not (WinUserApi.IsWindow (hwndOf "Close two")))
+            pump 200
+            note (WinUserApi.IsWindow (hwndOf "Close one") && WinUserApi.IsWindow three) "Close tabs to the right closed the tab itself or the pinned tab before it")
         attempt "close-other-tabs" (fun () ->
             runDone "close-other-tabs" (hwndOf "Close one")
             pumpUntil "Closing the other tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "Close two")))

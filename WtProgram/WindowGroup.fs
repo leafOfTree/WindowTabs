@@ -170,6 +170,11 @@ module TabNavigation =
         |> Option.filter(fun (_,index) -> index>=0 && index<order.Length)
 
 module TabOrder =
+    /// The tabs after one along the strip; none for a tab not on it.
+    let after (order:'a list) (tab:'a) =
+        match List.tryFindIndex ((=) tab) order with
+        | Some index -> List.skip (index+1) order
+        | None -> []
     /// Each program's tabs side by side, in title order; tabs that tie keep their places.
     let byAppThenTitle (app:'a -> string) (title:'a -> string) (tabs:'a list) =
         let compare = StringComparer.CurrentCultureIgnoreCase
@@ -738,6 +743,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let colorModeSubscription = Services.settings.notifyValue "tabColorMode" (fun _ ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.refreshTabColors()))
         exitedEvent.Publish.Add(fun _ -> colorModeSubscription.Dispose())
+        // A group given a colour, or its colour taken away, recolours its tabs: a group across
+        // apps keeps it with its rule, one made by hand says so under "groupColors".
+        for key in ["appGroupingTargets";"groupColors"] do
+            let groupColorsSubscription = Services.settings.notifyValue key (fun _ ->
+                this.invokeAsync(fun() -> if not isDestroyed.value then this.refreshTabColors()))
+            exitedEvent.Publish.Add(fun _ -> groupColorsSubscription.Dispose())
         let colorStyleSubscription = Services.settings.notifyValue "tabColorStyle" (fun value ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.colorStyle <- unbox value))
         exitedEvent.Publish.Add(fun _ -> colorStyleSubscription.Dispose())
@@ -2023,7 +2034,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // The tabs' direction in view, as the tab menu's alignment items set.
             | SetTabAlignment alignment -> this.chooseAlignment(alignment,zorderCell.value.tryHead |> Option.defaultValue IntPtr.Zero)
             | SetAutoHide mode -> this.bb.write("autoHideMode",mode)
-            | RenameTab _ | CloseOtherTabs _ | CloseAppTabs _ | CloseAllTabs | SortTabs -> commandRequestedEvent.Trigger(command)
+            | RenameTab _ | CloseOtherTabs _ | CloseTabsAfter _ | CloseAppTabs _ | CloseAllTabs | SortTabs -> commandRequestedEvent.Trigger(command)
     member _.commandRequested = commandRequestedEvent.Publish
 
     /// A pane window coming to the front focuses its side; another tab parks the pair.

@@ -435,7 +435,9 @@ type AppGroupingRulesView() as this =
             for group in groups do
                 let members = rules |> List.filter(fun rule -> rule.groupId=group.id)
                 let enabled = members |> List.filter(fun rule -> rule.enabled) |> List.length
-                let row = TreeListItem("",Tag=GroupNode group.id,Glyph=GroupGlyph,
+                // A group given a colour from a tab menu shows it as a dot where the group mark would be.
+                let swatch = Theme.parseTabColor group.color |> Option.map(Theme.tabColor false)
+                let row = TreeListItem("",Tag=GroupNode group.id,Glyph=(if swatch.IsSome then NoGlyph else GroupGlyph),Swatch=swatch,
                                        Checks=[|None;if members.IsEmpty then None else Some(enabled=members.Length)|],
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
                                        ChipAdd=true,Actions=Some [DeleteGlyph],AlwaysShowActions=true,
@@ -674,6 +676,12 @@ type AppGroupingRulesView() as this =
                 invoker.asyncInvoke(fun () ->
                     if not this.IsDisposed then reload (selected())))
         this.Disposed.Add(fun _ -> handMadeSubscription.Dispose())
+        // A group given a colour from a tab menu shows it here at once.
+        let groupColorSubscription = Services.settings.notifyValue "appGroupingTargets" (fun _ ->
+            if not this.IsDisposed then
+                invoker.asyncInvoke(fun () ->
+                    if not this.IsDisposed then this.Reload()))
+        this.Disposed.Add(fun _ -> groupColorSubscription.Dispose())
         tree.KeyDown.Add(fun e -> if e.KeyCode=Keys.Delete then e.Handled<-true; delete())
         tree.CheckChanged.Add(fun (item,_,enabled) ->
             let previous = rules
@@ -683,7 +691,7 @@ type AppGroupingRulesView() as this =
             reload (selected()))
         addGroup.Click.Add(fun _ ->
             // Numbered after the last: saving names it.
-            let group : AppGroupingTarget = {id=Guid.NewGuid().ToString("N");name=""}
+            let group : AppGroupingTarget = {id=Guid.NewGuid().ToString("N");name="";color=""}
             groups<-groups @ [group]
             save None
             reload (Some(GroupNode group.id)))

@@ -113,7 +113,8 @@ let main() =
             let mutable selected = 0
             let mutable closed = false
             use dot = MenuImages.colorDot 16 Color.CornflowerBlue
-            use swatch = MenuImages.colorTab (Dpi.scale 28) (Dpi.scale 16) (Theme.tabPalette true).[1] "Aa"
+            let gutterSize = ThemeMenuRenderer.gutterSize()
+            use swatch = MenuImages.colorTab gutterSize.Width gutterSize.Height (Theme.tabPalette true).[1] "Aa"
             check (swatch.GetPixel(swatch.Width/8,swatch.Height/2).ToArgb()=(Theme.tabPalette true).[1].ToArgb() &&
                    swatch.GetPixel(0,0).A=0uy && swatch.GetPixel(0,swatch.Height-1).A=0uy)
                   "A tab colour swatch is not a rounded swatch in that colour"
@@ -135,12 +136,26 @@ let main() =
             nested.DropDown.PerformLayout()
             let gutter = typeof<ToolStripDropDownMenu>.GetField("imageRectangle",Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Instance)
             check ((gutter.GetValue(nested.DropDown) :?> Rectangle).Width=swatch.Width) "The tab colour menu squeezed its swatches square"
-            // The chosen colour's swatch keeps its sample; its tick goes after the name, with room kept for it.
+            // Every menu keeps the same gutter, so labels line up from the menu to its submenus.
+            menu.PerformLayout()
+            check ((gutter.GetValue(menu) :?> Rectangle).Width=(gutter.GetValue(nested.DropDown) :?> Rectangle).Width)
+                  (sprintf "The menu and its submenu have gutters of different widths: %A and %A, scaling %A" (gutter.GetValue(menu)) (gutter.GetValue(nested.DropDown)) menu.ImageScalingSize)
+            // The chosen colour's swatch is the caller's, left as it is: its tick is in the swatch,
+            // in the gutter with the other ticks, and no room is kept after the name.
             let mustard = nested.DropDownItems.[2] :?> ToolStripMenuItem
             // Inside the swatch's edge, whose blended pixels a copy may round.
             let same = seq { for x in 0..swatch.Width-1 do for y in 0..swatch.Height-1 -> swatch.GetPixel(x,y).A<255uy || (mustard.Image :?> Bitmap).GetPixel(x,y)=swatch.GetPixel(x,y) } |> Seq.forall id
             check (mustard.Checked && same) "The chosen colour's swatch was drawn over"
-            check (mustard.Padding.Right>=Dpi.scale 12 && mustard.Padding.Right>colour.Padding.Right) "The chosen colour's item keeps no room for its tick after the name"
+            check (mustard.Padding.Right=colour.Padding.Right) "The chosen colour's item keeps room after the name for a tick"
+            check (mustard.Font.Bold && not (nested.DropDownItems.[1] :?> ToolStripMenuItem).Font.Bold) "The chosen colour's name is not bold, or every name is"
+            use chosen = MenuImages.colorTabChosen gutterSize.Width gutterSize.Height (Theme.tabPalette true).[1]
+            // White at the ring on its edge and at the tick, the colour between, still clear at the corner.
+            let white (pixel:Color) = pixel.R>200uy && pixel.G>200uy && pixel.B>200uy && pixel.A>150uy
+            let edge = chosen.GetPixel(chosen.Width/2,0)
+            let vertex = chosen.GetPixel(int(float32 chosen.Width*0.45f),int(float32 chosen.Height*0.70f))
+            let within = chosen.GetPixel(chosen.Width/5,chosen.Height/2)
+            check (white edge && white vertex && within.ToArgb()=(Theme.tabPalette true).[1].ToArgb() && chosen.GetPixel(0,0).A=0uy)
+                  "A chosen colour's swatch is not its colour with a white tick inside a white ring"
             check (colour.Image.Width=colour.Image.Height && (colour.Image :?> Bitmap).GetPixel(colour.Image.Width/2,colour.Image.Height/2)<>dot.GetPixel(dot.Width/2,dot.Height/2))
                   "A chosen item's square image lost its mark"
             // A menu's tick is a stroke heavier than the icon font's hairline.
@@ -260,6 +275,36 @@ let main() =
                     Application.DoEvents()
                     Threading.Thread.Sleep(5)
                 check (not menu.Visible && ran) "A click on a submenu item left the menu open and its command waiting"
+            // An item that stays, such as a tab colour: chosen, it runs at once, the menu and its
+            // submenu stay up, and the submenu shows its items built again, the colour now ticked.
+            do
+                let mutable picks = 0
+                let build (_:ResizeArray<Img>) =
+                    let flags = List2(MenuItemFlags.staysOpen :: (if picks>0 then [MenuFlags.MF_CHECKED] else []))
+                    List2([CmiPopUp({text="Tab color";image=None;items=List2([CmiRegular({text=(if picks>0 then "Blue, chosen" else "Blue");image=None;flags=flags;click=fun () -> picks <- picks+1})])})])
+                use menu = new ThemedContextMenu(build (ResizeArray()),ignore,(fun _ -> true),rebuild=build)
+                menu.Show(Point(40,40))
+                Application.DoEvents()
+                let parent = menu.Items.[0] :?> ToolStripMenuItem
+                parent.ShowDropDown()
+                Application.DoEvents()
+                let clicked = typeof<ToolStrip>.GetMethod("OnItemClicked",BindingFlags.Instance ||| BindingFlags.NonPublic)
+                clicked.Invoke(parent.DropDown,[|box (ToolStripItemClickedEventArgs(parent.DropDownItems.[0]))|]) |> ignore
+                // The closes WinForms brings for a chosen item, which a staying one lets go.
+                parent.DropDown.Close(ToolStripDropDownCloseReason.ItemClicked)
+                menu.Close(ToolStripDropDownCloseReason.ItemClicked)
+                parent.DropDownItems.[0].PerformClick()
+                Application.DoEvents()
+                let item = parent.DropDownItems.[0] :?> ToolStripMenuItem
+                check (menu.Visible && parent.DropDown.Visible && picks=1 && item.Text="Blue, chosen" && item.Checked)
+                      (sprintf "A staying item closed the menu (%b, submenu %b), ran %d times or was not built again (%s)" menu.Visible parent.DropDown.Visible picks item.Text)
+                // Chosen again, as the item built again: still up, still counted.
+                parent.DropDownItems.[0].PerformClick()
+                Application.DoEvents()
+                check (menu.Visible && picks=2) "A staying item built again no longer stays or runs"
+                menu.Close(ToolStripDropDownCloseReason.CloseCalled)
+                Application.DoEvents()
+                check (not menu.Visible) "A menu kept up by a staying item could not be closed"
             // WinForms may own a menu by a window behind the current one; showing the menu must
             // not raise that window over the current one and its tabs.
             do
@@ -357,6 +402,17 @@ let main() =
         check (resolveAt @"C:\Other\EDITOR.EXE" a=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered colour did not apply to another installation of the same app"
         colors.setOverride a (Some red)
         check (resolveAt @"C:\Apps\EDITOR.EXE" a=Some red) "Remembered colour overrode window colour"
+        // A group across apps with a colour of its own: it comes before the app's remembered
+        // colour and the automatic ones, after a colour chosen for the tab itself.
+        let group = Some(PaletteColor 3)
+        colors.setOverride a None
+        check (colors.resolveIn group a @"C:\Apps\EDITOR.EXE" "ByWindow" remembered peers=group) "A group's colour did not come before the app's remembered colour"
+        check (colors.resolveIn group c "editor.exe" "Off" Map.empty peers=group) "A group's colour did not apply with automatic colours off"
+        check (colors.resolveIn None c "editor.exe" "ByWindow" Map.empty peers=existing.[2]) "A group without a colour changed the automatic colours"
+        colors.setOverride a (Some red)
+        check (colors.resolveIn group a @"C:\Apps\EDITOR.EXE" "ByWindow" remembered peers=Some red) "A group's colour overrode the colour chosen for the tab"
+        // Close tabs to the right: the tabs after one along the strip; none after the last, or for a tab not on it.
+        check (TabOrder.after [1;2;3;4] 2=[3;4] && TabOrder.after [1;2;3] 3=[] && TabOrder.after [1;2;3] 9=[]) "The tabs after one are not the rest of the strip"
         let loads = ref 0
         let load() = loads.Value <- loads.Value+1; @"C:\Apps\Editor.exe"
         for _ in 1..3 do colors.path a load |> ignore

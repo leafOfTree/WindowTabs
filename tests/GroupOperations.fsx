@@ -367,6 +367,8 @@ let main() =
         let newTabRequests = Collections.Concurrent.ConcurrentQueue<IntPtr>()
         let names = Collections.Concurrent.ConcurrentDictionary<IntPtr,string>()
         let nameReads = ref 0
+        /// The colour the program keeps for the group, as a group made by hand would.
+        let groupColor = ref (None : TabColorChoice option)
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
             member _.isFirstRun = false
@@ -384,6 +386,9 @@ let main() =
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
             member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
+            member _.getGroupColor _ = groupColor.Value
+            member _.setGroupColor((_,color)) = groupColor.Value <- color
+            member _.canKeepGroupColor _ = true
             member _.handMadeGroups() = []
             member _.ungroupHandMade _ = ()
             member _.groupIcon _ = None
@@ -1554,11 +1559,23 @@ let main() =
                         items.list |> List.choose(function CmiRegular item -> Some item | _ -> None)
                     finally for image in images do image.bitmap.Dispose())
                 let menuTexts hwnd = menu hwnd |> List.map(fun item -> item.text)
+                // The commands under a submenu of the tab menu, by the submenu's name.
+                let popupItems (name:LocalizedText) hwnd = onGroup(fun group ->
+                    let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
+                                    |> fun field -> field.GetValue(group.ts)
+                    let images = ResizeArray<Img>()
+                    try
+                        let items = decorator.GetType().GetMethod("contextMenu",flags).Invoke(decorator,[|box hwnd;box images|]) :?> List2<ContextMenuItem>
+                        items.list |> List.pick(function CmiPopUp popup when popup.text=Localization.tr name -> Some popup.items.list | _ -> None)
+                        |> List.choose(function CmiRegular item -> Some item | _ -> None)
+                    finally for image in images do image.bitmap.Dispose())
+                let closeItems hwnd = popupItems Strings.TabMenu.close hwnd
+                let closeTexts hwnd = closeItems hwnd |> List.map(fun item -> item.text)
                 let closeAllOf hwnd = Localization.tr (Strings.TabMenu.closeAllOf (OS().windowFromHwnd(hwnd).pid.exeName))
                 let alone = menuTexts handles.Head
                 check (List.head alone = Localization.tr Strings.TabMenu.newTab + "\tCtrl+Alt+N") "The tab menu does not start with New tab and its shortcut"
-                // Closing the tab has a shortcut of its own, Ctrl+Alt+W, shown beside Close.
-                check (List.contains (Localization.tr Strings.TabMenu.close + "\tCtrl+Alt+W") alone) "Close does not show its shortcut in the tab menu"
+                // Closing is a submenu: the tab first, with its shortcut of its own, Ctrl+Alt+W.
+                check (List.head (closeTexts handles.Head) = Localization.tr Strings.Settings.closeTab.caption + "\tCtrl+Alt+W") "Close does not start with Close tab and its shortcut"
                 // Split view starts with the clicked tab's neighbour, needing no choice; it is
                 // greyed only for a tab with no other tab to take.
                 let splitFirst hwnd = onGroup(fun group ->
@@ -1623,14 +1640,57 @@ let main() =
                 check (renameWith None = (true,"Notes")) "Enter on a renamed tab's own name changes it"
                 check (renameWith (Some (onGroup(fun group -> group.windowName handles.Head))) |> fst |> not) "Typing the window's own name keeps the tab renamed"
                 check (renameWith (Some "") |> fst |> not) "An empty name keeps the tab renamed"
-                check (List.contains (Localization.tr Strings.TabMenu.closeAll) alone) "The tab menu lost Close all"
-                check (not (List.contains (closeAllOf handles.Head) alone)) "A group of one program offers closing that program's windows"
+                check (List.last (closeTexts handles.Head) = Localization.tr Strings.TabMenu.closeAll) "The Close submenu does not end with Close all"
+                // Close tabs to the right follows Close others; greyed for the last tab, which has none after it.
+                let closeToRight = Localization.tr Strings.TabMenu.closeToRight
+                let closeAfter hwnd = closeItems hwnd |> List.find(fun item -> item.text=closeToRight)
+                let closing = closeTexts handles.Head
+                check (List.findIndex ((=) closeToRight) closing = List.findIndex ((=) (Localization.tr Strings.TabMenu.closeOthers)) closing+1) "Close tabs to the right does not follow Close others"
+                check (not (List.contains MenuFlags.MF_GRAYED (closeAfter handles.Head).flags.list)) "Close tabs to the right is greyed for a tab with tabs after it"
+                check (List.contains MenuFlags.MF_GRAYED (closeAfter (List.last handles)).flags.list) "Close tabs to the right is not greyed for the last tab"
+                // Remember color for this group sits in the colour menu after the app's: greyed with
+                // nothing to keep, ticked while the group keeps a colour, and chosen again forgets it.
+                let colorItems hwnd = popupItems Strings.Settings.tabColors hwnd
+                // A colour, or remembering one, keeps the menu up so the other can follow; the rest close it.
+                let stays (item:CmiRegular) = List.contains MenuItemFlags.staysOpen item.flags.list
+                check (colorItems handles.Head |> List.forall(fun item ->
+                           stays item = not (List.contains item.text [Localization.tr Strings.Settings.customTabColor;Localization.tr Strings.Settings.clearTabColor])))
+                      "Choosing a colour, or remembering one, closes the tab menu, or Custom… or Clear color keeps it up"
+                let groupColorItem hwnd = colorItems hwnd |> List.find(fun item -> item.text=Localization.tr Strings.Settings.rememberGroupColor)
+                let ticked (item:CmiRegular) = item.flags.list |> List.exists(fun flag -> flag &&& MenuFlags.MF_CHECKED<>0)
+                let texts = colorItems handles.Head |> List.map(fun item -> item.text)
+                check (List.findIndex ((=) (Localization.tr Strings.Settings.rememberGroupColor)) texts = List.findIndex ((=) (Localization.tr Strings.Settings.rememberTabColor)) texts+1)
+                      "Remember color for this group does not follow Remember color for this app"
+                check (List.contains MenuFlags.MF_GRAYED (groupColorItem handles.Head).flags.list && not (ticked (groupColorItem handles.Head)))
+                      "Remember color for this group is offered, or ticked, with no colour to keep"
+                groupColor.Value <- Some(PaletteColor 1)
+                check (ticked (groupColorItem handles.Head) && not (List.contains MenuFlags.MF_GRAYED (groupColorItem handles.Head).flags.list))
+                      "Remember color for this group is not ticked while the group keeps a colour"
+                (groupColorItem handles.Head).click()
+                check groupColor.Value.IsNone "Remember color for this group chosen again did not forget the group's colour"
+                check (not (List.contains (closeAllOf handles.Head) (closeTexts handles.Head))) "A group of one program offers closing that program's windows"
                 (info :> IGroup).addWindow(foreignHwnd,false)
                 pumpUntil(fun () -> onGroup(fun group ->
                     group.windows.contains(foreignHwnd) &&
                     not(obj.ReferenceEquals(group.ts.tabInfo(Tab(foreignHwnd)).iconSmall,SystemIcons.Application))))
-                check (List.contains (closeAllOf handles.Head) (menuTexts handles.Head)) "A mixed group does not offer closing one program's windows"
-                check (List.contains (closeAllOf foreignHwnd) (menuTexts foreignHwnd)) "The foreign tab's menu does not name its own program"
+                check (List.contains (closeAllOf handles.Head) (closeTexts handles.Head)) "A mixed group does not offer closing one program's windows"
+                check (List.contains (closeAllOf foreignHwnd) (closeTexts foreignHwnd)) "The foreign tab's menu does not name its own program"
+                // A dragged tab joins the row well past its last tab, about a tab's width, so a tab
+                // let go just past the end joins rather than splits; across the row the margin is small.
+                do
+                    let nearTabs (pt:Pt) = onGroup(fun group ->
+                        let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
+                                        |> fun field -> field.GetValue(group.ts)
+                        decorator.GetType().GetMethod("nearTabs",flags).Invoke(decorator,[|box pt|]) :?> IntPtr option)
+                    let rects = onGroup(fun group ->
+                        let strip = OS().windowFromHwnd(group.ts.hwnd)
+                        group.ts.tabSprites.list |> List.map(fun (location:Pt,sprite) -> Rect(strip.ptToScreen(location),sprite.size)))
+                    let right = rects |> List.map(fun r -> r.right) |> List.max
+                    let top,bottom = rects |> List.map(fun r -> r.top) |> List.min,rects |> List.map(fun r -> r.bottom) |> List.max
+                    let middle = (top+bottom)/2
+                    check ((nearTabs (Pt(right+Dpi.scale 60,middle))).IsSome) "A tab just past the end of the row is not taken in"
+                    check ((nearTabs (Pt(right+Dpi.scale (DragRouting.stripReach+10),middle))).IsNone) "A tab well past the end of the row is still taken in"
+                    check ((nearTabs (Pt(right+Dpi.scale 60,bottom+Dpi.scale (DragRouting.stripMargin+10)))).IsNone) "A tab below the row is taken in"
                 // Sorting puts each program's tabs together in title order, and is then greyed out.
                 do
                     let sortItem() = menu handles.Head |> List.find(fun item -> item.text=Localization.tr Strings.TabMenu.sortTabs)

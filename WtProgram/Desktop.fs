@@ -118,6 +118,9 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
     member val isRetiring = false with get, set
     /// Explicit rules claim only groups they created; manual groups remain untouched.
     member val ruleGroupId : string option = None with get,set
+    /// The colour chosen this run for a group made by hand, as `Theme.formatTabColor` writes it
+    /// or empty for none; None until one is chosen, when its record's colour holds. Main thread only.
+    member val groupColor : string option = None with get,set
     /// A temporary singleton can join its automatic target once its desktop is known.
     member val awaitsGroupingDesktop = false with get,set
     member this.isExited = System.Threading.Volatile.Read(&_isExited)=1
@@ -270,6 +273,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                         let newGroup = this.createGroupInfo(enableSuperBar)
                         newGroup.isTaskbarChosen <- isTaskbarChosen
                         newGroup.ruleGroupId <- old.ruleGroupId
+                        newGroup.groupColor <- old.groupColor
                         newGroup.awaitsGroupingDesktop <- old.awaitsGroupingDesktop
                         newGroup.group.groupToken <- old.group.groupToken
                         newGroup.invokeGroup(fun() -> newGroup.group.applyMenuChoices choices)

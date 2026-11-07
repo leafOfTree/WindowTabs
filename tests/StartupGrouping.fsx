@@ -22,8 +22,8 @@ let pumpUntil description predicate =
 let rememberedGroupUpdates() =
     let m title = { app="APP.EXE"; title=title }
     let now = DateTime.UtcNow
-    let saved = [{ id=1; seen=now.AddDays(-1.0); members=[m "a";m "b";m "c"]; paths=Map.empty }
-                 { id=2; seen=now.AddDays(-40.0); members=[m "x";m "y"]; paths=Map.empty }]
+    let saved = [{ id=1; seen=now.AddDays(-1.0); members=[m "a";m "b";m "c"]; paths=Map.empty; color="palette:2" }
+                 { id=2; seen=now.AddDays(-40.0); members=[m "x";m "y"]; paths=Map.empty; color="" }]
     // "a" is open in group 1, "b" was dragged into group 3 with "d", "c" has closed.
     let next = RememberedGroups.update now [1,[m "a"];3,[m "b";m "d"]] [] saved
     let find id = next |> List.tryFind(fun group -> group.id=id) |> Option.map(fun group -> group.members)
@@ -43,15 +43,25 @@ let rememberedGroupUpdates() =
     check (paths 1 = Map.ofList ["APP.EXE",@"C:\Apps\App.exe"] && paths 3 = Map.empty) "A group did not keep where its programs ran"
     let reread = RememberedGroups.read (RememberedGroups.write located)
     check (reread = located) "Where a group's programs ran was not saved and read back"
+    // A group's colour stays with it as its windows come and go, is saved and read back, and
+    // the colour chosen this run replaces it, or takes it away; a record from before has none.
+    let color id (groups:RememberedGroup list) = (groups |> List.find(fun group -> group.id=id)).color
+    check (color 1 next="palette:2" && color 3 next="") "A remembered group lost its colour, or a new group got one"
+    check (color 1 reread="palette:2") "A group's colour was not saved and read back"
+    let recolored = RememberedGroups.withColors [1,"";3,"#112233"] located
+    check (color 1 recolored="" && color 3 recolored="#112233") "The colour chosen this run did not replace the group's"
+    let uncolored = RememberedGroups.write located
+    for group in uncolored do (group :?> JObject).Remove("color") |> ignore
+    check (RememberedGroups.read uncolored |> List.forall(fun group -> group.color="")) "A record from before group colours read a colour"
     // Groups saved with every title their windows had are cut back once to the windows open; a
     // group saved since is not.
     check (RememberedGroups.trailed (RememberedGroups.write located) = Set.empty) "A group saved by its last titles was taken for one with a trail"
     let legacy = RememberedGroups.write located
     for group in legacy do (group :?> JObject).Remove("lastTitles") |> ignore
     check (RememberedGroups.trailed legacy = Set.ofList [1;3]) "A group saved with a trail of titles was not found"
-    let saved = [{ id=1; seen=now; members=[m "a";m "x";m "c"]; paths=Map.empty }
-                 { id=3; seen=now; members=[m "y";m "z"]; paths=Map.empty }
-                 { id=4; seen=now; members=[m "b";m "w"]; paths=Map.empty }]
+    let saved = [{ id=1; seen=now; members=[m "a";m "x";m "c"]; paths=Map.empty; color="" }
+                 { id=3; seen=now; members=[m "y";m "z"]; paths=Map.empty; color="" }
+                 { id=4; seen=now; members=[m "b";m "w"]; paths=Map.empty; color="" }]
     let cut = RememberedGroups.dropClosed (Set.ofList [1]) (Set.ofList [m "a";m "c";m "b"]) saved
     check (cut |> List.map(fun group -> group.id,group.members) = [1,[m "a";m "c"];3,[m "y";m "z"];4,[m "b";m "w"]])
           "Cutting back a trailed group kept a closed title, or touched another group"
@@ -93,7 +103,7 @@ let main() =
         let app = AppIdentity.key path
         let rememberedTitles = ["Remembered A";"Remembered B";"Remembered C"]
         runtimeSettings.rememberedGroups <-
-            [{ id=5151; seen=DateTime.UtcNow; members=rememberedTitles |> List.map(fun title -> { app=app; title=title }); paths=Map.empty }]
+            [{ id=5151; seen=DateTime.UtcNow; members=rememberedTitles |> List.map(fun title -> { app=app; title=title }); paths=Map.empty; color="" }]
         check ((runtimeSettings.rememberedGroups |> List.map(fun group -> group.id)) = [5151]) "Remembered groups were not kept in the settings"
         use lifetime = new LifetimeScope(fun error -> raise error)
         let program = Program.Program(lifetime,settings=runtimeSettings)
