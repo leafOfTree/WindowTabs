@@ -262,9 +262,11 @@ and repeated blur computation should be investigated before input throttling.
 Repeated `isShrunk <- false` is a smaller avoidable redraw when auto-hide is
 enabled. These isolated processing timings are not measured display latency.
 
-Normal Windows move/resize handling hides the strip during move-size and restores
+Normal Windows resize handling hides the strip during move-size and restores
 it at the end, so the width-change benchmark does not imply that every native
-resize mouse event executes this visible-strip workload. Tab sliding does update
+resize mouse event executes this visible-strip workload. A plain move keeps the
+strip on the window (`moveFrameCell` in `WindowGroup`): its width does not
+change, so it is moved, not drawn again; it hides as soon as the size changes. Tab sliding does update
 the strip through the drag target. Across DPI boundaries, appearance is updated
 before geometry and placement; multiple renders are possible by code inspection,
 but mixed-monitor behavior has not been measured on-screen in these checks.

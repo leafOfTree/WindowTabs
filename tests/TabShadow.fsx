@@ -554,6 +554,12 @@ let main () =
         let joined = plain.tabSprites.list |> List.map(fun (_,tab) -> tab.showLeftSeparator,tab.roundLeft,tab.roundRight)
         // Tab 1 is active, so only the hairline between the two plain tabs shows.
         check (joined = [false,true,false;false,false,false;true,false,true]) (sprintf "Joined tabs are divided or rounded wrongly: %A" joined)
+        // A tab slid along the row, as one dragged in from another strip is, added last: its ends
+        // follow where it is going, not its place in the order.
+        let slid = { plain with slide=Some(3,0) }
+        let ends id = slid.tabSprites.list |> List.find(fun (_,tab) -> tab.id=id) |> fun (_,tab) -> tab.roundLeft,tab.roundRight
+        check (slid.movedTab=Some(3,0) && ends 3=(true,false) && ends 1=(false,false) && ends 2=(false,true))
+            (sprintf "A tab slid to the front kept the ends of its place in the order: %A" [for id in [1;2;3] -> id,ends id])
         let spaced = { plain with appearance={ plain.appearance with tabOverlap= -4 } }
         check (spaced.tabSprites.list |> List.forall(fun (_,tab) -> not tab.showLeftSeparator && tab.roundLeft && tab.roundRight))
             "Spaced tabs keep the divider or square corners"

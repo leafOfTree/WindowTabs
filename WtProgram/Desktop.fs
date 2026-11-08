@@ -192,6 +192,19 @@ type IDesktopNotification =
     abstract member dragDrop : IntPtr -> unit
     abstract member dragEnd : unit -> unit
 
+/// The end of a title bar drop, on the group's thread once the window is a member.
+module TitleBarJoin =
+    /// The windows `moved` (the one carried, or its whole group in tab order) take gap `index`,
+    /// in that order, never ahead of the pinned tabs, and `hwnd`, the one carried, is shown.
+    let settle (group:WindowGroup) (moved:IntPtr list) (hwnd:IntPtr) (index:int) =
+        let moved = moved |> List.filter group.windows.contains
+        moved |> List.iteri(fun k window ->
+            let order = group.lorder.list
+            let pinned = order |> List.filter PinnedTabs.contains |> List.length
+            let at = max pinned (min (index+k) (order.Length-1))
+            if List.tryFindIndex ((=) window) order<>Some at then group.ts.moveTab(Tab window,at))
+        if group.windows.contains hwnd then group.tabActivate(Tab hwnd,false)
+
 type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =
     let os = OS()
     let Cell = CellScope()
@@ -201,9 +214,12 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
     let exitedEvent = Event<_>()
     let removedEvent = Event<_>()
     let changedEvent = Event<_>()
-    let _dd = DragDropController(this :> IDragDropParent) :> IDragDrop
+    let dragDrop = DragDropController(this :> IDragDropParent)
+    let _dd = dragDrop :> IDragDrop
     /// A window being moved by its own title bar: the window, its frame and whether it was maximized.
     let mutable nativeMove : (IntPtr * Rect * bool) option = None
+    /// The same move, aimed at a group's tabs.
+    let mutable titleBarDrag : TitleBarDrag option = None
 
     do
         Services.register(_dd)
@@ -215,12 +231,20 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 if WinUserApi.IsWindow hwnd && WinUserApi.GetAsyncKeyState(VirtualKeyCodes.VK_LBUTTON)<0s then
                     let window = os.windowFromHwnd(hwnd)
                     Some(hwnd,window.visibleBounds,window.isMaximized)
-                else None) |> ignore
+                else None
+            titleBarDrag |> Option.iter(fun drag -> drag.cancel())
+            titleBarDrag <- nativeMove |> Option.bind(fun (_,bounds,maximized) -> this.beginTitleBarDrag(hwnd,bounds,maximized))) |> ignore
         os.setSingleWinEvent WinEvent.EVENT_SYSTEM_MOVESIZEEND (fun hwnd ->
+            let aimed =
+                match titleBarDrag with
+                | Some drag when drag.hwnd=hwnd ->
+                    titleBarDrag <- None
+                    drag.finish(System.Windows.Forms.Cursor.Position.Pt)
+                | _ -> None
             match nativeMove with
             | Some(source,initial,maximized) when source=hwnd ->
                 nativeMove <- None
-                this.dropNativeWindow(hwnd,initial,maximized)
+                this.dropNativeWindow(hwnd,initial,maximized,aimed)
             | _ -> nativeMove <- None) |> ignore
 
     member private this.groups : List2<GroupInfo> = groupCell.value.items
@@ -319,8 +343,39 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             this.groups.tryFind(fun g -> g.hwnd=groupHwnd) |> Option.iter(fun group ->
                 this.handToPane(group,hwnd,fun () -> group.group.dropTab(hwnd,drop,partner)))
 
-    /// A window moved and let go over a group's empty pane joins that pane, as a dropped tab would.
-    member private this.dropNativeWindow(hwnd,initial:Rect,maximized) =
+    /// A move by the title bar may be aimed at other groups' tabs: not for a window that takes no
+    /// tabs. A group of several moves whole, so it joins whole.
+    member private this.beginTitleBarDrag(hwnd,bounds:Rect,maximized) =
+        let mode = settings.getValue("titleBarDrop") :?> string
+        let source = this.groups.tryFind(fun g -> not g.isExited && (g :> IGroup).windows.contains((=) hwnd))
+        let whole = source |> Option.exists(fun g -> (g :> IGroup).windows.count>1)
+        // Grabbed inside its frame, not on an edge, where the same event starts a resize.
+        let pt = System.Windows.Forms.Cursor.Position.Pt
+        let inset = Dpi.scaleAt (Dpi.forPoint pt.x pt.y) 6
+        let grabbedInside = maximized || bounds.inflate(-inset,-inset).containsPoint pt
+        if mode<>"Off" && grabbedInside && Services.filter.isTabbableWindow hwnd then
+            let ownStrip = source |> Option.map(fun g -> g.hwnd) |> Option.defaultValue IntPtr.Zero
+            let all =
+                dragDrop.strips.items.list |> List.choose(fun (strip,target) ->
+                    match box target with
+                    | :? ITitleBarDropTarget as target -> Some(strip,target)
+                    | _ -> None)
+            let strips = all |> List.filter(fun (strip,_) -> strip<>ownStrip) |> List.map snd
+            let own = all |> List.tryFind(fun (strip,_) -> strip=ownStrip) |> Option.map snd
+            let drag = TitleBarDrag(hwnd,strips,ownStrip,own,whole,mode,(if maximized then None else Some bounds.size),fun f -> dispatcher.Post f)
+            drag.start()
+            Some drag
+        else None
+
+    /// Whether a window may join the group: both on the same virtual desktop, both known.
+    member private this.onSameDesktop(group:GroupInfo,hwnd) =
+        match (group :> IGroup).windows.tryHead |> Option.bind VirtualDesktop.groupingDesktopId,VirtualDesktop.groupingDesktopId hwnd with
+        | Some a,Some b -> a=b
+        | _ -> false
+
+    /// A window moved and let go over a group's empty pane joins that pane, as a dropped tab would;
+    /// over a group's tabs, it joins them in the gap aimed at.
+    member private this.dropNativeWindow(hwnd,initial:Rect,maximized,aimed:(int * TitleBarTarget) option) =
         if WinUserApi.IsWindow hwnd then
             let actual = os.windowFromHwnd(hwnd).visibleBounds
             let pt = System.Windows.Forms.Cursor.Position.Pt
@@ -328,18 +383,53 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             if (maximized || actual.size=initial.size) && actual.location<>initial.location && WinUserApi.GetAsyncKeyState(VirtualKeyCodes.VK_ESCAPE)>=0s then
                 let exposed = os.windowsInZorder.tryFind(fun w ->
                     w.hwnd<>hwnd && w.isVisible && not w.isMinimized && not(WindowCloaking.IsCloaked w.hwnd) && w.visibleBounds.containsPoint(pt))
-                exposed |> Option.iter(fun pane ->
-                    this.groups.tryFind(fun g -> not g.isExited && not g.isRetiring && g.group.isEmptyPane pane.hwnd) |> Option.iter(fun group ->
-                        let anchor = (group :> IGroup).windows.tryHead
-                        let sameDesktop =
-                            match anchor |> Option.bind VirtualDesktop.groupingDesktopId,VirtualDesktop.groupingDesktopId hwnd with
-                            | Some a,Some b -> a=b
-                            | _ -> false
-                        if sameDesktop then
-                            this.handToPane(group,hwnd,fun () ->
-                                match group.group.emptyPaneAt pt with
-                                | Some(path,_) -> group.group.execute(FillPane(hwnd,path))
-                                | None -> ())))
+                let paneGroup =
+                    exposed |> Option.bind(fun pane ->
+                        this.groups.tryFind(fun g -> not g.isExited && not g.isRetiring && g.group.isEmptyPane pane.hwnd))
+                match paneGroup,aimed with
+                | Some group,_ ->
+                    if this.onSameDesktop(group,hwnd) then
+                        this.handToPane(group,hwnd,fun () ->
+                            match group.group.emptyPaneAt pt with
+                            | Some(path,_) -> group.group.execute(FillPane(hwnd,path))
+                            | None -> ())
+                | None,Some(index,target) -> this.dropOnGroup(hwnd,index,target)
+                | None,None -> ()
+
+    /// A window let go on a group's tabs takes gap `index` and is shown. A window shown in a group
+    /// of several brings the whole group, which moved with it.
+    member private this.dropOnGroup(hwnd,index:int,target:TitleBarTarget) =
+        this.groups.tryFind(fun g -> g.hwnd=target.strip && not g.isExited && not g.isRetiring) |> Option.iter(fun group ->
+            // Refused only when both desktops are known and differ, as for a dropped tab: a window
+            // opened a moment ago has none known yet, and was let go with nothing done. A group on
+            // another desktop is out of sight and was never a target.
+            let sameDesktop =
+                match (group :> IGroup).windows.tryHead |> Option.bind VirtualDesktop.groupingDesktopId,VirtualDesktop.groupingDesktopId hwnd with
+                | Some a,Some b -> a=b
+                | _ -> true
+            if sameDesktop then
+                let source = this.groups.tryFind(fun s -> s.hwnd<>group.hwnd && not s.isExited && not s.isRetiring && (s :> IGroup).windows.contains((=) hwnd))
+                match source with
+                | Some source when (source :> IGroup).windows.count>1 -> this.joinWhole(source,group,hwnd,index)
+                | _ -> this.handToPane(group,hwnd,fun () -> TitleBarJoin.settle group.group [hwnd] hwnd index))
+
+    /// Every window of `source`, read in its tab order on its own thread, joins `group`; once the
+    /// last is in, they take gap `index` together, and `hwnd`, the one carried, is shown.
+    member private this.joinWhole(source:GroupInfo,group:GroupInfo,hwnd,index) =
+        source.invokeGroup(fun () ->
+            let order = source.group.lorder.list
+            dispatcher.Post(fun () ->
+                if not group.isExited && not group.isRetiring && not source.isRetiring then
+                    // Counted on the group's thread, where each `afterAdd` runs.
+                    let left = ref order.Length
+                    let joined = Collections.Generic.HashSet<IntPtr>()
+                    for window in order do
+                        group.addAfterDetaching(source,window,afterAdd=(fun added ->
+                            if added then joined.Add window |> ignore
+                            left.Value <- left.Value-1
+                            if left.Value=0 && joined.Count>0 then
+                                group.group.joinedByHand()
+                                TitleBarJoin.settle group.group (order |> List.filter joined.Contains) hwnd index))))
 
     /// A window joins the group, leaving the group it was in, and `fill` runs on the group's
     /// thread once it is a member. A window of the group itself only needs the fill.

@@ -975,6 +975,30 @@ let main() =
             check (onGroup explicit (fun group -> group.tabLayout)=rememberedLayout)
                   "Stale window metadata overrode an explicit restored layout"
             onGroup explicit (fun group -> group.removeWindow a)
+            (explicit :> IGroup).destroy()
+            pumpUntil "Explicit group did not exit" (fun () -> explicit.isExited)
+            // A tab carried over another group's row and on out keeps its own group's layout: the
+            // row it passed wrote its icons-only layout on it, and the group it started took that.
+            // Let go there, it takes that row's layout.
+            let passedLayout = {rememberedLayout with dock=TabDockTop;iconOnly=false}
+            let passed = desktopApi.createGroup(false) :?> GroupInfo
+            onGroup passed (fun group -> group.applyTabLayout passedLayout)
+            let carryIn() =
+                onGroup passed (fun group -> group.holdForDrag a)
+                (passed :> IGroup).addWindow(a,false)
+                pumpUntil "A row did not take in a tab carried over it" (fun () -> nativeOrder passed=[a])
+            check (WindowTabLayout.read a=Some rememberedLayout) "The window lost its layout before it was carried"
+            carryIn()
+            check (WindowTabLayout.read a=Some rememberedLayout) "A row a tab was only carried over wrote its layout on the tab's window"
+            onGroup passed (fun group -> group.releaseDrag(a,false); group.removeWindow a)
+            pumpUntil "A tab carried on did not leave the row" (fun () -> nativeOrder passed=[])
+            check (WindowTabLayout.read a=Some rememberedLayout) "A tab carried on out of a row took that row's layout"
+            carryIn()
+            onGroup passed (fun group -> group.releaseDrag(a,true))
+            check (WindowTabLayout.read a=Some passedLayout) "A tab let go in a row did not take that row's layout"
+            onGroup passed (fun group -> group.removeWindow a)
+            (passed :> IGroup).destroy()
+            pumpUntil "The row passed did not exit" (fun () -> passed.isExited)
             use unrelated = new Form(Text="Unrelated",ShowInTaskbar=false)
             check ((WindowTabLayout.read unrelated.Handle).IsNone) "New application window inherited another window's layout"
             check ((WindowTabLayout.read c).IsNone) "Closed HWND retained another window's layout"
@@ -1214,8 +1238,12 @@ let main() =
                     // Carried in and not let go, the tab's window waits out of sight: the group's
                     // window in front stays so, and the windows the drag passes stay over it.
                     check (group.topWindow=d) (sprintf "A tab carried into a strip brought its window to the front before the drop: %A" group.topWindow)
+                    // Drawn in front all the same, as letting it go puts it.
+                    let front = group.ts.tabSprites.list |> List.filter(fun (_,sprite) -> sprite.isTop) |> List.map(fun (_,sprite) -> sprite.id)
+                    check (group.ts.carriedIn=Some(Tab b) && front=[Tab b]) (sprintf "A tab carried into a strip was not drawn in front: %A" front)
                     target.dragEnd())
                 pumpUntil "Cross-orientation drag lost its insertion order" (fun () -> nativeOrder dragTarget=[b;d] && publicOrder dragTarget=[b;d])
+                check (onGroup dragTarget (fun group -> group.ts.carriedIn)=None) "A tab let go in a strip stayed marked as carried in"
                 check (onGroup dragTarget (fun group -> group.ts.dock)=targetDock) "Drag changed the destination orientation"
                 // Only the group a tab was dropped into is one made by hand, to be remembered.
                 check (onGroup dragTarget (fun group -> group.isManual) && not(onGroup dragSource (fun group -> group.isManual)))

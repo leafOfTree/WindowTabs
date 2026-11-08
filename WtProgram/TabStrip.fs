@@ -73,6 +73,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let capturedCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
     let hoverCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
     let slideCell = Cell.create(None)
+    /// A tab dragged in from another strip and still held here: drawn in front, as it will be
+    /// once let go.
+    let carriedInCell = Bemo.Cell<Tab option>(Cell, None, (=))
     let heldLayoutCell = Bemo.Cell<(float * float) option>(Cell, None, (=))
     /// Where the row was dragged to, over its alignment; none until it is dragged.
     let positionCell = Bemo.Cell<float option>(Cell, None, (=))
@@ -219,35 +222,44 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member private this.showInside = showInsideCell.value
 
+    /// How a tab is drawn, for its place in `lorder` with `front` the tab shown.
+    member private this.displayInfo (lorder:Tab list) (front:Tab option) (tab:Tab) (ti:TabInfo) =
+        {
+            tint = tabTint.value.tryFind(tab)
+            colorStyle = colorStyleCell.value
+            numberBadge = if numberBadgesCell.value then lorder |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<numberBadgeKeysCell.value.Length) |> Option.map(fun i -> string numberBadgeKeysCell.value.[i]) else None
+            bgColor = tabBgColor.value.tryFind(tab)
+            TabDisplayInfo.text = ti.text
+            splitTrail = ti.splitTrail
+            isPinned = ti.isPinned
+            closeButton = closeButtonCell.value
+            icon = ti.iconSmall
+            textFont =
+                let bold = textWeightCell.value="All" || (textWeightCell.value="Active" && front=Some tab)
+                match ti.isRenamed,bold with
+                | true,true -> renamedBoldFont
+                | true,false -> renamedFont
+                | false,true -> boldFont
+                | false,false -> normalFont
+            textBrush = SystemBrushes.MenuText
+        }
+
+    /// The tabs front to back as drawn: a tab carried in from another strip in front, as letting
+    /// it go puts it; the others as they are.
+    member private this.drawnZorder =
+        match carriedInCell.value with
+        | Some tab when lorderCell.value.contains((=) tab) -> List2(tab :: (zorderCell.value.list |> List.filter((<>) tab)))
+        | _ -> zorderCell.value
+
     member private this.tsBase direction =
+        let zorder = this.drawnZorder
         {
             tabs = Map2(this.tabs.items.map <| fun tab ->
-                let ti = this.tabInfo(tab)
-                let tabInfo = {
-                    tint = tabTint.value.tryFind(tab)
-                    colorStyle = colorStyleCell.value
-                    numberBadge = if numberBadgesCell.value then lorderCell.value.list |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<numberBadgeKeysCell.value.Length) |> Option.map(fun i -> string numberBadgeKeysCell.value.[i]) else None
-                    bgColor = tabBgColor.value.tryFind(tab)
-                    TabDisplayInfo.text = ti.text
-                    splitTrail = ti.splitTrail
-                    isPinned = ti.isPinned
-                    closeButton = closeButtonCell.value
-                    icon = ti.iconSmall
-                    textFont =
-                        let bold = textWeightCell.value="All" || (textWeightCell.value="Active" && zorderCell.value.tryHead=Some tab)
-                        match ti.isRenamed,bold with
-                        | true,true -> renamedBoldFont
-                        | true,false -> renamedFont
-                        | false,true -> boldFont
-                        | false,false -> normalFont
-                    textBrush = SystemBrushes.MenuText
-                }
-                tab,tabInfo
-            )
+                tab,this.displayInfo lorderCell.value.list zorder.tryHead tab (this.tabInfo tab))
             hover = hoverCell.value
             captured = capturedCell.value
             lorder = lorderCell.value
-            zorder = zorderCell.value
+            zorder = zorder
             size = this.size
             slide = this.slide
             direction = direction
@@ -776,6 +788,33 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.columnContentHeight = this.lorder.count*this.ts.rowStep+Dpi.scale 4
     member private this.renderedShift = if this.isVertical then Pt(renderedOffset,0) else Pt(0,renderedOffset)
 
+    /// Each tab's place on screen, in the strip's order, as the row stands when out in full: for a
+    /// window carried over the row by its own title bar, which the row may still be coming out for.
+    member this.rowTabs =
+        this.lorder.list |> List.map(fun tab ->
+            let r = this.ts.tabBounds tab
+            Rect(this.location.add(Pt(r.X,r.Y)),Sz(r.Width,r.Height)))
+    /// The row drawn out in full, and where its top left is on screen; the caller disposes it.
+    member this.rowImage() = this.renderAt false,this.location
+    /// The row drawn out in full as it would stand with `extra` (tabs of other groups, with their
+    /// info) put in at `index`, and where its top left is on screen: each tab takes its shape
+    /// from its place in that row, and `carried` is in front, as letting it go puts it, held up
+    /// as a tab dragged in is. Changes nothing; the caller disposes the image.
+    member this.rowImageWith(extra:(Tab * TabInfo) list, index:int, carried:Tab) : Img * Pt =
+        let own = this.lorder.list
+        let added = extra |> List.map fst
+        let at = max 0 (min index own.Length)
+        let order = List.take at own @ added @ List.skip at own
+        let infos = (own |> List.map(fun tab -> tab,this.tabInfo tab)) @ extra
+        let sprite =
+            { this.tsBase this.direction with
+                tabs = Map2(List2(infos |> List.map(fun (tab,ti) -> tab,this.displayInfo order (Some carried) tab ti)))
+                lorder = List2(order)
+                zorder = List2(carried :: (zorderCell.value.list @ added |> List.filter((<>) carried)))
+                hover = None; captured = Some(carried,TabBackground); slide = None; held = None }
+        let image = try sprite.render with _ -> Img(Sz(1,1))
+        image,this.location
+
     /// Switching into an overflowing column keeps the selected window's row reachable.
     member private this.ensureSelectedVisible() =
         if this.isVertical && not this.isEmpty then
@@ -1030,13 +1069,15 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// For the window shown at a size: the drag image's size, the window's place in it, and where
     /// the tab, or the column holding it, goes. Read from the strip here, on its own thread: the
     /// window's picture is put in on another, where reading the strip failed and left it out.
+    /// All of it inside a margin of `DragImage.shadow` for the window's shadow.
     member private this.dragLayout (tab:Tab) : Sz -> int -> int -> Sz*Pt*Pt =
+        let m = Dpi.scale DragImage.shadow
         match this.dragColumn tab with
         | Some column ->
             fun _ width height ->
                 let at = column.columnAt(Sz(width,height))
                 let shift = if column.dock=TabDockLeft then -at.x else 0
-                Sz(width+column.width-column.seam,max height (at.y+column.height)),Pt(shift,0),Pt(at.x+shift,at.y)
+                Sz(width+column.width-column.seam+2*m,max height (at.y+column.height)+2*m),Pt(shift+m,m),Pt(at.x+shift+m,at.y+m)
         | None ->
             let alignment = this.getAlignment TabUp
             let tabWidth = this.tabSprites.tryFind(fun (_,sprite) -> sprite.id=tab) |> Option.map(fun (_,sprite) -> sprite.size.width) |> Option.defaultValue 0
@@ -1044,7 +1085,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             fun (tabSize:Sz) width height ->
                 let tabX = TabStrip.dragTabX alignment tabWidth width
                 let top = tabSize.height - offset
-                Sz(max width (tabX+tabSize.width),height+top),Pt(0,top),Pt(tabX,0)
+                Sz(max width (tabX+tabSize.width)+2*m,height+top+2*m),Pt(m,top+m),Pt(tabX+m,m)
 
     /// Where the pointer's tab is in the drag image, for a window landing at this size.
     member this.dragTabAt(tab:Tab, landing:Sz) =
@@ -1060,6 +1101,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         let bmpTab = (if this.isVertical then this.loneColumn(tab).render else this.tsBase(TabUp).renderTab(tab)).bitmap
         let layout = this.dragLayout tab
         let scaled value = max 1 (int(float value*DragImage.windowScale))
+        // The window's picture takes in its invisible resize borders, which print black: only the
+        // frame that shows is drawn, so the picture's rounded corners are the window's own.
+        let shown =
+            let (Tab hwnd) = tab
+            let window = _os.windowFromHwnd(hwnd)
+            let bounds,visible = window.bounds,window.visibleBounds
+            bounds.size,Rectangle(visible.x-bounds.x,visible.y-bounds.y,visible.width,visible.height)
         let compose (bmpHwnd:Bitmap option) =
             let width = scaled (if landing.width>0 then landing.width else bmpHwnd |> Option.map(fun b -> b.Width) |> Option.defaultValue 1)
             let height = scaled (if landing.height>0 then landing.height else bmpHwnd |> Option.map(fun b -> b.Height) |> Option.defaultValue 1)
@@ -1069,9 +1117,44 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 use gCapture = bmpOverlay.graphics
                 gCapture.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBilinear
                 bmpHwnd |> Option.iter(fun bmpHwnd ->
-                    use fade = new Imaging.ImageAttributes()
-                    fade.SetColorMatrix(Imaging.ColorMatrix(Matrix33=DragImage.windowOpacity))
-                    gCapture.DrawImage(bmpHwnd, Rectangle(window.x, window.y, width, height), 0, 0, bmpHwnd.Width, bmpHwnd.Height, GraphicsUnit.Pixel, fade))
+                    // Drawn first at its size, then filled into rounded corners, as Windows 11 rounds
+                    // a window's: square, the picture read as a screenshot, not the window carried.
+                    use small = new Bitmap(width, height, Imaging.PixelFormat.Format32bppArgb)
+                    (
+                        use g = Graphics.FromImage(small)
+                        g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBilinear
+                        let whole,frame = shown
+                        let source =
+                            if bmpHwnd.Width=whole.width && bmpHwnd.Height=whole.height && frame.Width>0 && frame.Height>0 then frame
+                            else Rectangle(0,0,bmpHwnd.Width,bmpHwnd.Height)
+                        g.DrawImage(bmpHwnd, Rectangle(0, 0, width, height), source, GraphicsUnit.Pixel)
+                    )
+                    let radius = float32(max 2 (int(float(Dpi.scale 8)*DragImage.windowScale)))
+                    let rounded (x:float32) (y:float32) (w:float32) (h:float32) (r:float32) =
+                        let path = new Drawing2D.GraphicsPath()
+                        let d = max 1.0f (min (r*2.0f) (min w h))
+                        path.AddArc(x,y,d,d,180.0f,90.0f)
+                        path.AddArc(x+w-d,y,d,d,270.0f,90.0f)
+                        path.AddArc(x+w-d,y+h-d,d,d,0.0f,90.0f)
+                        path.AddArc(x,y+h-d,d,d,90.0f,90.0f)
+                        path.CloseFigure()
+                        path
+                    let x,y,w,h = float32 window.x,float32 window.y,float32 width,float32 height
+                    let smoothing = gCapture.SmoothingMode
+                    gCapture.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                    // A soft shadow, a little lower than the window as light falls from above: rings
+                    // of faint black, each a pixel wider, add up to a fade from the window's edge.
+                    let spread = Dpi.scale DragImage.shadow
+                    use ring = new SolidBrush(Color.FromArgb(max 1 (90/spread),0,0,0))
+                    for k in spread .. -1 .. 1 do
+                        let k = float32 k
+                        use shade = rounded (x-k) (y-k+k/3.0f) (w+2.0f*k) (h+2.0f*k) (radius+k)
+                        gCapture.FillPath(ring,shade)
+                    use shape = rounded x y w h radius
+                    use brush = new TextureBrush(small)
+                    brush.TranslateTransform(x,y)
+                    gCapture.FillPath(brush, shape)
+                    gCapture.SmoothingMode <- smoothing)
                 gCapture.DrawImage(bmpTab, Point(front.x, front.y))
                 bmpOverlay
             with _ ->
@@ -1163,7 +1246,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         with get() = transparentCell.value
         and set(value) = transparentCell.set(value)
 
-    member this.slide 
+    member this.carriedIn
+        with get() = carriedInCell.value
+        and set(value:Tab option) = carriedInCell.set(value)
+
+    member this.slide
         with get() : (Tab * int) option = slideCell.value
         and set(value) =
             slideCell.set(value)

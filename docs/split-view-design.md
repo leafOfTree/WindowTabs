@@ -84,15 +84,27 @@ the tree's simplest case and keep their behaviour.
   fades in, a clear tint with its edge drawn, glides to the next place as the aim moves and fades
   out when it goes (120ms each). No words go with it: the place lit up says what
   letting go does, and a label beside the dragged tab added little to it. The dragged image shows the
-  window at half the size it would land at (`DragImage.windowScale`), a little see-through
-  (`DragImage.windowOpacity`), and the tab solid and at full size, placed over that half-size
+  window at half the size it would land at (`DragImage.windowScale`), solid, its frame alone
+  without the invisible borders, with rounded corners and a soft shadow as Windows 11 draws a
+  window (`DragImage.shadow`), and the tab at full size, placed over that half-size
   window as the strip places a lone tab, so it stays readable. The window's picture is printed
   on a worker thread and slots in a moment after the drag starts, under the tab shown at once:
   printed first, a large window held the drag up as it began. Letting go splits the group. The
   preview changes no membership; only the drop commits. Tabs
   of this group and of other groups on the same virtual desktop alike are offered the edge once
-  the pointer has rested in its zone for 100ms, within 6px (`LayoutDwell`); from then on the
-  preview follows the pointer over that window until it leaves the zones. A tab carried over a
+  the pointer has come to rest in one zone for 300ms, within 12 logical pixels of where it stopped
+  (`LayoutDwell`): a hand's tremor keeps the rest, a pointer still moving, however slowly, starts
+  it again where it is, as one passing along an edge does. Nothing
+  shows before, so a tab passing over edges on its way lights none of them up, and a tab dropped
+  in passing splits nothing; then the preview grows out of the edge it takes to the whole place in
+  120ms, as Windows' snap preview does (`PreviewGrow`). A line that filled along the edge during the rest was tried first, and lit up every edge a
+  pointer crossed. A drop splits only once the preview has grown in full (`LayoutDwell.armMs`,
+  the same 120ms): let go while it is still growing, the tab comes out as its own window, as
+  before the rest was over. From then on the preview follows the pointer over that window until
+  it leaves the zones, or the pointer is flicked away faster than 1.5 logical pixels a
+  millisecond, which takes the offer back and starts the rest again: 600ms over that window
+  (`flungRestMs`), as a pointer stopping again over it is most often on its way elsewhere, until
+  the pointer leaves it or a split is offered; other windows keep 300ms. A tab carried over a
   window on its way elsewhere, or let go over one where no free desktop was left, split it at
   once before; let go before the preview shows, it comes out as a window of its own. An empty
   pane takes a drop at once. Pressing a tab behind the panes parks them; once its drag takes

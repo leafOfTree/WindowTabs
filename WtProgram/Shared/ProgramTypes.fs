@@ -77,6 +77,9 @@ type SettingsRec = {
     tabOpacity: int
     /// "Never", "Maximized" or "Always".
     autoHideMode: string
+    /// A window dragged by its title bar onto tabs joins them, or splits at an edge: "Always",
+    /// only while "Shift" or "Ctrl" is held, or "Off".
+    titleBarDrop: string
     /// Off, Windows (groups, positions and splits among the windows open) or Apps (their apps started too).
     sessionRestore: string
     /// Expand auto-hidden tabs for a moment after switching tabs.

@@ -126,6 +126,13 @@ module Strings =
         let moveTo = { en="Move to %1"; zh="移动到 %1"; ja="%1 へ移動"; ar="نقل إلى %1" }
         let copyTo = { en="Copy to %1"; zh="复制到 %1"; ja="%1 へコピー"; ar="نسخ إلى %1" }
 
+    /// The title bar drop setting.
+    module TitleBarDrop =
+        /// The setting's choices: always, only with a key held, or never.
+        let holdShift = { en="While holding Shift"; zh="按住 Shift 时"; ja="Shift を押している間"; ar="أثناء الضغط على Shift" }
+        let holdCtrl = { en="While holding Ctrl"; zh="按住 Ctrl 时"; ja="Ctrl を押している間"; ar="أثناء الضغط على Ctrl" }
+        let off = { en="Off"; zh="关闭"; ja="オフ"; ar="إيقاف" }
+
     /// Settings window chrome and page titles.
     module SettingsWindow =
         let title = { en="WindowTabs Settings"; zh="WindowTabs 设置"; ja="WindowTabs の設定"; ar="إعدادات WindowTabs" }
@@ -201,6 +208,9 @@ module Strings =
         let autoHide = { caption={ en="Auto-hide tabs"; zh="自动隐藏标签"; ja="タブを自動的に隠す"; ar="إخفاء علامات التبويب تلقائيًا" }
                          description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。"; ar="يبقى شريط رفيع فقط حتى تمرّر المؤشر فوقه." }
                          keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
+        let titleBarDrop = { caption={ en="Group by dragging a title bar"; zh="拖动标题栏来分组"; ja="タイトルバーのドラッグでグループ化"; ar="التجميع بسحب شريط العنوان" }
+                             description={ en="Drop a window on another one's tabs or title bar to join them."; zh="把窗口拖到另一个窗口的标签或标题栏上即可合并。"; ja="ウィンドウを別のウィンドウのタブかタイトルバーに落とすと結合します。"; ar="أفلت نافذة على علامات تبويب نافذة أخرى أو شريط عنوانها لضمّها." }
+                             keywords={ en="drag drop window merge"; zh="拖放 窗口 合并"; ja="ドラッグ ドロップ ウィンドウ 結合"; ar="سحب إفلات نافذة دمج" } }
         let iconsOnly = { caption={ en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示"; ar="إظهار الأيقونات فقط" }
                           description={ en="Tabs show their icons without titles."; zh="标签只显示图标，不显示标题。"; ja="タブにタイトルを出さず、アイコンだけを表示します。"; ar="تعرض علامات التبويب أيقوناتها دون عناوين." }
                           keywords={ en="compact titles"; zh="紧凑 标题"; ja="コンパクト タイトル"; ar="مضغوط عناوين" } }
