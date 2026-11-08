@@ -572,12 +572,21 @@ type TabSprite<'id> = {
             let below = if this.direction=TabUp && not this.inColumn then 1 else 0
             let height = this.size.height - below
             let iconRoom = (height - TabMetrics.iconSide this.appearance.tabHeight)/2
-            let inset = max 1 (min ((sideGap+1)/3) (min iconRoom (height/4)))
+            // In a row the shape keeps 4 pixels of bar above and below whatever the tab's height, so
+            // it reads as floating on the bar; on a short tab the icon may reach past it. A column's
+            // rows stand apart already and keep the shape round the icon.
+            let inset =
+                if this.inColumn then max 1 (min ((sideGap+1)/3) (min iconRoom (height/4)))
+                else max 1 (min (Dpi.scale 4) (height/4))
             let side = float32 sideGap
             // Pixel k spans k-0.5 to k+0.5 here: the shape runs half a pixel up and left to sit in
             // the middle with crisp edges.
             let l,t,r,b = side - 0.5f,float32 inset - 0.5f,w - side - 0.5f,float32 (height - inset) - 0.5f
-            let d = 2.0f * float32(this.raisedRadius (height - 2 * inset) 6)
+            // In a row the ends round to 40% of the shape's height at any tab height: rounder than a
+            // box, short of a capsule.
+            let d =
+                if this.inColumn then 2.0f * float32(this.raisedRadius (height - 2 * inset) 6)
+                else 0.8f * float32(height - 2 * inset)
             path.AddArc(l,t,d,d,180.0f,90.0f)
             path.AddArc(r - d,t,d,d,270.0f,90.0f)
             path.AddArc(r - d,b - d,d,d,0.0f,90.0f)
