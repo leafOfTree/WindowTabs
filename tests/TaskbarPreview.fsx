@@ -313,6 +313,10 @@ let main() =
     let front = drawn (Sz(1600,1000))
     let shown = captures.preview hwnd size false true (print (fun () -> front))
     check (obj.ReferenceEquals(shown.bitmap, front.bitmap) && captures.count = 1) "A capture from the front was not shown and kept"
+    // Kept compressed: as pixels, each tab of every group held over a megabyte.
+    let pixelBytes = int64(TabCaptures.maxSide * TabCaptures.maxSide * 1000 / 1600 * 4)
+    check (captures.keptBytes > 0L && captures.keptBytes < pixelBytes/4L)
+          (sprintf "A kept capture held %d bytes, against %d as pixels" captures.keptBytes pixelBytes)
     shown.bitmap.Dispose()
     // Hidden and printing black, the kept capture comes back at the window's size.
     let black = solidImage (Sz(1600,1000)) Color.Black
