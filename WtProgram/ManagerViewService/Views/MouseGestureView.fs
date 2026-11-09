@@ -533,6 +533,15 @@ type MouseGestureEditor() as this =
         | None -> MouseGestures.defaults
         | Some path -> MouseGesturePresets.bindings path |> Option.defaultValue []
     let save next = MouseGestureRules.save next
+    /// Whether a place's switch is on: everywhere's own, or an app's.
+    let isOn (entry:string option) =
+        match entry with
+        | None -> (table()).everywhereEnabled
+        | Some path -> MouseGestureRules.enabled path
+    let toggle (entry:string option) =
+        match entry with
+        | None -> let current = table() in save { current with everywhereEnabled=not current.everywhereEnabled }
+        | Some path -> MouseGestureRules.setEnabled path (not (MouseGestureRules.enabled path))
     let saveBindings update =
         let current = table()
         match scope with
@@ -568,7 +577,7 @@ type MouseGestureEditor() as this =
     let mutable overrideMarks : Rectangle array = [||]
     let rowsShown() = max 1 (List.length (bindings()))
     let legendTop() = rowsTop()+rowsShown()*rowHeight()+m 8
-    let noticeRect() = Rectangle(tableLeft(),legendTop()+m 26,this.Width-tableLeft(),m 30)
+    let noticeRect() = Rectangle(tableLeft(),legendTop()+m 48,this.Width-tableLeft(),m 30)
     let blankRect = ref Rectangle.Empty
     /// Where the Action and Does columns start in a row: close together while the widest row needs
     /// the room, spread out by the width it leaves over, so the rows do not crowd to the left.
@@ -591,7 +600,7 @@ type MouseGestureEditor() as this =
         m 62+min (m 50) (spare/3),m 140+min (m 120) (spare*2/3)
     let contentBottom() =
         let list = (itemRect (List.length (entries()))).Top+m 8+addApp.Height
-        let rows = legendTop()+m 22+(match scope with Some path when notices.ContainsKey path -> m 40 | _ -> 0)
+        let rows = legendTop()+m 44+(match scope with Some path when notices.ContainsKey path -> m 40 | _ -> 0)
         max list rows
     /// The height the page has room for, so the footer sits at the bottom of a page taller than the
     /// table; on a shorter one it follows the table and the page scrolls.
@@ -717,8 +726,8 @@ type MouseGestureEditor() as this =
         // The places gestures apply: everywhere, then each app with its own switch.
         entries() |> List.iteri(fun index entry ->
             let bounds = itemRect index
-            let listed = entry |> Option.bind(MouseGestures.appFor (table()))
-            let off = listed |> Option.exists(fun app -> not app.enabled)
+            let on = isOn entry
+            let off = not on
             let isSelected = entry=scope
             if isSelected || index=hoverItem then
                 use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (SettingsShapes.controlRadius())
@@ -738,16 +747,15 @@ type MouseGestureEditor() as this =
                     g.DrawEllipse(pen,iconBounds)
                     g.DrawEllipse(pen,RectangleF(float32 iconBounds.X+float32 iconSize*0.28f,float32 iconBounds.Y,float32 iconSize*0.44f,float32 iconSize))
                     g.DrawLine(pen,iconBounds.X,iconBounds.Y+iconSize/2,iconBounds.Right,iconBounds.Y+iconSize/2)
-            let textRight = match entry with None -> bounds.Right-m 8 | Some _ -> (toggleRect bounds).Left-m 4
+            let textRight = (toggleRect bounds).Left-m 4
             let name = match entry with None -> tr Strings.MouseGestures.everywhere | Some path -> GestureUi.appName path
             let sub = match entry with None -> tr Strings.MouseGestures.allApps | Some path -> IO.Path.GetFileName path
             let nameFont = if isSelected then SettingsUi.subsectionFont() else body
             GestureUi.text g name nameFont (Rectangle(bounds.X+m 34,bounds.Y+m 3,textRight-bounds.X-m 34,m 22)) (if off then p.muted else p.text)
             GestureUi.text g sub (match entry with None -> small | Some _ -> GestureUi.monoFont()) (Rectangle(bounds.X+m 34,bounds.Y+m 23,textRight-bounds.X-m 34,m 18)) p.muted
-            listed |> Option.iter(fun app ->
-                // The app's own switch, as the settings' switches look.
-                let switch = toggleRect bounds
-                SettingsShapes.drawSwitch g (RectangleF.op_Implicit switch) (if app.enabled then 1.0f else 0.0f) (index=hoverItem && hoverPart="toggle") true p))
+            // Each place's own switch, everywhere's too, as the settings' switches look.
+            let switch = toggleRect bounds
+            SettingsShapes.drawSwitch g (RectangleF.op_Implicit switch) (if on then 1.0f else 0.0f) (index=hoverItem && hoverPart="toggle") true p)
         // The table: its heading, then a row for each gesture.
         let left = tableLeft()
         GestureUi.text g (tr Strings.MouseGestures.gesture) small (Rectangle(left+m 8,0,m 60,rowsTop())) p.muted
@@ -758,7 +766,7 @@ type MouseGestureEditor() as this =
         g.DrawLine(rule,left,rowsTop()-1,this.Width,rowsTop()-1)
         let current = bindings()
         overrideMarks <- Array.create current.Length Rectangle.Empty
-        let off = app() |> Option.exists(fun app -> not app.enabled)
+        let off = not (isOn scope)
         let now = clock.Elapsed.TotalMilliseconds
         if current.IsEmpty then
             let row = rowRect 0
@@ -831,13 +839,15 @@ type MouseGestureEditor() as this =
             g.FillRectangle(veil,Rectangle(left,rowsTop(),this.Width-left,rowsShown()*rowHeight()))
         let legend = legendTop()
         if off then
-            GestureUi.text g (tr (Strings.MouseGestures.offIn (GestureUi.scopeName scope))) small (Rectangle(left+m 8,legend,this.Width-left-m 8,m 20)) p.muted
+            GestureUi.text g (tr (match scope with None -> Strings.MouseGestures.everywhereOff | Some _ -> Strings.MouseGestures.offIn (GestureUi.scopeName scope))) small (Rectangle(left+m 8,legend,this.Width-left-m 8,m 20)) p.muted
         else
             let r = float32(Dpi.scaleF 3.4)
             let cx,cy = float32(left+m 14),float32(legend+m 10)
             use ringPen = new Pen(accent,float32(Dpi.scaleF 1.4))
             g.DrawEllipse(ringPen,cx-r,cy-r,2.0f*r,2.0f*r)
             GestureUi.text g (tr Strings.MouseGestures.legend) small (Rectangle(left+m 24,legend,this.Width-left-m 24,m 20)) p.muted
+            // Said here, so nobody has to find out that a press held still is the app's again.
+            GestureUi.text g (tr Strings.MouseGestures.holdToDrag) small (Rectangle(left+m 24,legend+m 22,this.Width-left-m 24,m 20)) p.muted
         blankRect.Value <- Rectangle.Empty
         match scope with
         | Some path when notices.ContainsKey path ->
@@ -868,9 +878,7 @@ type MouseGestureEditor() as this =
         | Some index ->
             let bounds = itemRect index
             let part =
-                match items.[index] with
-                | Some _ when (toggleRect bounds).Contains(point) -> "toggle"
-                | _ -> "item"
+                if (toggleRect bounds).Contains(point) then "toggle" else "item"
             index,-1,part
         | None when scope.IsSome && (removeAppRect()).Contains(point) -> -1,-1,"remove"
         | None ->
@@ -908,8 +916,10 @@ type MouseGestureEditor() as this =
             let tip =
                 match part with
                 | "toggle" ->
-                    let entry = (entries()).[item]
-                    Some(tr (Strings.MouseGestures.useIn (GestureUi.scopeName entry)),toggleRect (itemRect item))
+                    let tip = match (entries()).[item] with
+                              | None -> Strings.MouseGestures.useEverywhere
+                              | entry -> Strings.MouseGestures.useIn (GestureUi.scopeName entry)
+                    Some(tr tip,toggleRect (itemRect item))
                 | "remove" -> Some(tr (Strings.MouseGestures.removeApp (GestureUi.scopeName scope)),removeAppRect())
                 | "override" ->
                     let binding = (bindings()).[row]
@@ -934,8 +944,7 @@ type MouseGestureEditor() as this =
             let item,row,part = this.hit e.Location
             let items = entries()
             match part with
-            | "toggle" ->
-                items.[item] |> Option.iter(fun path -> MouseGestureRules.setEnabled path (not (MouseGestureRules.enabled path)))
+            | "toggle" -> toggle items.[item]
             | "remove" ->
                 scope |> Option.iter(fun path ->
                     notices.Remove path |> ignore
@@ -975,7 +984,7 @@ type MouseGestureEditor() as this =
         | Keys.Up when index>0 -> select items.[index-1]; e.Handled <- true
         | Keys.Down when index<items.Length-1 -> select items.[index+1]; e.Handled <- true
         | Keys.Space ->
-            scope |> Option.iter(fun path -> MouseGestureRules.setEnabled path (not (MouseGestureRules.enabled path)))
+            toggle scope
             e.Handled <- true
         | _ -> ()
     override this.OnGotFocus(e) = base.OnGotFocus(e); this.Invalidate()

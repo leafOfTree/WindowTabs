@@ -78,6 +78,26 @@ let table() =
     check (MouseGestures.resolve start editor "UR"=None && not (MouseGestures.enabledFor start editor)) "An app switched off still had gestures"
     check (MouseGestures.resolve start @"C:\other.exe" "U"=Some { gesture="U"; action=GestureCommand "search-tabs" }) "An unlisted app lacked everything's gestures"
     check ((MouseGestures.overrides start close).IsSome && (MouseGestures.overrides start back).IsNone) "Overrides were not told apart"
+    // A right press is held back only where a gesture does something: with gestures for one app
+    // alone, another app's right-drag reaches it.
+    let one = { start with everywhere=[] }
+    check (MouseGestures.takesPresses one chrome) "The one app given gestures did not take them"
+    check (not (MouseGestures.takesPresses one @"C:\other.exe")) "An app with no gestures had its right-drag held back"
+    check (not (MouseGestures.takesPresses start editor) && MouseGestures.takesPresses start @"C:\other.exe")
+        "Presses were not held back as an app's switch and everything's gestures say"
+    // Everywhere's switch off: its gestures are kept but used nowhere; listed apps keep their own.
+    let paused = { start with everywhereEnabled=false }
+    check (not (MouseGestures.takesPresses paused @"C:\other.exe") && MouseGestures.resolve paused @"C:\other.exe" "U"=None)
+        "An unlisted app still had the gestures for all apps with their switch off"
+    check (MouseGestures.resolve paused chrome "L"=Some back && MouseGestures.resolve paused chrome "UR"=None)
+        "With all apps' gestures off, a listed app lost its own or still borrowed everyone's"
+    check (paused.everywhere=start.everywhere) "Switching off the gestures for all apps dropped them"
+    let pausedAgain = MouseGestures.readTable (MouseGestures.writeTable paused)
+    check (not pausedAgain.everywhereEnabled && pausedAgain.everywhere=start.everywhere) "The switch for all apps' gestures was not kept"
+    check (MouseGestures.readTable (JToken.Parse """{"global":[],"apps":[]}""")).everywhereEnabled
+        "Settings kept before the switch came read as all apps' gestures off"
+    let bare = { one with apps=[{ path=chrome; enabled=true; bindings=[] }] }
+    check (not (MouseGestures.takesPresses bare chrome)) "A listed app with no gestures anywhere had its right-drag held back"
     // Kept and read back, field for field.
     let added = MouseGestures.updateApp start chrome (fun app -> { app with bindings=MouseGestures.bind (MouseGestures.bind app.bindings mine) comment })
     let again = MouseGestures.readTable (MouseGestures.writeTable added)

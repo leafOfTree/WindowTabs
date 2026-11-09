@@ -20,6 +20,9 @@ type AppGestures = { path:string; enabled:bool; bindings:GestureBinding list }
 type MouseGestureTable = {
     /// The gestures every app has, unless it has its own for the same gesture.
     everywhere: GestureBinding list
+    /// Switched off, the gestures every app has are kept but used nowhere: an app off the list
+    /// has none, one on it only its own.
+    everywhereEnabled: bool
     apps: AppGestures list
     /// Executables whose preset was taken off the list, so seeing them again does not put it back.
     dismissed: string list }
@@ -42,7 +45,7 @@ module MouseGestures =
         { gesture="UR"; action=GestureCommand "next-tab" }
         { gesture="DR"; action=GestureCommand "close-tab" }
         { gesture="U"; action=GestureCommand "search-tabs" } ]
-    let empty = { everywhere=defaults; apps=[]; dismissed=[] }
+    let empty = { everywhere=defaults; everywhereEnabled=true; apps=[]; dismissed=[] }
 
     /// Runs the same way next to each other as one, their lengths added.
     let private join (runs:(char * float) seq) =
@@ -88,13 +91,23 @@ module MouseGestures =
     let appFor (table:MouseGestureTable) path = table.apps |> List.tryFind(fun app -> AppIdentity.same app.path path)
     /// Whether gestures are on for an app: off only when its own switch is.
     let enabledFor table path = appFor table path |> Option.forall(fun app -> app.enabled)
+    /// The gestures every app has, as they apply: none while their switch is off.
+    let everywhereInUse (table:MouseGestureTable) = if table.everywhereEnabled then table.everywhere else []
+    /// Whether a right press over an app is held back to see if it is a gesture: only where some
+    /// gesture does something there. With gestures set for one app alone, every other app's
+    /// right-drag, a brush in an image editor say, was taken for a stroke and never reached it.
+    let takesPresses table path =
+        let everywhere = everywhereInUse table
+        match appFor table path with
+        | Some app -> app.enabled && not(app.bindings.IsEmpty && everywhere.IsEmpty)
+        | None -> not everywhere.IsEmpty
     /// What a gesture does over an app's window: its own binding, else the one every app has.
     let resolve table path gesture =
         match appFor table path with
         | Some app when not app.enabled -> None
         | found ->
             found |> Option.bind(fun app -> app.bindings |> List.tryFind(fun binding -> binding.gesture=gesture))
-            |> Option.orElse (table.everywhere |> List.tryFind(fun binding -> binding.gesture=gesture))
+            |> Option.orElse (everywhereInUse table |> List.tryFind(fun binding -> binding.gesture=gesture))
     /// Where a stroke drawn so far can still go over an app: the gestures of two strokes that start
     /// with it and do something there.
     let continuations table path (gesture:string) =
@@ -182,10 +195,13 @@ module MouseGestures =
                 match table.["dismissed"] with
                 | :? JArray as names -> names |> Seq.choose(fun name -> try Some(name.ToObject<string>()) with _ -> None) |> Seq.filter(String.IsNullOrWhiteSpace >> not) |> List.ofSeq
                 | _ -> []
-            { everywhere=(match table.["global"] with null -> defaults | everywhere -> readBindings everywhere); apps=apps; dismissed=dismissed }
+            { everywhere=(match table.["global"] with null -> defaults | everywhere -> readBindings everywhere)
+              everywhereEnabled=(try (match table.["globalEnabled"] with null -> true | _ -> table.Value<bool>("globalEnabled")) with _ -> true)
+              apps=apps; dismissed=dismissed }
         | _ -> empty
     let writeTable (table:MouseGestureTable) =
         JObject(JProperty("global",JArray(table.everywhere |> List.map writeBinding)),
+                JProperty("globalEnabled",table.everywhereEnabled),
                 JProperty("apps",JArray(table.apps |> List.map(fun app ->
                     JObject(JProperty("path",app.path),JProperty("enabled",app.enabled),JProperty("gestures",JArray(app.bindings |> List.map writeBinding)))))),
                 JProperty("dismissed",JArray(table.dismissed |> List.map(fun name -> JValue(name)))))

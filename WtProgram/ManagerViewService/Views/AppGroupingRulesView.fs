@@ -22,6 +22,10 @@ module ImgHelper =
             if obj.ReferenceEquals(source,SystemIcons.Application) then None
             elif AppIcons.IsGenericIcon(source.Handle) then source.Dispose(); None
             else try Some(imgFromIcon source) finally source.Dispose()
+    /// A window's icon as the icon of its app: none for File Explorer's folder windows, whose icon
+    /// is the folder open in them, so Explorer stood in lists as Downloads or Documents.
+    let appWindowIcon (window:Window) : Image option =
+        if window.className="CabinetWClass" then None else windowIcon window
     /// Windows' icons as last read, each with its window's process, so a handle used again by
     /// another window is not taken for it. Asking every window for its icon held the window
     /// search up as it opened.
@@ -94,7 +98,7 @@ module ApplicationNames =
         if isWindowsApps path then Some(windowsAppsIcon())
         elif not (AppIcons.HasOwnIcon path) then None
         else
-            match window |> Option.bind ImgHelper.windowIcon with
+            match window |> Option.bind ImgHelper.appWindowIcon with
             | Some icon -> Some icon
             | None -> try Some(use icon = Icon.ExtractAssociatedIcon(path) in ImgHelper.imgFromIcon icon) with _ -> None
     /// A line glyph in the theme's muted colour, where an app has no icon of its own.
@@ -480,7 +484,8 @@ type AppGroupingRulesView() as this =
                             let found =
                                 try
                                     match addMenu.Running app with
-                                    | _,Some window -> ImgHelper.windowIcon window |> Option.orElseWith known
+                                    | Some path,Some window -> ApplicationNames.appIcon path (Some window) |> Option.orElseWith known
+                                    | None,Some window -> ImgHelper.appWindowIcon window |> Option.orElseWith known
                                     | Some path,None -> ApplicationNames.appIcon path None |> Option.orElseWith known
                                     | None,None -> known()
                                 with _ -> None
