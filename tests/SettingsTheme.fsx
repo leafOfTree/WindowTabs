@@ -593,8 +593,16 @@ let main() =
                     let widthBefore = reportCard.Width
                     page.ScrollTo(Int32.MaxValue/2)
                     Application.DoEvents()
-                    check (page.ScrollOffset=page.ScrollMaximum && reportCard.Top>=0 && reportCard.Bottom<=page.ClientSize.Height && reportCard.Height>=Dpi.scale 300 && reportCard.Width=widthBefore)
-                          (sprintf "Scrolled to its end, the Support page's report is at %A in %A" reportCard.Bounds page.ClientSize)
+                    let shown = Rectangle(page.PointToClient(reportCard.PointToScreen(Point.Empty)),reportCard.Size)
+                    check (page.ScrollOffset=page.ScrollMaximum && shown.Top>=0 && shown.Bottom<=page.ClientSize.Height && shown.Height>=Dpi.scale 300 && shown.Width=widthBefore)
+                          (sprintf "Scrolled to its end, the Support page's report is at %A in %A" shown page.ClientSize)
+                    // Scrolling moves the page's content as one, leaving each part where it is in it:
+                    // moved part by part, they landed a moment apart and the page shook.
+                    let inContent = reportCard.Location
+                    page.ScrollTo(page.ScrollMaximum/2)
+                    Application.DoEvents()
+                    check (reportCard.Location=inContent && obj.ReferenceEquals(reportCard.Parent.Parent,page) && reportCard.Parent.Top = -page.ScrollOffset)
+                          "Scrolling moved the page's parts one by one"
                     page.ScrollTo(0)
                     for name,part in ["overview",(overview.Value :> Control);"charts",(charts :> Control)] do
                         use picture = new Bitmap(part.Width,part.Height)

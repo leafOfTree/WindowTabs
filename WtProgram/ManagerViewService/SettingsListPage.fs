@@ -27,11 +27,18 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
     /// The list folded away, as Support's report can be.
     let mutable listShown = true
     let clamp value = max 0 (min maximum value)
+    /// Everything on a page that scrolls, moved as one: laid out again and moved part by part at
+    /// each step of the wheel's easing, the parts landed a moment apart and the page shook.
+    let content = new Panel(Margin=Padding.Empty)
     let smooth = new SmoothScroller((fun () -> offset),clamp,(fun value ->
         let value = clamp value
         if value<>offset then
             offset <- value
-            this.PerformLayout()))
+            // Moving the content asks the page for a layout it does not need.
+            arranging <- true
+            try content.Top <- -offset
+            finally arranging <- false
+            scroll.configure(maximum,this.ClientSize.Height,offset)))
     let heading = new Label(Text=title,AutoSize=true,Font=SettingsUi.sectionFont(),UseMnemonic=false)
     let helpButton = helpText |> Option.map(fun text ->
         new SettingsHelpButton(text,AccessibleName=tr Strings.SettingsWindow.howToUse,Font=SettingsUi.bodyFont()))
@@ -70,8 +77,10 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
         this.DoubleBuffered <- true
         if scrolls then
             this.Controls.Add(scroll)
+            this.Controls.Add(content)
             scroll.changed.Add(fun value -> smooth.jump value)
             this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
+        let host = if scrolls then content :> Control else this :> Control
         for action in actions do
             action.Margin <- Padding(0,0,Dpi.scale 8,0)
             actionRow.Controls.Add(action)
@@ -89,12 +98,12 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             e.Graphics.FillPath(fill,shape)
             e.Graphics.DrawPath(border,shape))
         card.Resize.Add(fun _ -> card.Invalidate())
-        this.Controls.AddRange([|heading :> Control;detail;actionRow;status;card|])
-        helpButton |> Option.iter(fun button -> this.Controls.Add(button))
-        linkRow |> Option.iter(fun (row,_,_) -> this.Controls.Add(row))
-        extra |> Option.iter(fun control -> this.Controls.Add(control))
-        footer |> Option.iter(fun control -> this.Controls.Add(control))
-        header |> Option.iter(fun control -> this.Controls.Add(control))
+        host.Controls.AddRange([|heading :> Control;detail;actionRow;status;card|])
+        helpButton |> Option.iter(fun button -> host.Controls.Add(button))
+        linkRow |> Option.iter(fun (row,_,_) -> host.Controls.Add(row))
+        extra |> Option.iter(fun control -> host.Controls.Add(control))
+        footer |> Option.iter(fun control -> host.Controls.Add(control))
+        header |> Option.iter(fun control -> host.Controls.Add(control))
         // The link row is measured in OnLayout. The extra and footer blocks size themselves: rows only settle
         // once they have their real width, which can be after the pass that placed it, so a size
         // change lays the page out again afterwards rather than inside that pass.
@@ -226,15 +235,13 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             card.Visible <- listShown
             card.Bounds <- Rectangle(left,top,width,(if listShown then max least (this.ClientSize.Height-top-inset()-footerHeight) else 0))
             footer |> Option.iter(fun control -> control.Location <- Point(left,card.Bottom+Dpi.scale 12))
-            // Placed as if unscrolled above; a page that scrolls then moves everything up by how far it is.
+            // On a page that scrolls, the parts are placed in the content, which moves up by how far it is.
             if scrolls then
                 // A folded list leaves the page ending with what is above it.
-                let bottom = if listShown then card.Bottom else top-gap()
-                maximum <- max 0 (bottom+footerHeight+inset()-this.ClientSize.Height)
+                let bottom = (if listShown then card.Bottom else top-gap())+footerHeight+inset()
+                maximum <- max 0 (bottom-this.ClientSize.Height)
                 offset <- clamp offset
-                if offset<>0 then
-                    for control in this.Controls do
-                        if not (obj.ReferenceEquals(control,scroll)) then control.Top <- control.Top-offset
+                content.Bounds <- Rectangle(0,-offset,this.ClientSize.Width,max bottom this.ClientSize.Height)
                 scroll.Bounds <- Rectangle(this.ClientSize.Width-scroll.Width,0,scroll.Width,this.ClientSize.Height)
                 scroll.configure(maximum,this.ClientSize.Height,offset)
           finally arranging <- false
