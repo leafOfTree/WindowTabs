@@ -920,6 +920,11 @@ type TabStripSprite<'id> when 'id : equality = {
     // A tab is "plain" when nothing about it is already drawing a fill that
     // sets it apart from its neighbour.
     member private this.indexOf (tab:'id) = this.lorder.list |> List.tryFindIndex (fun t -> t = tab)
+    /// Where a tab is drawn among the others, a slid tab where it would go: its ends and the
+    /// separator before it follow that. A tab dragged in from another strip is added last and
+    /// slid to the pointer, and kept the rounded end and close-button side of the last tab
+    /// wherever it went.
+    member private this.placeOf (tab:'id) = this.adjustedLorder.list |> List.tryFindIndex (fun t -> t = tab)
 
     member private this.isPlain (tab:'id) =
         let isActive =
@@ -952,17 +957,17 @@ type TabStripSprite<'id> when 'id : equality = {
             showLeftSeparator =
                 // Never before the first tab, never across a gap, and never where either side is
                 // already set apart by its own fill.
-                match this.indexOf tab with
+                match this.placeOf tab with
                 | Some(index) when index > 0 ->
-                    not this.isVertical && not this.isSpaced && this.isPlain(tab) && this.isPlain(this.lorder.at(index - 1))
+                    not this.isVertical && not this.isSpaced && this.isPlain(tab) && this.isPlain(this.adjustedLorder.at(index - 1))
                 | _ -> false
             // Spaced tabs stand apart, so each is rounded at both ends like the whole strip.
             roundLeft =
-                match this.indexOf tab with
+                match this.placeOf tab with
                 | Some(index) -> this.isSpaced || index = 0
                 | None -> false
             roundRight =
-                match this.indexOf tab with
+                match this.placeOf tab with
                 | Some(index) -> this.isSpaced || index = this.lorder.length - 1
                 | None -> false
             hover = 
@@ -1356,9 +1361,10 @@ type TabStripSprite<'id> when 'id : equality = {
             if roundRight then path.AddArc(right-cap,0.0f,cap,height,270.0f,180.0f) else path.AddLine(right,0.0f,right,height)
             path.CloseFigure()
             graphics.FillPath(brush,path)
+        let order = this.adjustedLorder
         for location,tab in this.tabSprites.list do
-            let first = tab.id=this.lorder.head
-            let last = tab.id=this.lorder.list.[this.lorder.count-1]
+            let first = tab.id=order.head
+            let last = tab.id=order.list.[order.count-1]
             let leftInset = if first then 0 else gapInset
             let rightInset = if last then 0 else gapInset
             // A flashing tab keeps its colour here too, so a call for attention still shows.

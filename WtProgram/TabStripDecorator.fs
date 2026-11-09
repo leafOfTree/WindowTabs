@@ -5,13 +5,31 @@ open System.Windows.Forms
 open System.Diagnostics
 open Bemo.Win32.Forms
 
+/// A split's place grows out of the edge it takes once the rest is over, as Windows' own snap
+/// preview does, for a tab and for a window carried by its title bar alike: a line drawn over
+/// the rest lit up every edge a pointer passed on its way.
+module PreviewGrow =
+    /// How long a fade, a glide or a growth takes, in milliseconds: as long as a split takes to
+    /// arm, so that a drop splits only once the place has grown in full.
+    let durationMs = float LayoutDwell.armMs
+    let ease t = 1.0-(1.0-t)*(1.0-t)*(1.0-t)
+    /// Where the place starts: a strip a few pixels wide along the edge it takes, inside it.
+    let start (half:Rect) axis side =
+        let dpi = Dpi.forPoint (half.left+half.width/2) (half.top+half.height/2)
+        SplitGeometry.edgeStrip half axis side (max 2 (Dpi.scaleAt dpi 4))
+    /// `t` of the way from `a` to `b`, eased.
+    let between (a:Rect) (b:Rect) (t:float) =
+        let e = ease (max 0.0 (min 1.0 t))
+        let mix (x:int) (y:int) = x+int(Math.Round(float(y-x)*e))
+        let l,tp,r,bt = mix a.left b.left,mix a.top b.top,mix a.right b.right,mix a.bottom b.bottom
+        Rect(Pt(l,tp),Sz(r-l,bt-tp))
+
 /// Where a dragged tab would go: a clear tint over that place, its edge drawn. Per-pixel
 /// layered, so the tint is see-through; the pointer passes through it to the window beneath.
 /// It fades in, glides to a new place as the aim moves, and fades out, rather than jumping.
 type private LayoutPreview() =
     inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual)
-    /// How long a fade or a glide takes, in milliseconds.
-    let durationMs = 120.0
+    let durationMs = PreviewGrow.durationMs
     let clock = Stopwatch()
     let ticker = new Timer(Interval=15)
     /// Where it is drawn and how opaque; where it goes and how opaque it ends, and from where.
@@ -76,14 +94,17 @@ type private LayoutPreview() =
                 shown <- target
                 alpha <- opacity
                 this.draw()
-    /// Shows the place: from nothing it fades in there; shown elsewhere, it glides over.
-    member this.showAt(bounds:Rectangle, owner:IWin32Window) =
+    /// Shows the place: from nothing it grows out of `from` (fades in there with none); shown
+    /// elsewhere, it glides over.
+    member this.showAt(bounds:Rectangle, from:Rectangle option, owner:IWin32Window) =
         if not this.Visible then
-            shown <- bounds
-            alpha <- 0.0
-            toAlpha <- 0.0
+            let start = defaultArg from bounds
+            shown <- start
+            alpha <- (if from.IsSome then 1.0 else 0.0)
+            toAlpha <- alpha
+            toRect <- start
             drawn <- None
-            this.Bounds <- bounds
+            this.Bounds <- start
             this.Show(owner)
         this.animate(bounds,1.0)
     /// Fades out where it is.
@@ -102,6 +123,11 @@ type TabStripDecorator(group:WindowGroup) as this =
     let os = OS()
     let Cell = CellScope(false, true)
     let isDraggingCell = Cell.create(false)
+    /// A window is being carried by its own title bar: hidden tabs come out, as for a tab drag,
+    /// so the user sees where it can go.
+    let titleBarDragCell = Cell.create(false)
+    /// This group's window is carried by its title bar over another row, which shows its tabs.
+    let mutable shownElsewhere = false
     let dragInfoCell = Cell.create(None)
     /// A tab from another group was dragged in and is still here: dropped, it makes this group one made by hand.
     let mutable joinedByDrag = false
@@ -261,7 +287,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             // A column dragged along the side needs its room to know where it is let go.
             span |> Option.iter(fun span -> this.ts.columnSpan <- span)
             this.ts.setPlacement(placement)
-            this.ts.visible <- true
+            this.ts.visible <- not shownElsewhere
         // An empty pane keeps clear of tabs shown inside the title bars, wherever they now are.
         group.refreshSplitChrome()
 
@@ -791,6 +817,9 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.initAutoHide() =
         let callbackRef = ref None
         let isMaximized = Cell.import(group.isMaximized)
+        // Moved by its title bar with grouping by title bar on, the window shows its tabs in
+        // full, as a tab drag does.
+        let isMoving = Cell.import(group.isMoving)
         let isShownInside = Cell.import(this.ts.isShownInside)
         let isMouseOver = Cell.import(group.isMouseOver)
         let propCell(key,def) =
@@ -851,6 +880,10 @@ type TabStripDecorator(group:WindowGroup) as this =
                  ((isMaximized.value || isShownInside.value) && autoHideCell.value = "Maximized")) &&
                 isMouseOver.value.not &&
                 isDraggingCell.value.not &&
+                titleBarDragCell.value.not &&
+                // Read as the move begins: with grouping by title bar off, a moved window's tabs
+                // stay as auto-hide keeps them.
+                (isMoving.value.not || (Services.settings.getValue("titleBarDrop") :?> string)="Off") &&
                 contextMenuVisibleCell.value.not &&
                 numberBadgesCell.value.not &&
                 renamingTabCell.value.not &&
@@ -927,8 +960,9 @@ type TabStripDecorator(group:WindowGroup) as this =
             
     /// What a drag at this point meets, on this thread: the strip's row first; else what a drop
     /// would do (an empty pane, or one at an empty pane's edge, is filled; anything else
-    /// splits), the place shown when `show` says so or at once for an empty pane.
-    member private this.probeLayout(data:obj,pt:Pt,show:bool) =
+    /// splits). A split's place shows once `rest` of its zone reaches 1, growing out of its edge,
+    /// with nothing before; an empty pane's at once.
+    member private this.probeLayout(data:obj,pt:Pt,rest:LayoutDrop -> float) =
         match this.nearTabs pt with
         | Some strip -> NearStrip strip
         | None ->
@@ -941,12 +975,18 @@ type TabStripDecorator(group:WindowGroup) as this =
                     match group.splitLayout |> Option.bind(SplitView.pane path) with
                     | Some Empty -> FillAim
                     | _ -> SplitAim
+            let zone = if aim=SplitAim then proposal |> Option.map fst else None
+            let progress = zone |> Option.map rest |> Option.defaultValue 0.0
             let shown =
-                if aim=FillAim || (aim=SplitAim && show) then
+                if aim=FillAim || (aim=SplitAim && progress>=1.0) then
                     layoutDrop <- proposal |> Option.map fst
                     this.showProposal proposal
-                else false
-            Aimed(aim,shown)
+                else
+                    if aim=SplitAim then
+                        layoutDrop <- None
+                        layoutPreview |> Option.iter(fun window -> window.fadeOut())
+                    false
+            Aimed(aim,zone,shown)
 
     member private this.layoutProposal(data:obj,pt:Pt) =
         let drag = unbox<TabDragInfo> data
@@ -978,9 +1018,14 @@ type TabStripDecorator(group:WindowGroup) as this =
 
     member private this.showProposal(proposal:(LayoutDrop * Rect) option) =
         match proposal with
-        | Some(_,bounds) ->
+        | Some(drop,bounds) ->
             if layoutPreview.IsNone then layoutPreview <- Some(new LayoutPreview())
-            layoutPreview.Value.showAt(bounds.Rectangle,{new IWin32Window with member _.Handle=this.ts.hwnd})
+            // A split grows out of the edge it takes; an empty pane fades in where it is.
+            let from =
+                match drop with
+                | SplitAt(_,axis,side) -> Some((PreviewGrow.start bounds axis side).Rectangle)
+                | FillEmpty _ -> None
+            layoutPreview.Value.showAt(bounds.Rectangle,from,{new IWin32Window with member _.Handle=this.ts.hwnd})
             true
         | None ->
             layoutPreview |> Option.iter(fun window -> window.fadeOut())
@@ -1008,10 +1053,50 @@ type TabStripDecorator(group:WindowGroup) as this =
             if pt.x>=left && pt.x<right && pt.y>=top && pt.y<bottom then Some this.ts.hwnd else None
         else None
 
+    interface ITitleBarDropTarget with
+        member this.titleBarDrag(starting,report) =
+            this.invokeAsync <| fun() ->
+                titleBarDragCell.value <- starting
+                if starting && WinUserApi.IsWindow this.ts.hwnd && not group.windows.isEmpty then
+                    group.bounds.value |> Option.iter(fun frame ->
+                        report { strip=this.ts.hwnd
+                                 tabs=this.ts.rowTabs
+                                 dock=this.ts.dock
+                                 pinned=group.lorder.list |> List.filter PinnedTabs.contains |> List.length
+                                 frame=frame
+                                 shown=group.topWindow
+                                 windows=group.windows.items.list })
+
+        member this.rowImage(brought,index,front,report) =
+            this.invokeAsync <| fun() ->
+                if WinUserApi.IsWindow this.ts.hwnd then
+                    let img,at = this.ts.rowImageWith(brought,index,Tab front)
+                    report(img,at,this.ts.rowTabs)
+
+        member this.tabInfos(whole,hwnd,report) =
+            this.invokeAsync <| fun() ->
+                if WinUserApi.IsWindow this.ts.hwnd && group.windows.contains hwnd then
+                    let windows = if whole then group.lorder.list else [hwnd]
+                    let infos = [for window in windows -> Tab window,this.ts.tabInfo(Tab window)]
+                    // The middle of the window's tab from the frame's top left, as its row stands.
+                    let middle =
+                        match group.bounds.value,List.tryFindIndex ((=) (Tab hwnd)) this.ts.lorder.list with
+                        | Some frame,Some index ->
+                            this.ts.rowTabs |> List.tryItem index |> Option.map(fun r ->
+                                Pt(r.left+r.width/2-frame.left,r.top+r.height/2-frame.top))
+                        | _ -> None
+                    report(infos,middle)
+
+        member this.shownElsewhere(shown) =
+            this.invokeAsync <| fun() ->
+                if shown<>shownElsewhere then
+                    shownElsewhere <- shown
+                    if WinUserApi.IsWindow this.ts.hwnd then this.ts.visible <- (not shown) && group.bounds.value.IsSome
+
     interface ILayoutDropTarget with
-        member this.probe(data,pt,show) =
-            if not(WinUserApi.IsWindow(this.ts.hwnd)) then Aimed(NoAim,false)
-            else this.invokeSync(fun () -> this.probeLayout(data,pt,show))
+        member this.probe(data,pt,rest) =
+            if not(WinUserApi.IsWindow(this.ts.hwnd)) then Aimed(NoAim,None,false)
+            else this.invokeSync(fun () -> this.probeLayout(data,pt,rest))
 
         member this.clearPreview() =
             if WinUserApi.IsWindow(this.ts.hwnd) then this.invokeSync(fun () -> this.resetLayoutDrop())
@@ -1069,7 +1154,10 @@ type TabStripDecorator(group:WindowGroup) as this =
                         this.ts.addTab dragInfo.tab
                         // The destination group owns its cached icons. Drag data
                         // can outlive the source group's membership and cache.
-                        if not(group.windows.contains hwnd) then group.holdForDrag hwnd
+                        if not(group.windows.contains hwnd) then
+                            group.holdForDrag hwnd
+                            // Shown in front while held, as letting it go puts it.
+                            this.ts.carriedIn <- Some dragInfo.tab
                         group.addWindow(hwnd, false)
                         joinedByDrag <- true
                         true
@@ -1089,6 +1177,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         member this.dragExit() =
             this.invokeSync <| fun() ->
                 this.ts.dragScrollPoint <- None
+                this.ts.carriedIn <- None
                 match dragInfoCell.value with
                 | Some(dragInfo) ->
                     let tab = dragInfo.tab
@@ -1123,6 +1212,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 let (Tab hwnd) = drag.tab
                 dragInfoCell.set(None)
                 this.ts.dragScrollPoint <- None
+                this.ts.carriedIn <- None
                 group.releaseDrag(hwnd,true)
                 if WinUserApi.IsWindow hwnd then
                     if not(group.windows.contains hwnd) then group.addWindow(hwnd,false)
@@ -1137,6 +1227,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 dragSource <- None
                 dragStartIndex <- None
                 this.ts.dragScrollPoint <- None
+                this.ts.carriedIn <- None
                 isDraggingCell.value <- false
                 this.ts.transparent <- true
                 match this.ts.movedTab with

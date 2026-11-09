@@ -96,6 +96,7 @@
     <Compile Include="Shared\UIHelper.fs" />
     <Compile Include="HotKeyManager.fs" />
     <Compile Include="DragDropController.fs" />
+    <Compile Include="TitleBarDrop.fs" />
     <Compile Include="TabStripSprite.fs" />
     <Compile Include="TabShadow.fs" />
     <Compile Include="TabTitleTip.fs" />
@@ -115,6 +116,7 @@
     <Compile Include="GroupPlugins\MouseScrollPlugin.fs" />
     <Compile Include="GroupPlugins\NumericTabHotKeyPlugin.fs" />
     <Compile Include="GroupPlugins\HideTabsOnInactiveGroupPlugin.fs" />
+    <Compile Include="TitleBarDrag.fs" />
     <Compile Include="Desktop.fs" />
     <Compile Include="GroupEditorApply.fs" />
     <Compile Include="Workspace\WorkspaceData.fs" />

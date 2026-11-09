@@ -42,6 +42,8 @@ module SettingsCatalog =
         { id="tabColumnWidth"; page=AppearanceSettings; text=Strings.Settings.tabColumnWidth; binding=Number(columnWidthRange) }
         // "Maximized" also covers windows whose tabs sit inside them (top snaps); the stored value keeps its original name.
         { id="auto-hide-tabs"; page=GeneralSettings; text=Strings.Settings.autoHide; binding=Choice("autoHideMode",["Never";"Maximized";"Always"],"Maximized") }
+        // Always by default: a first-time user groups and splits by dragging a title bar with nothing changed.
+        { id="title-bar-drop"; page=GeneralSettings; text=Strings.Settings.titleBarDrop; binding=Choice("titleBarDrop",["Always";"Shift";"Ctrl";"Off"],"Off") }
         { id="show-tabs-on-switch"; page=GeneralSettings; text=Strings.Settings.showTabsOnSwitch; binding=Toggle("showTabsOnSwitch",true,true) }
         { id="icons-only"; page=GeneralSettings; text=Strings.Settings.iconsOnly; binding=Toggle("showIconsOnly",false,false) }
         { id="combine-taskbar-icons"; page=GeneralSettings; text=Strings.Settings.combineTaskbarIcons; binding=Toggle("combineIconsInTaskbar",false,true) }
@@ -148,6 +150,7 @@ module SettingsCatalog =
         | "tab-alignment" -> alignmentLabels false
         | "tab-position" -> [Strings.TabMenu.top;Strings.Common.left;Strings.Common.right]
         | "auto-hide-tabs" -> [Strings.Common.never;Strings.Common.whenMaximized;Strings.Common.always]
+        | "title-bar-drop" -> [Strings.Common.always;Strings.TitleBarDrop.holdShift;Strings.TitleBarDrop.holdCtrl;Strings.TitleBarDrop.off]
         | "switcher-style" -> [Strings.Appearance.switcherHorizontal;Strings.Appearance.switcherVertical]
         | "number-shortcut" -> [Strings.Settings.numberShortcutCtrl;Strings.Settings.numberShortcutAlt]
         | "tabStyle" -> List.ofArray Strings.Appearance.tabStyles

@@ -97,8 +97,8 @@ type HelperWindow() =
 
 /// Whether a drop surface shows a place for the drag at the point, asked as a rested pointer is.
 let previewed (target:ILayoutDropTarget) (data:obj,pt:Pt) =
-    match target.probe(data,pt,true) with
-    | Aimed(_,shown) -> shown
+    match target.probe(data,pt,fun _ -> 1.0) with
+    | Aimed(_,_,shown) -> shown
     | NearStrip _ -> false
 
 let main() =
@@ -114,7 +114,7 @@ let main() =
             member _.takes pt = pt.x<100
             member _.dragCancel _ = ()}
     let surface = {new ILayoutDropTarget with
-                    member _.probe(_,_,_) = Aimed(SplitAim,true)
+                    member _.probe(_,_,_) = Aimed(SplitAim,None,true)
                     member _.clearPreview() = ()
                     member _.commit(_,_) = true}
     let strips = Map2(List2([IntPtr 1,strip]))
@@ -141,27 +141,64 @@ let main() =
         check (not(DragRouting.movesToStrip twoStrips near (IntPtr 1) IntPtr.Zero)) "A tab left its strip for nothing"
     // A split is offered once the pointer rests in a drop zone, not as it passes: let go on the
     // way, the tab comes out as a window of its own. An empty pane takes a drop at once.
+    // The rest is time with the pointer stopped in one zone: a tremor of a few pixels keeps it, a
+    // pointer still on its way, however slowly, starts it again.
     do
         let w,v = IntPtr 2,IntPtr 3
-        let rest = LayoutDwell.restMs
-        let step now pt key aim state = LayoutDwell.step now 6 pt key aim state
-        let s0,shown0 = step 0L (Pt(100,100)) w SplitAim None
+        let rest,radius = LayoutDwell.restMs,LayoutDwell.restRadius
+        let left,below = SplitAt([],SideBySide,First),SplitAt([],Stacked,Second)
+        let at = Pt(100,300)
+        let step now key aim zone pt state = LayoutDwell.step now key aim zone pt radius rest state
+        let s0,shown0 = step 0L w SplitAim (Some left) at None
         check (not shown0) "A split was offered as soon as the pointer reached a drop zone"
-        let s1,shown1 = step (rest-1L) (Pt(104,103)) w SplitAim s0
+        check (LayoutDwell.progress (rest/2L) w left at radius rest s0=0.5) "The rest did not count the time the pointer stayed"
+        let s1,shown1 = step (rest-1L) w SplitAim (Some left) (Pt(104,297)) s0
         check (not shown1) "A split was offered before the pointer had rested"
-        let s2,shown2 = step rest (Pt(103,104)) w SplitAim s1
-        check shown2 "A pointer resting in a drop zone was not offered the split"
-        let _,shown3 = step (rest+10L) (Pt(300,140)) w SplitAim s2
+        let s2,shown2 = step rest w SplitAim (Some left) (Pt(97,306)) s1
+        check shown2 "A pointer resting in a drop zone, trembling a few pixels, was not offered the split"
+        let drifted,drifting = step rest w SplitAim (Some left) (Pt(100,300+radius+1)) s0
+        check (not drifting && LayoutDwell.progress rest w left (Pt(100,300+radius+1)) radius rest drifted=0.0)
+            "A pointer moving on slowly along an edge was offered the split, as if it had stopped"
+        let _,shown3 = step (rest+10L) w SplitAim (Some below) (Pt(300,600)) s2
         check shown3 "Once offered, the split did not follow the pointer over the same window"
-        let _,moving = step rest (Pt(130,100)) w SplitAim s0
-        check (not moving) "A pointer moving through a drop zone was offered the split"
-        let _,other = step (rest*3L) (Pt(100,100)) v SplitAim s2
+        check (LayoutDwell.progress (rest+10L) w below (Pt(300,600)) radius rest s2=1.0) "Once offered, another zone of the window rested again"
+        let crossed,moving = step rest w SplitAim (Some below) at s0
+        check (not moving && LayoutDwell.progress rest w below at radius rest crossed=0.0) "Crossing into another zone kept the rest"
+        let _,other = step (rest*3L) v SplitAim (Some left) at s2
         check (not other) "Another window's split was offered without resting over it"
-        let left,shownLeft = step (rest+20L) (Pt(500,300)) w NoAim s2
-        check (left.IsNone && not shownLeft) "Leaving the drop zones kept the split offered"
-        let _,again = step (rest+30L) (Pt(100,100)) w SplitAim left
+        let gone,shownGone = step (rest+20L) w NoAim None at s2
+        check (gone.IsNone && not shownGone) "Leaving the drop zones kept the split offered"
+        let _,again = step (rest+30L) w SplitAim (Some left) at gone
         check (not again) "Coming back into a drop zone offered the split without resting again"
-        check (snd (step 0L (Pt(100,100)) w FillAim None)) "An empty pane did not take the drop at once"
+        check (snd (step 0L w FillAim None at None)) "An empty pane did not take the drop at once"
+        // A drop splits only once the place has grown in full; a flick away takes the offer back.
+        let arm = LayoutDwell.armMs
+        check (not(LayoutDwell.armed (rest+arm-1L) s2)) "Letting go while the place was still growing split the window"
+        check (LayoutDwell.armed (rest+arm) s2) "A drop once the place had grown did not split"
+        check (not(LayoutDwell.armed (rest*3L) s1)) "A drop before the rest was over split the window"
+        check (LayoutDwell.armed 0L None) "An empty pane did not take the drop at once"
+        check (PreviewGrow.durationMs=float arm) "The place took longer to grow than a split to arm"
+        check (LayoutDwell.fling (LayoutDwell.flingSpeed+0.1) s2).IsNone "A flick away kept the split offered"
+        check (LayoutDwell.fling (LayoutDwell.flingSpeed-0.1) s2=s2) "Moving on over the window took the offered split back"
+        check (LayoutDwell.fling 10.0 s1=s1) "A fast move during the rest was taken for a flick"
+        // After a flick away, the same window rests longer before offering the split again; others do not.
+        let longer = LayoutDwell.restFor (Some w) w
+        check (longer>rest && LayoutDwell.restFor (Some w) v=rest && LayoutDwell.restFor None w=rest)
+            "The rest after a flick away did not wait longer over that window alone"
+        let f0,_ = LayoutDwell.step 0L w SplitAim (Some left) at radius longer None
+        check (not(snd(LayoutDwell.step rest w SplitAim (Some left) at radius longer f0))) "The window flung away from offered the split again after the usual rest"
+        check (snd(LayoutDwell.step longer w SplitAim (Some left) at radius longer f0)) "The window flung away from never offered the split again"
+        // The place grows out of the edge it takes, as Windows' snap preview does.
+        let strip half axis side = SplitGeometry.edgeStrip half axis side 4
+        let half = Rect(Pt(100,50),Sz(400,600))
+        check (strip half SideBySide First=Rect(Pt(100,50),Sz(4,600)) && strip half Stacked Second=Rect(Pt(100,646),Sz(400,4)))
+            "A split's place did not start inside the half, along the edge it takes"
+        let from = strip half SideBySide Second
+        check (PreviewGrow.between from half 0.0=from && PreviewGrow.between from half 1.0=half)
+            "A split's place did not grow from its edge to the whole half"
+        let midway = PreviewGrow.between from half 0.5
+        check (midway.right=half.right && midway.left>half.left && midway.left<from.left)
+            "A split's place did not grow from the edge it takes, held there"
     // The pointer over an app's child window, a browser's page say, is over the group's window.
     do
         use app = new Form(Text="Routing app",ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,
@@ -176,6 +213,28 @@ let main() =
         check (hit=app.Handle) (sprintf "A drag over an app's child window found %A, not its window %A" hit app.Handle)
         let appSurfaces = Map2(List2([app.Handle,surface]))
         check (DragRouting.resolve strips appSurfaces centre hit owner=LayoutHit app.Handle) "A drag over an app's child window did not offer a pane"
+        // A group showing only its rest line, no place yet, is told to take it away when the tab
+        // floats off or the drag ends: the line once stayed on the screen after the drag.
+        let cleared = ref 0
+        let resting =
+            {new ILayoutDropTarget with
+                member _.probe(_,_,_) = Aimed(SplitAim,Some(SplitAt([],SideBySide,First)),false)
+                member _.clearPreview() = cleared.Value <- cleared.Value+1
+                member _.commit(_,_) = false}
+        let animation = AnimationWindow(OS())
+        try
+            let floating =
+                DragFloatingState({ imageOffset=Pt(0,0); targets=Map2(); layoutTargets=Map2(List2([app.Handle,resting]))
+                                    data=null; animationWindow=animation; onDragIn=ignore }) :> IDragState
+            floating.mouseMove centre
+            let away = Pt(app.Left+app.Width+400,app.Top+app.Height+300)
+            check (fst (DragRouting.windowsAt away)<>app.Handle) "The routing fixture covers the point meant to be away from it"
+            floating.mouseMove away
+            check (cleared.Value=1) (sprintf "A tab floating off a window left its rest line: cleared %d times" cleared.Value)
+            floating.mouseMove centre
+            floating.dispose()
+            check (cleared.Value=2) (sprintf "A drag ending over a window left its rest line: cleared %d times" cleared.Value)
+        finally animation.Dispose()
     // A tab dragged from its strip, as the drag's capture window sees the pointer: it starts once
     // the pointer has moved, moves in its strip, goes over to another strip, floats away from any,
     // lands or is cancelled back to its strip.
@@ -489,12 +548,63 @@ let main() =
                           (sprintf "New tab did not land after its tab: %A from %A" placed order)
                     (info :> IGroup).run(PlaceTabAfter(added,order.[order.Length-2]))
                     check (onGroup(fun group -> group.lorder.list)=order) "A tab placed after the last one did not go back to the end"
+                    // A window let go on the tabs by its own title bar takes the gap aimed at; a gap
+                    // past the end is the end, and none goes ahead of a pinned tab. (Coming to the
+                    // front is the activation every tab click goes through; these hidden helper
+                    // windows do not come to the front reliably.)
+                    let joined = order.[3]
+                    let settle index = onGroup(fun group -> TitleBarJoin.settle group [joined] joined index)
+                    let place() = onGroup(fun group -> group.lorder.list |> List.findIndex ((=) joined))
+                    settle 1
+                    check (place()=1) (sprintf "A title bar drop did not take the gap aimed at: at %d" (place()))
+                    settle 99
+                    check (place()=order.Length-1) (sprintf "A title bar drop past the last tab did not go to the end: at %d" (place()))
+                    PinnedTabs.set order.Head true
+                    try
+                        settle 0
+                        check (place()=1) (sprintf "A title bar drop went ahead of a pinned tab: at %d" (place()))
+                    finally PinnedTabs.set order.Head false
+                    onGroup(fun group -> group.ts.moveTab(Tab joined,3))
+                    check (onGroup(fun group -> group.lorder.list)=order) "The tabs did not go back to their order after the title bar drops"
+                    // A whole group let go on the tabs keeps its own order in the gap aimed at.
+                    let whole = [order.[4];order.[3]]
+                    onGroup(fun group -> TitleBarJoin.settle group whole order.[3] 1)
+                    let landed = onGroup(fun group -> group.lorder.list)
+                    check (landed=[order.[0];order.[4];order.[3];order.[1];order.[2]]) (sprintf "A group joining whole did not keep its order in the gap aimed at: %A from %A" landed order)
+                    onGroup(fun group -> group.ts.moveTab(Tab order.[4],4); group.ts.moveTab(Tab order.[3],3))
+                    check (onGroup(fun group -> group.lorder.list)=order) "The tabs did not go back to their order after a group joined whole"
                 if count=2 then
                     waitOperation()
                     let source = onGroup(fun group -> group.topWindow)
                     onHelper(fun () -> for form in forms |> List.take 2 do form.Pinned <- false; form.Show())
                     onHelper(fun () -> OS().windowFromHwnd(source).move(Rect(Pt(60,60),Sz(900,600))))
                     pumpUntil(fun () -> onGroup(fun group -> group.placementBounds.width>=890 && group.isPlacementIdle))
+                    // Moved by its title bar, the window keeps its tabs on it: they follow it, and
+                    // the group's frame waits for the move's end. They were hidden for the move.
+                    do
+                        let event evt = onGroup(fun group -> invoke "handleWindowEvent" group [|box source;box evt|] |> ignore)
+                        event WinEvent.EVENT_SYSTEM_MOVESIZESTART
+                        check (onGroup(fun group -> group.bounds.value.IsSome)) "A window moved by its title bar hid its tabs"
+                        check (onGroup(fun group -> group.isMoving.value)) "A window moved by its title bar was not marked moving, so its auto-hidden tabs stayed shrunk"
+                        let before = onGroup(fun group -> group.placementBounds)
+                        onHelper(fun () -> let window = OS().windowFromHwnd(source) in window.move(window.bounds.move(30,20)))
+                        let moved = OS().windowFromHwnd(source).visibleBounds
+                        event WinEvent.EVENT_OBJECT_LOCATIONCHANGE
+                        pumpUntil(fun () -> onGroup(fun group -> group.bounds.value=Some moved))
+                        check (onGroup(fun group -> group.bounds.value=Some moved && group.placementBounds=before))
+                            "The tabs of a window being moved did not follow it, or the group's frame moved before the move ended"
+                        // A resize hides them as before: drawn again at every width, they held up each step.
+                        onHelper(fun () -> let window = OS().windowFromHwnd(source) in window.move(Rect(window.bounds.location,Sz(window.bounds.width-40,window.bounds.height))))
+                        event WinEvent.EVENT_OBJECT_LOCATIONCHANGE
+                        pumpUntil(fun () -> onGroup(fun group -> group.bounds.value.IsNone))
+                        check (onGroup(fun group -> group.bounds.value.IsNone)) "The tabs of a window being resized stayed on it"
+                        event WinEvent.EVENT_SYSTEM_MOVESIZEEND
+                        waitOperation()
+                        check (not(onGroup(fun group -> group.isMoving.value))) "A window let go stayed marked moving"
+                        onHelper(fun () -> OS().windowFromHwnd(source).move(Rect(Pt(60,60),Sz(900,600))))
+                        event WinEvent.EVENT_OBJECT_LOCATIONCHANGE
+                        pumpUntil(fun () -> onGroup(fun group -> group.placementBounds.width>=890 && group.isPlacementIdle))
+                        waitOperation()
                     let partner = handles |> List.take 2 |> List.find((<>) source)
                     // Last used tab goes back to the tab left by a click, which takes the new tab
                     // as active ahead of the foreground event, and from there returns.
@@ -558,7 +668,7 @@ let main() =
                     do
                         let hwnd = IntPtr 0x7777
                         let later = {new ILayoutDropTarget with
-                                        member _.probe(_,_,_) = Aimed(NoAim,false)
+                                        member _.probe(_,_,_) = Aimed(NoAim,None,false)
                                         member _.clearPreview() = ()
                                         member _.commit(_,_) = false}
                         let api = surfaces :> IDragDrop
@@ -1036,7 +1146,7 @@ let main() =
                         let frame = group.layoutFrame
                         let tabsRight = group.ts.tabSprites.list |> List.map(fun (location,sprite) -> strip.ptToScreen(location).x+sprite.size.width) |> List.max
                         let along = Pt(frame.right-Dpi.scale 10,first.y+first.height/2)
-                        let near pt = match decorator.probe(dragOf group foreign,pt,false) with NearStrip strip -> Some strip | Aimed _ -> None
+                        let near pt = match decorator.probe(dragOf group foreign,pt,fun _ -> 0.0) with NearStrip strip -> Some strip | Aimed _ -> None
                         check (near below=Some group.ts.hwnd) (sprintf "A point just below a group's tabs was not taken as its strip: %A below %A" below first)
                         check (along.x-tabsRight<=Dpi.scale 40 || near along=None) (sprintf "A point far beside a group's tabs was taken as its strip: %A, tabs end at %d" along tabsRight)
                         check (near away=None) (sprintf "A point well below a group's tabs was taken as its strip: %A below %A" away first))
@@ -1052,7 +1162,7 @@ let main() =
                             let frame = group.layoutFrame
                             let below = Pt(last.x+last.width/2,last.bottom+Dpi.scale 40)
                             check (below.y<frame.bottom) (sprintf "No room below the column's last tab to test: %A in %A" last frame)
-                            let nearAt pt hwnd = match decorator.probe(dragOf group hwnd,pt,false) with NearStrip _ -> true | Aimed _ -> false
+                            let nearAt pt hwnd = match decorator.probe(dragOf group hwnd,pt,fun _ -> 0.0) with NearStrip _ -> true | Aimed _ -> false
                             check (group.windows.contains source && not (nearAt below source)) "A tab dragged down past its column's last tab went back into the column"
                             check (not (nearAt below foreign)) "Another group's tab was taken in along the column's side, far below its tabs"
                             let beside = Pt(last.x+last.width/2,last.bottom+Dpi.scale 10)

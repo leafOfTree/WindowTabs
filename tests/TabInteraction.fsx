@@ -920,10 +920,12 @@ let main() =
                                     Threading.Thread.Sleep 20
                                 check arrived.Value (sprintf "A tab dragged from a %A column never got its window's picture" dock)
                                 try
-                                    check (image.width=shown.width+column.width-column.seam && image.height>=shown.height)
+                                    // With room all round for the window's shadow.
+                                    let m = Dpi.scale DragImage.shadow
+                                    check (image.width=shown.width+column.width-column.seam+2*m && image.height>=shown.height+2*m)
                                           (sprintf "A tab dragged from a %A column carries no window beside its column: %A" dock image.size)
                                     let at = strip.dragTabAt(dragged,landing)
-                                    check (if dock=TabDockRight then at.x>=shown.width-column.seam else at.x<column.width)
+                                    check (if dock=TabDockRight then at.x>=shown.width-column.seam+m else at.x<column.width+m)
                                           (sprintf "The dragged tab is not on the %A of its window: %A" dock at)
                                 finally image.bitmap.Dispose()
                                 let drag = { tab=dragged; tabOffset=Pt(12,9); tabSize=Sz(100,30); tabInfo=strip.tabInfo dragged; tabShift=0; tabAlignment=TabLeft; column=Some column }

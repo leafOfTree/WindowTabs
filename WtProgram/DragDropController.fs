@@ -85,32 +85,67 @@ type DragCapturedState(info:DragCapturedStateInfo) =
 
 /// Whether a split may be offered yet: a tab carried over a window on its way to somewhere
 /// else, or let go over one where there was no free desktop left, split it at once. A split
-/// is offered once the pointer has rested in a window's drop zone; from then on the preview
-/// follows it over that window until it leaves the zones. An empty pane takes a drop at once.
-type LayoutDwell = { key: IntPtr; anchor: Pt; since: int64; shown: bool }
+/// is offered once the pointer has come to rest in one of a window's drop zones: stayed there
+/// for `restMs` within `restRadius` of where it stopped, so a hand's tremor keeps the rest
+/// while a pointer still on its way, however slowly, starts it again. From then on the preview
+/// follows it over that window until it leaves the zones, or the pointer is flung away. A drop
+/// splits only once the preview has grown in full (`armMs` after `offered`). An empty pane takes
+/// a drop at once.
+type LayoutDwell = { key: IntPtr; zone: LayoutDrop; anchor: Pt; since: int64; shown: bool; offered: int64 }
 
 module LayoutDwell =
-    let restMs = 100L
-    /// How far the pointer may wander while resting, in logical pixels.
-    let restRadius = 6
-    /// Whether a split over `key` would show now: offered already, or rested long enough.
-    let ready (now:int64) (radius:int) (pt:Pt) (key:IntPtr) (state:LayoutDwell option) =
+    /// A tab is carried to a window on purpose, so its rest is short.
+    let restMs = 300L
+    /// The rest over the window a split was just flung away from, until the pointer leaves it: a
+    /// pointer stopping again over it is most often on its way elsewhere, and was offered the
+    /// same split again at once.
+    let flungRestMs = 600L
+    /// The rest over the window `key`, after a split was flung away from the window `flung`.
+    let restFor (flung:IntPtr option) (key:IntPtr) = if flung=Some key then flungRestMs else restMs
+    /// How long the offered place takes to grow out of its edge: let go before, a user who had
+    /// only seen it start to grow split the window.
+    let armMs = 120L
+    /// Pointer speed, logical pixels a millisecond, past which an offered split is taken back: a
+    /// flick away says the split was not wanted; the rest begins again where the pointer stops.
+    let flingSpeed = 1.5
+    /// Whether a drop now splits: the place offered and grown in full, or no rest at all (an
+    /// empty pane).
+    let armed (now:int64) (state:LayoutDwell option) =
         match state with
-        | Some s when s.key=key && s.shown -> true
-        | Some s when s.key=key && abs(pt.x-s.anchor.x)<=radius && abs(pt.y-s.anchor.y)<=radius -> now-s.since>=restMs
-        | _ -> false
-    /// The state after the pointer at `pt` over the window `key`, and whether the preview shows.
-    let step (now:int64) (radius:int) (pt:Pt) (key:IntPtr) (aim:LayoutAim) (state:LayoutDwell option) =
-        match aim with
-        | NoAim -> None,false
-        | FillAim -> None,true
-        | SplitAim ->
+        | Some s when s.shown -> now-s.offered>=armMs
+        | Some _ -> false
+        | None -> true
+    /// The state after the pointer moved at `speed`: an offered split flung away is taken back.
+    let fling (speed:float) (state:LayoutDwell option) =
+        match state with
+        | Some s when s.shown && speed>flingSpeed -> None
+        | other -> other
+    /// How far the pointer may drift while resting, in logical pixels: a few pixels' tremor is
+    /// a rest; 6 started it again under an unsteady hand, and none at all offered a split to a
+    /// pointer moving slowly along an edge on its way past.
+    let restRadius = 12
+    let private still (pt:Pt) (anchor:Pt) radius = abs(pt.x-anchor.x)<=radius && abs(pt.y-anchor.y)<=radius
+    /// How far the rest in `zone` of the window `key`, with the pointer at `pt`, has gone, 0 to 1;
+    /// 1 once offered.
+    let progress (now:int64) (key:IntPtr) (zone:LayoutDrop) (pt:Pt) (radius:int) (rest:int64) (state:LayoutDwell option) =
+        match state with
+        | Some s when s.key=key && s.shown -> 1.0
+        | Some s when s.key=key && s.zone=zone && still pt s.anchor radius -> min 1.0 (float(now-s.since)/float rest)
+        | _ -> 0.0
+    /// The state after the pointer at `pt` over the window `key`, in `zone` when it splits, and
+    /// whether the preview shows, once the pointer has rested there for `rest`.
+    let step (now:int64) (key:IntPtr) (aim:LayoutAim) (zone:LayoutDrop option) (pt:Pt) (radius:int) (rest:int64) (state:LayoutDwell option) =
+        match aim,zone with
+        | NoAim,_ -> None,false
+        | FillAim,_ -> None,true
+        | SplitAim,None -> None,false
+        | SplitAim,Some zone ->
             match state with
             | Some s when s.key=key && s.shown -> Some s,true
-            | Some s when s.key=key && abs(pt.x-s.anchor.x)<=radius && abs(pt.y-s.anchor.y)<=radius ->
-                let ready = now-s.since>=restMs
-                Some {s with shown=ready},ready
-            | _ -> Some {key=key;anchor=pt;since=now;shown=false},false
+            | Some s when s.key=key && s.zone=zone && still pt s.anchor radius ->
+                let ready = now-s.since>=rest
+                Some {s with shown=ready; offered=(if ready then now else s.offered)},ready
+            | _ -> Some {key=key;zone=zone;anchor=pt;since=now;shown=false;offered=now},false
 
 type DragFloatingStateInfo = {
     imageOffset : Pt
@@ -126,28 +161,57 @@ type DragFloatingState(info:DragFloatingStateInfo) =
     let animationWindow = info.animationWindow
     let clock = Diagnostics.Stopwatch.StartNew()
     let mutable candidate : (IntPtr * ILayoutDropTarget) option = None
+    /// The group last asked, which may be showing a rest line before any place: told to take it
+    /// away once the pointer leaves it or the drag ends, or the line stayed on the screen.
+    let mutable marked : ILayoutDropTarget option = None
     let mutable dwell : LayoutDwell option = None
     /// The window and point last aimed at, for the pointer resting with no move to report.
     let mutable aimed : (IntPtr * ILayoutDropTarget * Pt) option = None
+    /// The window a split was just flung away from, while the pointer stays over it.
+    let mutable flung : IntPtr option = None
     let restTimer = new Timer(Interval=25)
+    /// Where the pointer was a moment ago and when, and how fast it has moved since, in logical
+    /// pixels a millisecond: measured over 20 ms or more, as single moves come too close together.
+    let mutable lastPt,lastAt,speed = Pt.empty,0L,0.0
+    let measure (pt:Pt) (now:int64) =
+        let dt = now-lastAt
+        if lastAt=0L then lastPt <- pt; lastAt <- now
+        elif dt>=20L then
+            let dx,dy = float(pt.x-lastPt.x),float(pt.y-lastPt.y)
+            speed <- sqrt(dx*dx+dy*dy)*100.0/float(Dpi.scale 100)/float dt
+            lastPt <- pt
+            lastAt <- now
     let clearCandidate() =
-        candidate |> Option.iter(fun (_,target) -> target.clearPreview())
         candidate <- None
+        marked |> Option.iter(fun target -> target.clearPreview())
+        marked <- None
     let float(ptScreen:Pt) =
         animationWindow.setLocation(ptScreen.sub(info.imageOffset))
         animationWindow.setIsVisible(true)
     /// The preview for the pointer at `pt` over `key`, once it may show: one call to the group
     /// for what is there. The strip to join instead, when the point lies near its tabs.
     let previewAt (key:IntPtr) (target:ILayoutDropTarget) (pt:Pt) : IntPtr option =
-        match candidate with
-        | Some(previous,old) when previous<>key -> old.clearPreview()
+        match marked with
+        | Some old when not(obj.ReferenceEquals(old,target)) -> old.clearPreview()
         | _ -> ()
+        marked <- Some target
         let now,radius = clock.ElapsedMilliseconds,Dpi.scale LayoutDwell.restRadius
-        match target.probe(info.data,pt,LayoutDwell.ready now radius pt key dwell) with
+        measure pt now
+        if flung<>Some key then flung <- None
+        match dwell,LayoutDwell.fling speed dwell with
+        | Some s,None ->
+            dwell <- None
+            flung <- Some s.key
+        | _ -> ()
+        let rest = LayoutDwell.restFor flung key
+        // Read now, on this thread: the group's thread only asks it.
+        let rested = dwell
+        match target.probe(info.data,pt,fun zone -> LayoutDwell.progress now key zone pt radius rest rested) with
         | NearStrip strip -> Some strip
-        | Aimed(aim,shown) ->
-            let state,show = LayoutDwell.step now radius pt key aim dwell
+        | Aimed(aim,zone,shown) ->
+            let state,show = LayoutDwell.step now key aim zone pt radius rest dwell
             dwell <- state
+            if show then flung <- None
             // The tab's image stays with the pointer over the highlighted pane.
             if show && shown then candidate <- Some(key,target)
             else
@@ -160,19 +224,22 @@ type DragFloatingState(info:DragFloatingStateInfo) =
         match aimed with
         | Some(key,target,pt) -> previewAt key target pt |> ignore
         | None -> restTimer.Stop())
-    /// Drops into the pane under the pointer; false when there is none.
+    /// Drops into the pane under the pointer; false when there is none, or its place is still
+    /// growing: let go then, the tab comes out as when let go before the rest was over.
     member this.commit(pt) =
         match candidate with
-        | Some(_,target) ->
+        | Some(_,target) when LayoutDwell.armed clock.ElapsedMilliseconds dwell ->
             candidate <- None
+            marked <- None
             target.commit(info.data,pt)
-        | None -> false
+        | _ -> false
     interface IDragState with
         member this.mouseMove(ptScreen) =
             let hit,owner = DragRouting.windowsAt ptScreen
             let joinStrip strip =
                 clearCandidate()
                 dwell <- None
+                flung <- None
                 aimed <- None
                 restTimer.Stop()
                 animationWindow.setIsVisible(false)
@@ -188,6 +255,7 @@ type DragFloatingState(info:DragFloatingStateInfo) =
             | FreeHit ->
                 clearCandidate()
                 dwell <- None
+                flung <- None
                 aimed <- None
                 restTimer.Stop()
                 float ptScreen
@@ -389,6 +457,8 @@ type DragDropController(parent:IDragDropParent, ?buttonDown:unit -> bool) =
 
     /// Whether a drag over this window finds a group's panes.
     member x.isLayoutTarget hwnd = layoutTargetsCell.value.contains hwnd
+    /// Every strip registered now, by its window.
+    member x.strips = lock lockObj (fun () -> targetsCell.value)
 
     interface IDragDrop with
         member x.registerNotification(notify) = withLock <| fun() ->

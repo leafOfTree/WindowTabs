@@ -544,6 +544,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let windowsCell = Cell.create(Set2())
     let _ts = ref None 
     let inMoveSize = Cell.create(false)
+    /// Where the window in front is while the system moves it: its tabs follow it there, and
+    /// nothing else of the group moves until the move ends.
+    let moveFrameCell : Cell<Rect option> = Cell.create(None)
+    /// The window's size as its move went on, to tell a move from a resize; none until known
+    /// for a window that was maximized, which the system restores as the move begins.
+    let mutable moveSize : Sz option = None
     let foregroundCell = Cell.create(_os.foreground.hwnd)
     /// A tab carried into the strip and not let go yet: its window stays out of sight, last in the
     /// group's order, until the drop. Placed at once as the tab in front, the window it brought
@@ -608,12 +614,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if not isDestroyed.value && this.windows.contains(hwnd) then this.setTabInfo(hwnd)
         finally Cell.endUpdate())
 
+    /// The window in front is being moved by its title bar, its tabs on it.
+    let isMovingExport = Cell.export <| fun() -> moveFrameCell.value.IsSome
+
     let isMaximizedExport = Cell.export <| fun() ->
         zorderCell.value.tryHead.exists(fun hwnd -> this.os.windowFromHwnd(hwnd).isMaximized)
  
     let boundsExport = Cell.export <| fun() ->
-        placement.value.bind <| fun(_,_,visible) ->
-            if isVisibleCell.value then Some(visible) else None
+        match moveFrameCell.value with
+        | Some frame when isVisibleCell.value -> Some frame
+        | _ ->
+            placement.value.bind <| fun(_,_,visible) ->
+                if isVisibleCell.value then Some(visible) else None
 
     let isForegroundExport = Cell.export <| fun() ->
         zorderCell.value.any((=) foregroundCell.value)
@@ -738,6 +750,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         
             
         isMaximizedExport.init()
+        isMovingExport.init()
         isDraggingExport.init()
         zorderExport.init()
         boundsExport.init()
@@ -808,7 +821,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
         this.ts.layoutChanged.Add(fun chosen ->
             if chosen then hasSavedTabLayout <- true
-            if hasSavedTabLayout then this.windows.items.iter(fun hwnd -> WindowTabLayout.save hwnd this.tabLayout))
+            if hasSavedTabLayout then
+                this.windows.items.iter(fun hwnd -> if heldByDrag<>Some hwnd then WindowTabLayout.save hwnd this.tabLayout))
         Services.registerLocal(this)
 
         plugins.iter <| fun p -> p.init()
@@ -894,7 +908,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         isVisibleCell.value <-
             this.isEmpty.not &&
             zorderCell.value.where(isMinimized >> not).tryHead.exists(fun hwnd -> not(WindowCloaking.IsCloaked hwnd)) &&
-            inMoveSize.value.not
+            // Moved by its title bar, the window keeps its tabs on it; a split hides them until
+            // the move ends, as its panes follow the one moved.
+            (inMoveSize.value.not || moveFrameCell.value.IsSome)
         this.updateSplitChrome()
 
     member private this.updatePlacements() = this.applyLayout()
@@ -2271,6 +2287,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if this.lorder.list.[index]<>hwnd then this.ts.moveTab(Tab(hwnd),index))
 
     member this.isMaximized = isMaximizedExport :> ICellOutput<bool>
+    member this.isMoving = isMovingExport :> ICellOutput<bool>
 
     member this.isMouseOver = this.ts.isMouseOver
 
@@ -2311,11 +2328,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if SplitView.contains source s then
                 splitMove <- Some(source,this.os.windowFromHwnd(source).visibleBounds,this.layoutFrame,s.tree)
                 this.beginLive()
-        | _ -> this.hideChildWindows()
+        | _ ->
+            this.hideChildWindows()
+            zorderCell.value.tryHead |> Option.iter(fun top ->
+                let window = this.os.windowFromHwnd(top)
+                moveSize <- if window.isMaximized then None else Some window.visibleBounds.size
+                moveFrameCell.set(Some window.visibleBounds))
         this.updateIsVisible()
 
     member this.onExitMoveSize() =
         inMoveSize.set(false)
+        moveFrameCell.set(None)
+        moveSize <- None
         // The final location notification may still be queued behind MOVESIZEEND.
         splitMove |> Option.iter(fun (source,initial,frame,startTree) ->
             match groupLayout with
@@ -2463,6 +2487,24 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         if abs(actual.x-expected.x)>tolerance || abs(actual.y-expected.y)>tolerance || abs(actual.width-expected.width)>snap || abs(actual.height-expected.height)>snap then
                             this.followPane(hwnd,expected,this.layoutFrame,s.tree,s,actual)
                     | _ -> ()
+            | _ when this.isTop(hwnd) && inMoveSize.value && moveFrameCell.value.IsSome ->
+                // Its tabs go along with it; the group's frame waits for the move's end. A resize
+                // hides them as before: drawn again at every width, they held up each step.
+                let window = this.os.windowFromHwnd(hwnd)
+                let frame = window.visibleBounds
+                match moveSize with
+                | Some size when size<>frame.size && not window.isMaximized ->
+                    moveFrameCell.set(None)
+                    this.updateIsVisible()
+                | _ when not window.isMinimized ->
+                    // Still maximized, the window is yet to be restored for the move: its size
+                    // is taken once it is.
+                    if not window.isMaximized then moveSize <- Some frame.size
+                    moveFrameCell.set(Some frame)
+                    // Maximized as the move began, it is restored by it: its tabs, shown on it, are
+                    // no longer those of a maximized window, which hide away.
+                    isMaximizedExport.update()
+                | _ -> ()
             | _ when this.isTop(hwnd) && inMoveSize.value.not ->
                 //you can miss EVENT_SYSTEM_MOVESIZESTART events
                 //when a window is created and is immediatly in move size, we subscribe
@@ -2584,7 +2626,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.onActivated(hwnd)
                 this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
             StartupTrace.measure "group.add.placement" (fun () -> this.adjustWindowPlacement(hwnd))
-            if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
+            // A tab only carried in keeps the layout of the group it came from until it is let go
+            // here: carried on and out onto the desktop, its new group took this one's row.
+            if hasSavedTabLayout && heldByDrag<>Some hwnd then WindowTabLayout.save hwnd this.tabLayout
             this.restoreSplitProps(hwnd)
             StartupTrace.measure "group.add.notify" (fun () -> addedEvent.Trigger(hwnd))
             // A visible window joining a minimized group restores it, as restoring any tab does,
@@ -2890,6 +2934,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if heldByDrag=Some hwnd then
             heldByDrag <- None
             if dropped && this.windows.contains hwnd && WinUserApi.IsWindow hwnd then
+                if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
                 this.adjustWindowPlacement hwnd
                 dragReleasedEvent.Trigger hwnd
                 this.tabActivate(Tab hwnd,true)

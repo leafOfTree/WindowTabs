@@ -153,6 +153,41 @@ let main() =
     check (dropRect (Pt(second.left+5,frame.y+300)) (Some half)=Some(Rect(second.location,Sz((second.width-gap)/2,second.height)))) "A pane's preview is not its own half"
     check (drop (Pt(cRect.x+cRect.width/2,cRect.bottom-50)) (Some nested)=Some([Second;Second],Stacked,Second)) "A nested pane did not split at its own edge"
 
+    // Where a window carried by its own title bar goes: the tabs' bar across the group's width
+    // with the title bar under it, and the gaps among the tabs. Never a split: at an edge, a
+    // window lined up beside another is only moved.
+    let metrics = TitleBarDrop.metrics id 24
+    let strip,shown = IntPtr 1,IntPtr 11
+    let target =
+        { strip=strip; tabs=[Rect(Pt(450,18),Sz(150,32));Rect(Pt(600,18),Sz(150,32))]; dock=TabDockTop; pinned=0
+          frame=frame; shown=shown; windows=[shown] }
+    let screen = Rect(Pt(0,0),Sz(1920,1080))
+    let aimAt (hit:TitleBarTarget option) pt = TitleBarDrop.aim metrics hit screen pt pt
+    // The gap follows the window's own tab, carried on it, not the pointer on its title bar.
+    check (TitleBarDrop.aim metrics (Some target) screen (Pt(150,frame.y+20)) (Pt(1000,30))=OnBar(strip,2))
+        "The gap followed the pointer, not the window's tab it carries"
+    check (TitleBarDrop.onBar metrics target (Pt(150,30))) "The bar did not reach across the group's width, past its tabs"
+    check (TitleBarDrop.onBar metrics target (Pt(150,frame.y+28))) "The title bar under the tabs was not taken with them"
+    check (not(TitleBarDrop.onBar metrics target (Pt(150,frame.y+40)))) "The bar reached below the title bar"
+    check (TitleBarDrop.insertion target (Pt(500,30))=0 && TitleBarDrop.insertion target (Pt(650,30))=1 && TitleBarDrop.insertion target (Pt(1000,30))=2)
+        "The gap aimed at was not the one nearest the pointer"
+    check (TitleBarDrop.insertion { target with pinned=1 } (Pt(500,30))=1) "A window carried by its title bar went ahead of a pinned tab"
+    check (aimAt (Some target) (Pt(150,frame.y+20))=OnBar(strip,0)) "Over the target's title bar the window did not join its tabs"
+    check (aimAt (Some target) (Pt(4,frame.y+20))=OffTarget) "In the band along the screen's edge the drop was not left to the system"
+    check (aimAt (Some target) (Pt(frame.x+20,frame.y+300))=OffTarget && aimAt (Some target) (Pt(frame.x+500,frame.bottom-5))=OffTarget)
+        "A window carried to another one's edge was aimed at a split"
+    check (aimAt None (Pt(600,frame.y+20))=OffTarget) "Over another window covering the target, the window joined it"
+    // Windows 11's snap bar host lies, click-through, over the top of the screen as a window moves.
+    use solid = new System.Windows.Forms.Form()
+    use clickThrough =
+        { new System.Windows.Forms.Form() with
+            override _.CreateParams =
+                let cp = base.CreateParams
+                cp.ExStyle <- cp.ExStyle ||| 0x20 ||| 0x80000
+                cp }
+    check (TitleBarDrag.clickThrough clickThrough.Handle && not(TitleBarDrag.clickThrough solid.Handle))
+        "A click-through window was taken to cover the title bar under it"
+
     // Commands
     let apply = SplitView.apply
     check (apply a (SplitWith(a,SideBySide)) Single=Single) "Splitting a tab with itself changed the layout"

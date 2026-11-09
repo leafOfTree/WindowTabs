@@ -67,8 +67,10 @@ and DragColumn = {
 /// the tab stays readable over a window shown small.
 and DragImage =
     static member windowScale = 0.5
-    /// The window shows a little of what lies under it; the tab is solid, to stay readable.
-    static member windowOpacity = 0.85f
+    /// Room round the window, in logical pixels, for the soft shadow that lifts it off what lies
+    /// under it, as Windows 11 lifts a window: drawn solid and rounded, a see-through picture read
+    /// as a screenshot, greyed over light windows.
+    static member shadow = 12
 
 and TabStripPlacment = {
     showInside: bool

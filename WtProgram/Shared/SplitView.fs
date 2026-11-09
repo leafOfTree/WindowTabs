@@ -362,6 +362,15 @@ module SplitGeometry =
             |> List.choose(fun side -> depth side |> Option.map(fun d -> d,side))
             |> List.sortBy fst |> List.tryHead |> Option.map snd
 
+    /// Where a split's place grows from: `thick` pixels wide, inside `half` along its outer edge,
+    /// the edge the tab dropped would take.
+    let edgeStrip (half:Rect) axis side thick =
+        match axis,side with
+        | SideBySide,First -> Rect(half.location,Sz(thick,half.height))
+        | SideBySide,Second -> Rect(Pt(half.right-thick,half.top),Sz(thick,half.height))
+        | Stacked,First -> Rect(half.location,Sz(half.width,thick))
+        | Stacked,Second -> Rect(Pt(half.left,half.bottom-thick),Sz(half.width,thick))
+
     /// Where a drop at the point goes and the rectangle it would take: within `outer` of the
     /// group's own edge the whole group splits (the root, []); further in, the pane under the
     /// point splits at its edge. A single window is the root too.
