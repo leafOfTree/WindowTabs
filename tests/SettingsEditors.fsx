@@ -87,6 +87,13 @@ let main() =
         assertTrue (menu.Shown=[|notepad|] && menu.Choice.Value.ItemImages.Length=2
                     && menu.Choice.Value.ItemImages |> Array.forall(fun image -> not(isNull image)))
                    "The app list showed an app the group has, or its apps have no icons"
+        assertTrue menu.Choice.Value.SearchCue.IsNone "A short app list opened under a search box"
+        menu.DropDown |> Option.iter(fun window -> window.Close())
+        // Many apps running: the list opens under a box that narrows it.
+        menu.UpdateApplications [ for index in 1..12 -> sprintf "app%d.exe" index ]
+        menu.Open(Rectangle(0,0,10,10),[])
+        assertTrue (menu.Choice.Value.SearchCue.IsSome && menu.Choice.Value.MaxRows.IsNone && menu.Choice.Value.RowHeight.IsSome)
+            "A long app list had no search box, cut its rows short or kept the settings' tall rows"
         menu.DropDown |> Option.iter(fun window -> window.Close())
         // An app's icon is the one its windows show, as in App rules above, not the exe's:
         // packaged apps carry a different one in the exe.

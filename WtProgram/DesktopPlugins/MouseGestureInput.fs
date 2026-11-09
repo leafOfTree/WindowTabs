@@ -45,6 +45,8 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
     let mutable table = MouseGestureRules.table()
     let holdTimer = new Timer(Interval=300)
     let hintTimer = new Timer(Interval=16)
+    /// How long the note that a press held still went back to the app stays, unless let go first.
+    let passedTimer = new Timer(Interval=800)
     let mutable hint : GestureHint option = None
     /// The stroke and pointer the hint was last shown for: with the pointer at rest, the reading
     /// and the hint's place are as they were, so there is nothing to measure or paint again.
@@ -107,10 +109,12 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
             else
                 let shell = try List.contains (OS().windowFromHwnd(hwnd).className) ["Shell_TrayWnd";"Shell_SecondaryTrayWnd";"Progman";"WorkerW"] with _ -> true
                 let path = if shell then "" else pathFor hwnd
-                if shell || path="" || not (MouseGestures.enabledFor table path) then None else Some(hwnd,path)
+                if shell || path="" || not (MouseGestures.takesPresses table path) then None else Some(hwnd,path)
     let reading() = MouseGestures.read scale (List.ofSeq points)
+    let hintWindow() = match hint with Some window -> window | None -> (let window = new GestureHint() in hint <- Some window; window)
     let hideHint() =
         hintTimer.Stop()
+        passedTimer.Stop()
         hinted <- (-1,Point.Empty)
         hint |> Option.iter(fun window -> window.hide())
     /// The window the stroke was drawn over goes to the front first: its press was kept from it.
@@ -144,14 +148,23 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
             | Pressed _ ->
                 state <- Passed
                 send [|mouse SendInputConstants.MOUSEEVENTF_RIGHTDOWN|]
+                // Said by the pointer, so the drag that follows is known to be the app's own.
+                if showHint then
+                    (hintWindow()).show(None,tr Strings.MouseGestures.passedToApp,false,[],Cursor.Position)
+                    passedTimer.Start()
             | _ -> ())
+        passedTimer.Tick.Add(fun _ ->
+            passedTimer.Stop()
+            match state with
+            | Drawing _ -> ()
+            | _ -> hint |> Option.iter(fun window -> window.hide()))
         hintTimer.Tick.Add(fun _ ->
             match state with
             | Drawing(_,path) when showHint ->
                 let now = points.Count,Cursor.Position
                 if now<>hinted then
                     hinted <- now
-                    let window = match hint with Some window -> window | None -> (let window = new GestureHint() in hint <- Some window; window)
+                    let window = hintWindow()
                     match reading() with
                     | NoGesture | Unrecognized -> window.hide()
                     | Gesture gesture ->
@@ -176,7 +189,11 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
                 holdTimer.Stop()
                 hideHint()
                 state <- Idle
-            match target x y with
+            // With Shift, Ctrl or Alt held, the press is the app's at once: no gesture uses them,
+            // and apps do, as File Explorer's longer menu and its copy or move on a right-drag.
+            let modified = [VirtualKeyCodes.VK_SHIFT;VirtualKeyCodes.VK_CONTROL;VirtualKeyCodes.VK_MENU]
+                           |> List.exists(fun key -> WinUserApi.GetAsyncKeyState(key)<0s)
+            match (if modified then None else target x y) with
             | Some(hwnd,path) ->
                 points.Clear()
                 points.Add((x,y))
@@ -214,7 +231,10 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
                 | _ -> ()
                 true
             | Cancelled -> state <- Idle; true
-            | Passed -> state <- Idle; false
+            | Passed ->
+                state <- Idle
+                hideHint()
+                false
             | Idle -> false
         elif msg=WindowMessages.WM_LBUTTONDOWN || msg=WindowMessages.WM_MBUTTONDOWN || msg=WindowMessages.WM_XBUTTONDOWN then
             let up = if msg=WindowMessages.WM_LBUTTONDOWN then WindowMessages.WM_LBUTTONUP
@@ -255,4 +275,5 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
             for subscription in subscriptions do subscription.Dispose()
             holdTimer.Dispose()
             hintTimer.Dispose()
+            passedTimer.Dispose()
             hint |> Option.iter(fun window -> window.Dispose())

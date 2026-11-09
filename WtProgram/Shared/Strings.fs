@@ -129,8 +129,9 @@ module Strings =
     /// The title bar drop setting.
     module TitleBarDrop =
         /// The setting's choices: always, only with a key held, or never.
-        let holdShift = { en="While holding Shift"; zh="按住 Shift 时"; ja="Shift を押している間"; ar="أثناء الضغط على Shift" }
-        let holdCtrl = { en="While holding Ctrl"; zh="按住 Ctrl 时"; ja="Ctrl を押している間"; ar="أثناء الضغط على Ctrl" }
+        /// Short enough that the dropdown keeps the width of the others in Settings.
+        let holdShift = { en="Hold Shift"; zh="按住 Shift"; ja="Shift 押下中"; ar="بضغط Shift" }
+        let holdCtrl = { en="Hold Ctrl"; zh="按住 Ctrl"; ja="Ctrl 押下中"; ar="بضغط Ctrl" }
         let off = { en="Off"; zh="关闭"; ja="オフ"; ar="إيقاف" }
 
     /// Settings window chrome and page titles.
@@ -937,6 +938,10 @@ module Strings =
         let resetEverywhere = { en="Restore the default gestures for all apps"; zh="恢复默认的全局手势"; ja="全体のジェスチャーを既定に戻す"; ar="استعادة الإيماءات الافتراضية لكل التطبيقات" }
         let resetApp = { en="Restore this app's default gestures"; zh="恢复这个程序的默认手势"; ja="このアプリのジェスチャーを既定に戻す"; ar="استعادة الإيماءات الافتراضية لهذا التطبيق" }
         let legend = { en="Press the right button at the circle, release at the arrow"; zh="圆圈处按下右键，到箭头处松开"; ja="円で右ボタンを押し、矢印で離します"; ar="اضغط الزر الأيمن عند الدائرة وحرّره عند السهم" }
+        let holdToDrag = { en="Hold still a moment, or hold Shift, Ctrl or Alt, for the app's own right button"; zh="按住不动片刻，或按住 Shift、Ctrl、Alt，右键就交给应用"; ja="少し止めるか Shift・Ctrl・Alt を押すと、右ボタンはアプリのものになります"; ar="اثبت لحظة أو اضغط Shift أو Ctrl أو Alt ليصبح الزر الأيمن للتطبيق" }
+        /// By the pointer once a right press held still is given back to the app: dragging is then
+        /// the app's right-drag, and letting go its menu.
+        let passedToApp = { en="Right button to the app"; zh="右键已交给应用"; ja="右ボタンをアプリへ"; ar="الزر الأيمن للتطبيق" }
         let browserPreset = { en="browser preset"; zh="浏览器预设"; ja="ブラウザーのプリセット"; ar="الإعداد المسبق للمتصفح" }
         let explorerPreset = { en="File Explorer preset"; zh="资源管理器预设"; ja="エクスプローラーのプリセット"; ar="الإعداد المسبق لمستكشف الملفات" }
         let presetFilled (preset:LocalizedText) =
@@ -948,6 +953,11 @@ module Strings =
               zh=sprintf "已在 %s 中关闭手势，包括全局手势。打开左边的开关即可恢复。" app
               ja=sprintf "%s ではジェスチャーがオフです (全体のものも含む)。左のスイッチをオンにすると戻ります。" app
               ar=sprintf "الإيماءات متوقفة في %s، بما فيها إيماءات كل التطبيقات. شغّل مفتاحه لاستخدامها مجددًا." app }
+        let everywhereOff = { en="The gestures for all apps are off; apps on the list use only their own. Turn its switch on to use them again."
+                              zh="全局手势已关闭，列表中的程序只用自己的手势。打开左边的开关即可恢复。"
+                              ja="全体のジェスチャーはオフです。一覧のアプリは自分のジェスチャーだけを使います。左のスイッチをオンにすると戻ります。"
+                              ar="إيماءات كل التطبيقات متوقفة، وتستخدم التطبيقات في القائمة إيماءاتها فقط. شغّل مفتاحها لاستخدامها مجددًا." }
+        let useEverywhere = { en="Use the gestures for all apps"; zh="使用全局手势"; ja="全体のジェスチャーを使う"; ar="استخدام إيماءات كل التطبيقات" }
         /// A gesture's strokes in words, as a screen reader says it and the dialog names it.
         let drawn (gesture:string) =
             let word index (en:string[]) (zh:string[]) (ja:string[]) (ar:string[]) =
@@ -1023,6 +1033,7 @@ module Strings =
         let ungroup = { en="Ungroup"; zh="解除分组"; ja="グループを解除"; ar="إلغاء التجميع" }
         let removeFromGroup = { en="Remove from group"; zh="从分组中移除"; ja="グループから外す"; ar="إزالة من المجموعة" }
         let browseApplication = { en="Browse…"; zh="浏览…"; ja="参照…"; ar="استعراض…" }
+        let findApplication = { en="Find an app"; zh="查找程序"; ja="アプリを検索"; ar="ابحث عن تطبيق" }
         let applicationFiles = { en="Applications (*.exe)|*.exe"; zh="应用程序 (*.exe)|*.exe"; ja="アプリ (*.exe)|*.exe"; ar="التطبيقات (*.exe)|*.exe" }
         let allWindows = { en="All windows"; zh="全部窗口"; ja="すべてのウィンドウ"; ar="كل النوافذ" }
         let targetGroup = { en="Target group"; zh="目标组"; ja="宛先グループ"; ar="المجموعة المستهدفة" }

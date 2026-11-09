@@ -1057,8 +1057,12 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
         offset <- clamp value
         if list.Top<> -offset then list.Top <- -offset
         bar.configure(maximum(),this.ClientSize.Height,offset)
+        bar.Visible <- maximum()>0
     let smooth = new SmoothScroller((fun () -> offset),clamp,apply)
-    let content() = max 1 (this.ClientSize.Width-bar.Width)
+    /// The rows take the whole width, so their highlight keeps the same margin on both sides, and
+    /// the thin bar lies over their right edge only while they scroll, as Windows 11's does: the
+    /// width never changes, so narrowing a search never moves the rows sideways.
+    let content() = max 1 this.ClientSize.Width
     let arrange() =
         let size = this.ClientSize
         let content = content()
@@ -1101,7 +1105,8 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
         this.Resize.Add(fun _ -> arrange())
         this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
     member _.List = list
-    /// The width the scrollbar takes at the right, kept whether the rows overflow or not.
+    /// The width of the scrollbar over the rows' right edge: lists leave that much past their
+    /// longest label, so the bar never covers text.
     member _.BarWidth = bar.Width
     override this.OnGotFocus(e) = base.OnGotFocus(e); list.Focus() |> ignore
     override this.OnMouseWheel(e) =
@@ -1342,6 +1347,9 @@ type SettingsCombo(items:string[]) as this =
     member val SearchCue : string option = None with get,set
     /// The most rows shown at once; more scroll.
     member val MaxRows : int option = None with get,set
+    /// Each row's height in logical pixels, where a long list should show whole: tighter than the
+    /// settings' own rows, never tighter than its text.
+    member val RowHeight : int option = None with get,set
     /// Choices a line is drawn above in the list, as a menu parts its items.
     member val SeparatorsBefore : int list = [] with get,set
     /// A line over the list saying what the choices are, in small muted type, for a menu.
@@ -1520,7 +1528,10 @@ type SettingsCombo(items:string[]) as this =
             // Native handle creation can change item metrics at non-100% DPI.
             // Realize the list first, then size the client area using its final row height.
             list.Handle |> ignore
-            list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
+            list.ItemHeight <-
+                match this.RowHeight with
+                | Some height -> max (Dpi.scale height) (list.Font.Height+Dpi.scale 6)
+                | None -> max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
             // As tall as all the choices, or as MaxRows of them, whatever a search leaves.
             let rows = match this.MaxRows with Some most -> min most shown.Count | None -> shown.Count
             let searchHeight = match search with Some host -> host.Control.Height+Dpi.scale 4 | None -> 0
