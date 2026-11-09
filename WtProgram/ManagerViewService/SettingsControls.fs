@@ -1057,8 +1057,12 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
         offset <- clamp value
         if list.Top<> -offset then list.Top <- -offset
         bar.configure(maximum(),this.ClientSize.Height,offset)
+        bar.Visible <- maximum()>0
     let smooth = new SmoothScroller((fun () -> offset),clamp,apply)
-    let content() = max 1 (this.ClientSize.Width-bar.Width)
+    /// The rows take the whole width, so their highlight keeps the same margin on both sides, and
+    /// the thin bar lies over their right edge only while they scroll, as Windows 11's does: the
+    /// width never changes, so narrowing a search never moves the rows sideways.
+    let content() = max 1 this.ClientSize.Width
     let arrange() =
         let size = this.ClientSize
         let content = content()
@@ -1101,7 +1105,8 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
         this.Resize.Add(fun _ -> arrange())
         this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
     member _.List = list
-    /// The width the scrollbar takes at the right, kept whether the rows overflow or not.
+    /// The width of the scrollbar over the rows' right edge: lists leave that much past their
+    /// longest label, so the bar never covers text.
     member _.BarWidth = bar.Width
     override this.OnGotFocus(e) = base.OnGotFocus(e); list.Focus() |> ignore
     override this.OnMouseWheel(e) =
