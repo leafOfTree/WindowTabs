@@ -6,6 +6,24 @@ open System.Runtime.InteropServices
 open System.Text
 open System.Windows.Forms
 
+/// What WindowTabs holds that the process's own counters do not tell apart, for the Support
+/// page's resources: event hooks, and the pictures kept for covered tabs.
+module ResourceCounters =
+    let mutable private hooks = 0
+    /// Hooks heard from every app on the desktop, not one process.
+    let mutable private globalHooks = 0
+    let mutable private captureBytes = 0L
+    let hookAdded isGlobal =
+        Threading.Interlocked.Increment(&hooks) |> ignore
+        if isGlobal then Threading.Interlocked.Increment(&globalHooks) |> ignore
+    let hookRemoved isGlobal =
+        Threading.Interlocked.Decrement(&hooks) |> ignore
+        if isGlobal then Threading.Interlocked.Decrement(&globalHooks) |> ignore
+    let capturesChanged (delta:int64) = Threading.Interlocked.Add(&captureBytes,delta) |> ignore
+    let hookCount() = Threading.Volatile.Read(&hooks)
+    let globalHookCount() = Threading.Volatile.Read(&globalHooks)
+    let captureByteCount() = Threading.Interlocked.Read(&captureBytes)
+
 module FullScreenWindow =
     /// The window covers its whole monitor, as one in full screen does; by the same rule as the
     /// full-screen pause, so a maximized window over an auto-hidden taskbar is not taken for one.
@@ -263,11 +281,15 @@ type OS()=
         let del = WINEVENTPROC(proc)
         let delHandle = GCHandle.Alloc(del)
         let hhook = WinUserApi.SetWinEventHook(int(min), int(max), IntPtr.Zero, del, pid, tid, 0)
+        let isGlobal = pid=0 && tid=0
+        let counted = hhook<>IntPtr.Zero
+        if counted then ResourceCounters.hookAdded isGlobal
         let mutable disposed = 0
-        { 
+        {
             new IDisposable with
             member this.Dispose() =
                 if Threading.Interlocked.Exchange(&disposed,1)=0 then
+                    if counted then ResourceCounters.hookRemoved isGlobal
                     try
                         WinUserApi.UnhookWinEvent(hhook).ignore
                         delHandle.Free()

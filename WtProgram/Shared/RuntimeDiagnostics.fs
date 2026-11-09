@@ -47,6 +47,117 @@ module RuntimeMetrics =
             maximumMilliseconds <- max maximumMilliseconds lastMilliseconds)
     let snapshot() = lock gate (fun () -> scans,lastMilliseconds,maximumMilliseconds)
 
+/// What the Support page charts, in its order.
+type ResourceMetric =
+    | Cpu | PrivateMemory | WorkingSet | ManagedHeap | TabPictures | Threads | Handles
+    | GdiObjects | UserObjects | EventHooks | DesktopHooks | Groups | Tabs
+
+/// One reading of the process. CPU is a share of all processors since the reading before, as
+/// Task Manager shows it; memory in megabytes, tab pictures in kilobytes.
+type ResourceSample = {
+    time: DateTime
+    cpu: float32; privateMB: float32; workingSetMB: float32; managedMB: float32; picturesKB: float32
+    threads: float32; handles: float32; gdi: float32; user: float32
+    hooks: float32; desktopHooks: float32; groups: float32; tabs: float32 }
+    with
+    member s.value metric =
+        match metric with
+        | Cpu -> s.cpu | PrivateMemory -> s.privateMB | WorkingSet -> s.workingSetMB | ManagedHeap -> s.managedMB
+        | TabPictures -> s.picturesKB | Threads -> s.threads | Handles -> s.handles | GdiObjects -> s.gdi
+        | UserObjects -> s.user | EventHooks -> s.hooks | DesktopHooks -> s.desktopHooks | Groups -> s.groups | Tabs -> s.tabs
+    static member metrics = [Cpu;PrivateMemory;WorkingSet;ManagedHeap;TabPictures;Threads;Handles;GdiObjects;UserObjects;EventHooks;DesktopHooks;Groups;Tabs]
+
+/// The last hour of readings as taken, and a day of them a minute at a time: the minute's
+/// average CPU and its highest of everything else, so a short peak still shows.
+type ResourceHistory(recentCapacity:int, minuteCapacity:int) =
+    let gate = obj()
+    let recentQueue = Collections.Generic.Queue<ResourceSample>()
+    let minuteQueue = Collections.Generic.Queue<ResourceSample>()
+    /// The readings of the minute still under way.
+    let current = ResizeArray<ResourceSample>()
+    let minuteOf (time:DateTime) = DateTime(time.Ticks - time.Ticks % TimeSpan.TicksPerMinute,time.Kind)
+    let summarize (samples:ResizeArray<ResourceSample>) =
+        let peak (read:ResourceSample -> float32) = samples |> Seq.map read |> Seq.max
+        { time=minuteOf samples.[0].time
+          cpu=(samples |> Seq.sumBy(fun s -> s.cpu))/float32 samples.Count
+          privateMB=peak(fun s -> s.privateMB); workingSetMB=peak(fun s -> s.workingSetMB); managedMB=peak(fun s -> s.managedMB)
+          picturesKB=peak(fun s -> s.picturesKB); threads=peak(fun s -> s.threads); handles=peak(fun s -> s.handles)
+          gdi=peak(fun s -> s.gdi); user=peak(fun s -> s.user); hooks=peak(fun s -> s.hooks)
+          desktopHooks=peak(fun s -> s.desktopHooks); groups=peak(fun s -> s.groups); tabs=peak(fun s -> s.tabs) }
+    member _.add(sample:ResourceSample) =
+        lock gate (fun () ->
+            recentQueue.Enqueue(sample)
+            while recentQueue.Count>recentCapacity do recentQueue.Dequeue() |> ignore
+            if current.Count>0 && minuteOf current.[0].time<>minuteOf sample.time then
+                minuteQueue.Enqueue(summarize current)
+                while minuteQueue.Count>minuteCapacity do minuteQueue.Dequeue() |> ignore
+                current.Clear()
+            current.Add(sample))
+    member _.recent = lock gate (fun () -> recentQueue.ToArray())
+    /// A minute at a time, the minute under way last.
+    member _.minutes = lock gate (fun () -> Array.append (minuteQueue.ToArray()) (if current.Count>0 then [|summarize current|] else [||]))
+    member _.latest = lock gate (fun () -> if recentQueue.Count=0 then None else Some(Seq.last recentQueue))
+
+/// Reads the process every ten seconds on the main thread while WindowTabs runs; kept in memory
+/// only, a day at most.
+module ResourceMonitor =
+    [<DllImport("user32.dll")>]
+    extern uint32 private GetGuiResources(IntPtr current, uint32 flags)
+    let intervalMs = 10000
+    let history = ResourceHistory(3600/(intervalMs/1000),24*60)
+    /// When the last reading was taken and the CPU time by then: the first is measured from start.
+    let mutable private last : (DateTime * TimeSpan) option = None
+    let read (groups:int, tabs:int) =
+        use current = Process.GetCurrentProcess()
+        let now = DateTime.UtcNow
+        let cpuTime = current.TotalProcessorTime
+        let since,before = last |> Option.defaultWith(fun () -> current.StartTime.ToUniversalTime(),TimeSpan.Zero)
+        last <- Some(now,cpuTime)
+        let elapsed = (now-since).TotalMilliseconds
+        let cpu = if elapsed<=0.0 then 0.0 else (cpuTime-before).TotalMilliseconds/elapsed/float Environment.ProcessorCount*100.0
+        let mb (bytes:int64) = float32(float bytes/1048576.0)
+        { time=now; cpu=float32(max 0.0 (min 100.0 cpu))
+          privateMB=mb current.PrivateMemorySize64; workingSetMB=mb current.WorkingSet64; managedMB=mb (GC.GetTotalMemory(false))
+          picturesKB=float32(float (ResourceCounters.captureByteCount())/1024.0)
+          threads=float32 current.Threads.Count; handles=float32 current.HandleCount
+          gdi=float32(GetGuiResources(current.Handle,0u)); user=float32(GetGuiResources(current.Handle,1u))
+          hooks=float32(ResourceCounters.hookCount()); desktopHooks=float32(ResourceCounters.globalHookCount())
+          groups=float32 groups; tabs=float32 tabs }
+    let sample counts =
+        try history.add(read(counts()))
+        with error -> Trace.TraceWarning("Resource sample failed: {0}",error.Message)
+    /// Samples now and every interval after, on the calling thread, until disposed.
+    let start (counts:unit -> int * int) =
+        let timer = new Windows.Forms.Timer(Interval=intervalMs)
+        timer.Tick.Add(fun _ -> sample counts)
+        sample counts
+        timer.Start()
+        timer :> IDisposable
+    /// Each metric now, at its lowest and highest over the day kept, and an hour before, for the
+    /// troubleshooting report.
+    let summary() =
+        let minutes = history.minutes
+        let result = JObject()
+        match history.latest with
+        | None -> ()
+        | Some latest ->
+            let round (value:float32) = Math.Round(float value,1)
+            // Only once the day kept reaches back that far.
+            let hourAgo = minutes |> Array.tryFind(fun s -> s.time>=latest.time.AddMinutes(-60.0) && s.time<=latest.time.AddMinutes(-59.0))
+            let all = Array.append minutes history.recent
+            let first = if minutes.Length>0 then minutes.[0].time else latest.time
+            result.["minutes"] <- JValue(int (latest.time-first).TotalMinutes)
+            for m in ResourceSample.metrics do
+                let values = all |> Array.map(fun s -> s.value m)
+                let entry = JObject()
+                entry.["now"] <- JValue(round(latest.value m))
+                entry.["min"] <- JValue(round(Array.min values))
+                entry.["max"] <- JValue(round(Array.max values))
+                hourAgo |> Option.iter(fun s -> entry.["hourAgo"] <- JValue(round(s.value m)))
+                let name = sprintf "%A" m
+                result.[name.Substring(0,1).ToLowerInvariant()+name.Substring(1)] <- entry
+        result
+
 module RuntimeDiagnostics =
     [<DllImport("user32.dll")>]
     extern uint32 private GetGuiResources(IntPtr current, uint32 flags)
@@ -286,6 +397,11 @@ module RuntimeDiagnostics =
                     JProperty("uptimeMinutes",uptime))
         recentCrashes() |> Option.iter(fun crashes -> result.["crashes"] <- crashes)
         result.["resources"] <- JObject(JProperty("gdiObjects",gdi),JProperty("userObjects",user),JProperty("handles",handles),
-                                        JProperty("privateMB",Math.Round(float memory/1048576.0,1)))
+                                        JProperty("privateMB",Math.Round(float memory/1048576.0,1)),
+                                        JProperty("eventHooks",ResourceCounters.hookCount()),
+                                        JProperty("desktopHooks",ResourceCounters.globalHookCount()),
+                                        JProperty("tabPicturesKB",Math.Round(float (ResourceCounters.captureByteCount())/1024.0,1)))
+        // How they moved over the day kept: a leak climbs, a busy moment peaks and falls back.
+        result.["resourceHistory"] <- ResourceMonitor.summary()
         result.["scans"] <- JObject(JProperty("count",scans),JProperty("lastMs",Math.Round(last,1)),JProperty("maxMs",Math.Round(maximum,1)))
         result

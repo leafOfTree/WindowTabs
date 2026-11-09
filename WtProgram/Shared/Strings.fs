@@ -1165,3 +1165,24 @@ module Strings =
         let releases = { en="Check Releases"; zh="查看发布版本"; ja="リリースを確認"; ar="التحقق من الإصدارات" }
         let releasesHint = { en="Check Releases ↗"; zh="查看发布版本 ↗"; ja="リリースを確認 ↗"; ar="التحقق من الإصدارات ↗" }
         let openCrashLog = { en="Crash log"; zh="崩溃日志"; ja="クラッシュログ"; ar="سجل الأعطال" }
+        let resourcesTitle = { en="Resources"; zh="资源占用"; ja="リソース"; ar="الموارد" }
+        let resourcesHelp = { en="Read every 10 seconds and kept for 24 hours, in memory only. Point at a chart to see a past value."
+                              zh="每 10 秒读取一次，保留 24 小时，只存在内存中。鼠标指向图表可查看过去的数值。"
+                              ja="10 秒ごとに読み取り、メモリ内にのみ 24 時間保持します。グラフをポイントすると過去の値を表示します。"
+                              ar="تُقرأ كل 10 ثوانٍ ويُحتفظ بها لمدة 24 ساعة في الذاكرة فقط. أشر إلى مخطط لرؤية قيمة سابقة." }
+        let lastHour = { en="Last hour"; zh="最近 1 小时"; ja="過去 1 時間"; ar="آخر ساعة" }
+        let lastDay = { en="Last 24 hours"; zh="最近 24 小时"; ja="過去 24 時間"; ar="آخر 24 ساعة" }
+        let collecting = { en="Collecting…"; zh="正在收集…"; ja="収集中…"; ar="جارٍ الجمع…" }
+        let cpu = { en="CPU"; zh="CPU"; ja="CPU"; ar="المعالج" }
+        let privateMemory = { en="Private memory"; zh="专用内存"; ja="プライベート メモリ"; ar="الذاكرة الخاصة" }
+        let workingSet = { en="Working set"; zh="工作集"; ja="ワーキング セット"; ar="مجموعة العمل" }
+        let managedHeap = { en=".NET heap"; zh=".NET 堆"; ja=".NET ヒープ"; ar="كومة .NET" }
+        let tabPictures = { en="Tab pictures"; zh="标签页截图"; ja="タブの画像"; ar="صور علامات التبويب" }
+        let threads = { en="Threads"; zh="线程"; ja="スレッド"; ar="سلاسل التنفيذ" }
+        let handles = { en="Handles"; zh="句柄"; ja="ハンドル"; ar="المقابض" }
+        let gdiObjects = { en="GDI objects"; zh="GDI 对象"; ja="GDI オブジェクト"; ar="كائنات GDI" }
+        let userObjects = { en="USER objects"; zh="USER 对象"; ja="USER オブジェクト"; ar="كائنات USER" }
+        let eventHooks = { en="Event hooks"; zh="事件钩子"; ja="イベント フック"; ar="خطافات الأحداث" }
+        let desktopHooks = { en="Desktop-wide hooks"; zh="全桌面钩子"; ja="デスクトップ全体のフック"; ar="خطافات على مستوى سطح المكتب" }
+        let groups = { en="Groups"; zh="组"; ja="グループ"; ar="المجموعات" }
+        let tabs = { en="Tabs"; zh="标签页"; ja="タブ"; ar="علامات التبويب" }

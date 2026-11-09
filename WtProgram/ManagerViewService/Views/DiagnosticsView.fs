@@ -75,6 +75,153 @@ module SettingsFile =
             replace fresh "before-reset" (tr Strings.General.resetTitle) (fun backup -> tr (Strings.General.resetRestarting backup))
         | _ -> ()
 
+/// The Support page's resources: a tile for each, with its value now, its lowest and highest over
+/// the range shown and a line across that range. Pointing at a line shows that moment instead.
+type ResourceCharts() as this =
+    inherit Control()
+    let tiles =
+        [Cpu,Strings.Diagnostics.cpu; PrivateMemory,Strings.Diagnostics.privateMemory; WorkingSet,Strings.Diagnostics.workingSet
+         ManagedHeap,Strings.Diagnostics.managedHeap; TabPictures,Strings.Diagnostics.tabPictures; Threads,Strings.Diagnostics.threads
+         Handles,Strings.Diagnostics.handles; GdiObjects,Strings.Diagnostics.gdiObjects; UserObjects,Strings.Diagnostics.userObjects
+         EventHooks,Strings.Diagnostics.eventHooks; DesktopHooks,Strings.Diagnostics.desktopHooks
+         Groups,Strings.Diagnostics.groups; Tabs,Strings.Diagnostics.tabs]
+    let mutable day = false
+    let mutable pointer : Point option = None
+    let timer = new Timer(Interval=ResourceMonitor.intervalMs)
+    let samples() = if day then ResourceMonitor.history.minutes else ResourceMonitor.history.recent
+    let span() = if day then TimeSpan.FromHours(24.0) else TimeSpan.FromHours(1.0)
+    let format metric (value:float32) =
+        match metric with
+        | Cpu -> sprintf "%.1f%%" value
+        | PrivateMemory | WorkingSet | ManagedHeap -> sprintf "%.1f MB" value
+        | TabPictures -> if value>=1024.0f then sprintf "%.1f MB" (value/1024.0f) else sprintf "%.0f KB" value
+        | _ -> sprintf "%.0f" value
+    // Sizes in logical pixels, scaled where they are used.
+    let tileWidth,tileHeight,gap = 180,96,16
+    let columns width = max 1 ((width+Dpi.scale gap)/(Dpi.scale tileWidth+Dpi.scale gap))
+    let heightFor width =
+        let rows = (tiles.Length+columns width-1)/columns width
+        rows*Dpi.scale tileHeight + (rows-1)*Dpi.scale gap + Dpi.scale 8
+    let tileBounds index =
+        let count = columns this.ClientSize.Width
+        let width = (this.ClientSize.Width-(count-1)*Dpi.scale gap)/count
+        Rectangle((index%count)*(width+Dpi.scale gap),(index/count)*(Dpi.scale tileHeight+Dpi.scale gap),width,Dpi.scale tileHeight)
+    let chartBounds (tile:Rectangle) =
+        Rectangle(tile.X,tile.Bottom-Dpi.scale 40,tile.Width,Dpi.scale 36)
+    /// A screen reader reads the values now, as the tiles show them.
+    let describe() =
+        this.AccessibleDescription <-
+            match ResourceMonitor.history.latest with
+            | None -> tr Strings.Diagnostics.collecting
+            | Some latest -> tiles |> List.map(fun (metric,caption) -> tr caption + " " + format metric (latest.value metric)) |> String.concat "; "
+    do
+        this.SetStyle(ControlStyles.AllPaintingInWmPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.UserPaint ||| ControlStyles.ResizeRedraw,true)
+        this.AccessibleRole <- AccessibleRole.Chart
+        this.AccessibleName <- tr Strings.Diagnostics.resourcesTitle
+        this.Margin <- Padding(0,Dpi.scale 8,0,Dpi.scale 8)
+        timer.Tick.Add(fun _ -> if this.Visible then this.Invalidate(); describe())
+        describe()
+
+    /// The last 24 hours, a minute at a time, instead of the last hour.
+    member _.Day
+        with get() = day
+        and set value = day <- value; this.Invalidate()
+
+    override this.OnHandleCreated(e) =
+        base.OnHandleCreated(e)
+        timer.Start()
+    override this.OnSizeChanged(e) =
+        base.OnSizeChanged(e)
+        let height = heightFor this.ClientSize.Width
+        if this.Height<>height then this.Height <- height
+    override this.GetPreferredSize(proposed) = Size(proposed.Width,heightFor proposed.Width)
+    override this.OnMouseMove(e) =
+        base.OnMouseMove(e)
+        pointer <- Some e.Location
+        this.Invalidate()
+    override this.OnMouseLeave(e) =
+        base.OnMouseLeave(e)
+        pointer <- None
+        this.Invalidate()
+    override this.Dispose(disposing) =
+        if disposing then timer.Dispose()
+        base.Dispose(disposing)
+
+    override this.OnPaint(e) =
+        let g = e.Graphics
+        let p = SettingsColors.current()
+        let highContrast = SystemInformation.HighContrast
+        g.Clear(this.BackColor)
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        let captionFont = SettingsUi.font (SettingsUi.uiFamily()) 9.5f FontStyle.Regular
+        let valueFont = SettingsUi.font (SettingsUi.uiSemiboldFamily()) 14.0f FontStyle.Regular
+        let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis
+        let all = samples()
+        let now = match ResourceMonitor.history.latest with Some latest -> latest.time | None -> DateTime.UtcNow
+        let start = now-span()
+        let shown = all |> Array.filter(fun s -> s.time>=start)
+        tiles |> List.iteri(fun index (metric,caption) ->
+            let tile = tileBounds index
+            let chart = chartBounds tile
+            let values = shown |> Array.map(fun s -> s.value metric)
+            let xOf (time:DateTime) = float32 chart.Left + float32((time-start).TotalMilliseconds/(span()).TotalMilliseconds)*float32 chart.Width
+            // The sample under the pointer, when it is over this tile.
+            let hovered =
+                match pointer with
+                | Some point when tile.Contains(point) && shown.Length>0 ->
+                    Some(shown |> Array.minBy(fun s -> abs(xOf s.time-float32 point.X)))
+                | _ -> None
+            let captionHeight = captionFont.Height
+            let rangeText,valueText =
+                match hovered,ResourceMonitor.history.latest with
+                | Some s,_ -> s.time.ToLocalTime().ToString(if day then "HH:mm" else "HH:mm:ss"),format metric (s.value metric)
+                | None,Some latest when values.Length>0 ->
+                    // The range only where the figure moved, as shown.
+                    let low,high = format metric (Array.min values),format metric (Array.max values)
+                    (if low=high then "" else sprintf "%s – %s" low high),format metric (latest.value metric)
+                | _ -> "",tr Strings.Diagnostics.collecting
+            let rangeWidth = TextRenderer.MeasureText(g,rangeText,captionFont,Size(Int32.MaxValue,Int32.MaxValue),flags).Width
+            TextRenderer.DrawText(g,tr caption,captionFont,Rectangle(tile.X,tile.Y,tile.Width-rangeWidth-Dpi.scale 8,captionHeight),p.description,flags)
+            TextRenderer.DrawText(g,rangeText,captionFont,Rectangle(tile.Right-rangeWidth,tile.Y,rangeWidth,captionHeight),p.description,flags)
+            TextRenderer.DrawText(g,valueText,valueFont,Rectangle(tile.X,tile.Y+captionHeight+Dpi.scale 2,tile.Width,valueFont.Height),p.text,flags)
+            use baseline = new Pen(p.border)
+            g.DrawLine(baseline,chart.Left,chart.Bottom,chart.Right,chart.Bottom)
+            if values.Length>0 then
+                let low,high = Array.min values,Array.max values
+                // CPU from zero; the rest around their own values, so a slow climb shows, with
+                // a least height so steady figures lie flat instead of magnifying noise.
+                let bottom,top =
+                    if metric=Cpu then 0.0f,max 1.0f (high*1.15f)
+                    else
+                        let least = max 1.0f (high*0.1f)
+                        if high-low>=least then max 0.0f (low-(high-low)*0.1f),high+(high-low)*0.1f
+                        else let bottom = max 0.0f (high-least*0.6f) in bottom,bottom+least
+                let yOf (value:float32) = float32 chart.Bottom - (value-bottom)/(top-bottom)*float32 chart.Height
+                let points = shown |> Array.map(fun s -> PointF(xOf s.time,yOf(s.value metric)))
+                let line = if highContrast then SystemColors.Highlight else p.accent
+                if points.Length=1 then
+                    use brush = new SolidBrush(line)
+                    let r = float32(Dpi.scale 2)
+                    g.FillEllipse(brush,points.[0].X-r,points.[0].Y-r,2.0f*r,2.0f*r)
+                else
+                    if not highContrast then
+                        use area = new Drawing2D.GraphicsPath()
+                        area.AddLines(points)
+                        area.AddLine(points.[points.Length-1],PointF(points.[points.Length-1].X,float32 chart.Bottom))
+                        area.AddLine(PointF(points.[points.Length-1].X,float32 chart.Bottom),PointF(points.[0].X,float32 chart.Bottom))
+                        area.CloseFigure()
+                        use fill = new SolidBrush(Color.FromArgb(40,line))
+                        g.FillPath(fill,area)
+                    use pen = new Pen(line,float32(Dpi.scale 2)*0.75f)
+                    g.DrawLines(pen,points)
+                hovered |> Option.iter(fun s ->
+                    use marker = new Pen(p.muted)
+                    let x = xOf s.time
+                    g.DrawLine(marker,x,float32 chart.Top,x,float32 chart.Bottom)
+                    use dot = new SolidBrush(line)
+                    let r = float32(Dpi.scale 3)
+                    g.FillEllipse(dot,x-r,yOf(s.value metric)-r,2.0f*r,2.0f*r)))
+
 type DiagnosticsView() =
     let view = new SettingsTextView()
     let text = view.TextBox
@@ -198,6 +345,17 @@ type DiagnosticsView() =
         let reset = SettingsUi.button (tr Strings.General.reset)
         reset.Click.Add(run SettingsFile.reset)
         SettingsUi.settingRow card "settings-reset" reset
+        // What WindowTabs uses, over the last hour or day, before the report that copies it.
+        let charts = new ResourceCharts()
+        let range = SettingsUi.choice [|tr Strings.Diagnostics.lastHour;tr Strings.Diagnostics.lastDay|]
+        range.AccessibleName <- tr Strings.Diagnostics.resourcesTitle
+        range.SelectedIndex <- 0
+        range.SelectedIndexChanged.Add(fun _ -> charts.Day <- range.SelectedIndex=1)
+        SettingsUi.sectionHeading table (tr Strings.Diagnostics.resourcesTitle) [range]
+        SettingsUi.note table (tr Strings.Diagnostics.resourcesHelp)
+        let resources = new SettingsCard()
+        SettingsUi.add table resources
+        SettingsUi.add resources charts
         SettingsUi.section table (tr Strings.Diagnostics.reportTitle)
         SettingsUi.note table (tr Strings.Diagnostics.description)
         table :> Control

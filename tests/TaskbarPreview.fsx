@@ -305,6 +305,7 @@ let main() =
         check (GroupIconFile.load program |> Option.exists(fun icon -> let ok = icon.Width>0 in icon.Dispose(); ok)) "A program's icon could not be used for a group"
         check (GroupIconFile.load (IO.Path.Combine(folder,"gone.png")) = None) "A missing picture was used for a group"
     let captures = new TabCaptures()
+    let picturesBefore = ResourceCounters.captureByteCount()
     let hwnd = IntPtr(0x1234)
     let size = Size(1600,1000)
     let mutable printed = 0
@@ -317,6 +318,8 @@ let main() =
     let pixelBytes = int64(TabCaptures.maxSide * TabCaptures.maxSide * 1000 / 1600 * 4)
     check (captures.keptBytes > 0L && captures.keptBytes < pixelBytes/4L)
           (sprintf "A kept capture held %d bytes, against %d as pixels" captures.keptBytes pixelBytes)
+    // The Support page's resources count what the kept captures hold.
+    check (ResourceCounters.captureByteCount()-picturesBefore=captures.keptBytes) "The resources did not count a kept capture"
     shown.bitmap.Dispose()
     // Hidden and printing black, the kept capture comes back at the window's size.
     let black = solidImage (Sz(1600,1000)) Color.Black
@@ -343,8 +346,16 @@ let main() =
     let unknown = solidImage (Sz(64,48)) Color.Black
     let withoutCapture = captures.preview hwnd (Size(64,48)) false false (fun () -> unknown)
     check (obj.ReferenceEquals(withoutCapture.bitmap, unknown.bitmap) && captures.count = 0) "A forgotten tab kept its capture"
+    check (ResourceCounters.captureByteCount()=picturesBefore) "The resources still counted a forgotten tab's capture"
     withoutCapture.bitmap.Dispose()
     (captures :> IDisposable).Dispose()
+    // Captures still kept as their group closes leave the count with it.
+    do
+        use closing = new TabCaptures()
+        use picture = (drawn (Sz(400,300))).bitmap
+        closing.remember (IntPtr(0x5678)) picture
+        check (ResourceCounters.captureByteCount()>picturesBefore) "The resources did not count a second capture"
+    check (ResourceCounters.captureByteCount()=picturesBefore) "The resources still counted a closed group's captures"
     printfn "PASS: preview ownership on success/failure, crop identity, composition, 400 native bitmap publications without forced GC, centred thumbnails, the badged taskbar icon and stand-in captures for hidden tabs."
 
 TestInit.run main

@@ -530,6 +530,15 @@ let main() =
             disposableSupport.control.Dispose()
             let sharedFont = SettingsUi.font "Consolas" 10.5f FontStyle.Regular
             check (sharedFont.GetHeight()>0.0f) "Closing diagnostics disposed its shared font"
+        // An hour of readings for the resource charts, memory climbing slowly.
+        do
+            let now = DateTime.UtcNow
+            for i in 0..359 do
+                let f = float32 i
+                ResourceMonitor.history.add
+                    { time=now.AddSeconds(float(i-359)*10.0); cpu=(if i%40=0 then 3.0f else 0.2f)
+                      privateMB=70.0f+f*0.05f; workingSetMB=110.0f+f*0.05f; managedMB=18.0f+float32(i%30)*0.3f; picturesKB=600.0f+f
+                      threads=27.0f; handles=800.0f; gdi=120.0f; user=340.0f; hooks=160.0f; desktopHooks=8.0f; groups=6.0f; tabs=14.0f }
         let support = DiagnosticsView() :> ISettingsView
         let beforeOpen = File.ReadAllText(settings.path)
         let frame = DesktopManagerForm(views=[
@@ -554,6 +563,14 @@ let main() =
                 use image = new Bitmap(form.Width,form.Height)
                 let painted = try form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size)); true with _ -> false
                 check painted (sprintf "The %s page failed to paint in the %s theme" (tr page) mode)
+                if page=Strings.Pages.diagnostics then
+                    image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-support-"+mode+".png"),ImageFormat.Png)
+                    // The resources show a tile for each, laid out to the page's width, with the values now.
+                    let charts = controls form |> Seq.tryPick(function :? ResourceCharts as charts -> Some charts | _ -> None)
+                    check (charts |> Option.exists(fun charts -> charts.Visible && charts.Height>=Dpi.scale 96 && charts.Width>Dpi.scale 180))
+                          "The Support page shows no resource charts"
+                    check (charts |> Option.exists(fun charts -> charts.AccessibleDescription.Contains(tr Strings.Diagnostics.privateMemory + sprintf " %.1f MB" (70.0f+359.0f*0.05f))))
+                          (sprintf "The resource charts do not say the values now: %A" (charts |> Option.map(fun charts -> charts.AccessibleDescription)))
         // Text in Windows 11's face where it is installed, sections headed in Semibold, not Bold.
         let variable = FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text")
         check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))

@@ -353,8 +353,9 @@ type TabCaptures() =
             reraise()
 
     member this.count = lock gate (fun () -> captures.Count)
+    member private this.keptBytesUnlocked = captures.Values |> Seq.sumBy(fun saved -> int64 saved.Length)
     /// The bytes the kept captures hold.
-    member this.keptBytes = lock gate (fun () -> captures.Values |> Seq.sumBy(fun saved -> int64 saved.Length))
+    member this.keptBytes = lock gate (fun () -> this.keptBytesUnlocked)
 
     /// Keeps a copy of a capture that shows the window.
     member this.remember (hwnd:IntPtr) (image:Bitmap) =
@@ -368,7 +369,9 @@ type TabCaptures() =
                 stream.ToArray()
             lock gate (fun () ->
                 blank.Remove hwnd |> ignore
-                captures.[hwnd] <- saved)
+                let previous = match captures.TryGetValue hwnd with | true,old -> int64 old.Length | _ -> 0L
+                captures.[hwnd] <- saved
+                ResourceCounters.capturesChanged (int64 saved.Length - previous))
 
     /// The capture to show for a window of the given size: a live one when it shows the window,
     /// else the last that did. A hidden tab known to print blank is not printed again. The live
@@ -405,11 +408,16 @@ type TabCaptures() =
     member this.forget (hwnd:IntPtr) =
         lock gate (fun () ->
             blank.Remove hwnd |> ignore
-            captures.Remove hwnd |> ignore)
+            match captures.TryGetValue hwnd with
+            | true,saved ->
+                captures.Remove hwnd |> ignore
+                ResourceCounters.capturesChanged (-(int64 saved.Length))
+            | _ -> ())
 
     interface IDisposable with
         member this.Dispose() =
             lock gate (fun () ->
+                ResourceCounters.capturesChanged (-this.keptBytesUnlocked)
                 captures.Clear()
                 blank.Clear())
 

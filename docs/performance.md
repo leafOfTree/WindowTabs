@@ -829,3 +829,15 @@ light use. A hook filtered to the conhost process (`NtQueryInformationProcess` w
 global hook did for that window, so console windows are now hooked there
 (`Window.eventSource`); only a console whose conhost cannot be read is still hooked
 globally. `Reliability` checks a real conhost window's hooks and that its move is heard.
+
+### Watching resources
+
+Support in Settings charts what WindowTabs uses, read every 10 seconds on the main thread
+(`ResourceMonitor`) and kept in memory only: the last hour as read, and 24 hours a minute
+at a time, each minute's average CPU and the highest of everything else, so a short peak
+still shows. CPU is a share of all processors, as Task Manager shows it. Besides the
+process's own counters it shows the bytes held by saved tab pictures and the live event
+hooks, with those heard from the whole desktop counted apart (`ResourceCounters`): a
+count that climbs while nothing changes points at the leak or the global hook. The
+troubleshooting report carries the same figures, now, lowest, highest and an hour
+before, under `resourceHistory`.

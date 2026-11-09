@@ -535,9 +535,11 @@ let main() =
         check (current.["tabThemeMode"].ToString()="dark") "Reset changed the settings it read"
     check (report.["settings"].["workspaceCount"].Value<int>()=1) "Diagnostic summary missing workspace count"
     // Most telling first; crashes (none here) would sit before the developer figures at the end.
-    let order = ["version";"os";"dotNet";"settings";"otherTools";"environment";"monitors";"groups";"groupedWindows";"uptimeMinutes";"resources";"scans"]
+    let order = ["version";"os";"dotNet";"settings";"otherTools";"environment";"monitors";"groups";"groupedWindows";"uptimeMinutes";"resources";"resourceHistory";"scans"]
     let keys = report.Properties() |> Seq.map(fun property -> property.Name) |> Seq.toList
     check (keys=order) (sprintf "Diagnostic report fields are missing or out of order: %A" keys)
+    check (["eventHooks";"desktopHooks";"tabPicturesKB"] |> List.forall(fun key -> not(isNull report.["resources"].[key])))
+          (sprintf "The report's resources leave out hooks or tab pictures: %O" report.["resources"])
     check ((report.["monitors"] :?> JArray).Count >= 1) "Diagnostic report lists no displays"
     IO.File.WriteAllText(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","diagnostics-sample.json"),report.ToString())
     // Nothing that looks like a file path, whatever the machine has.
@@ -806,6 +808,30 @@ let main() =
             check (moves>0) "A console window's move was not heard from its conhost"
         finally
             try host.Kill() with _ -> ()
-    printfn "PASS: startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation, DPI geometry and cloaked windows inside an input-synchronous call and the switcher, console windows heard from their conhost."
+    // Resource history: the last readings as taken, and each minute as its average CPU and its
+    // highest of everything else; both stop at their capacity.
+    do
+        let history = ResourceHistory(5,2)
+        let start = DateTime(2026,11,9,10,0,0,DateTimeKind.Utc)
+        let reading seconds cpu memory =
+            { time=start.AddSeconds(float seconds); cpu=cpu; privateMB=memory; workingSetMB=memory; managedMB=1.0f; picturesKB=0.0f
+              threads=1.0f; handles=1.0f; gdi=1.0f; user=1.0f; hooks=1.0f; desktopHooks=0.0f; groups=1.0f; tabs=1.0f }
+        check (history.latest.IsNone && history.minutes.Length=0) "An empty resource history had readings"
+        for seconds,cpu,memory in [0,1.0f,10.0f;20,3.0f,30.0f;40,2.0f,20.0f] do history.add(reading seconds cpu memory)
+        let minute = history.minutes
+        check (minute.Length=1 && minute.[0].cpu=2.0f && minute.[0].privateMB=30.0f && minute.[0].time=start)
+              (sprintf "A minute under way was not its average CPU and highest memory: %A" minute)
+        for seconds in [60;80;120;180] do history.add(reading seconds 0.0f 5.0f)
+        check (history.recent.Length=5 && history.recent.[0].time=start.AddSeconds(40.0)) "The recent readings outgrew their capacity"
+        check (history.minutes |> Array.map(fun s -> s.time.Minute)=[|1;2;3|]) (sprintf "The minutes kept were %A" (history.minutes |> Array.map(fun s -> s.time)))
+        // Event hooks are counted while they last, those heard from everywhere apart.
+        let os = OS()
+        let hooks,desktop = ResourceCounters.hookCount(),ResourceCounters.globalHookCount()
+        let everywhere = os.setWinEventHook(WinEvent.EVENT_SYSTEM_FOREGROUND,WinEvent.EVENT_SYSTEM_FOREGROUND,(fun _ _ _ _ _ _ _ -> ()),0,0)
+        let own = os.setWinEventHook(WinEvent.EVENT_SYSTEM_FOREGROUND,WinEvent.EVENT_SYSTEM_FOREGROUND,(fun _ _ _ _ _ _ _ -> ()),Diagnostics.Process.GetCurrentProcess().Id,0)
+        check (ResourceCounters.hookCount()=hooks+2 && ResourceCounters.globalHookCount()=desktop+1) "Event hooks were not counted"
+        everywhere.Dispose(); everywhere.Dispose(); own.Dispose()
+        check (ResourceCounters.hookCount()=hooks && ResourceCounters.globalHookCount()=desktop) "Removed event hooks were still counted"
+    printfn "PASS:startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation, DPI geometry and cloaked windows inside an input-synchronous call and the switcher, console windows heard from their conhost."
 
 TestInit.run main
