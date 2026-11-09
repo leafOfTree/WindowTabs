@@ -819,11 +819,13 @@ private bytes. They are now kept as PNG: an 800×450 capture of a real desktop t
 previews look the same. The same forty captures now add 2.5 MB. `TaskbarPreview`
 checks that a kept capture is stored compressed.
 
-Idle CPU on this machine was 0 ms over 15 seconds on every thread. Not yet changed: a
-grouped console window (`ConsoleWindowClass`, the default for cmd and PowerShell on
-Windows 10) hooks its ten window events globally, because the window reports its
+Idle CPU on this machine was 0 ms over 15 seconds on every thread. A grouped console
+window (`ConsoleWindowClass`, the default for cmd and PowerShell on Windows 10) hooked
+its ten window events across the whole desktop, because the window reports its
 client's process while conhost raises its events. A global `LOCATIONCHANGE` hook also
 receives every cursor and caret move; one received about 110 events a second under
 light use. A hook filtered to the conhost process (`NtQueryInformationProcess` with
 `ProcessConsoleHostProcess` on the client) received every move and title change the
-global hook did for that window.
+global hook did for that window, so console windows are now hooked there
+(`Window.eventSource`); only a console whose conhost cannot be read is still hooked
+globally. `Reliability` checks a real conhost window's hooks and that its move is heard.

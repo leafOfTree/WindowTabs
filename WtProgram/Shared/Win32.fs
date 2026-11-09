@@ -646,14 +646,20 @@ and
     member this.unregisterHotKey(id) =
         WinUserApi.UnregisterHotKey(hwnd, id)
 
+    /// The process and thread whose events are the window's. A console window reports its client,
+    /// as cmd.exe, but conhost raises its events: they are heard from conhost's process, any
+    /// thread. Hooked across the desktop instead, each of its events heard every cursor and caret
+    /// move of every app. Only when conhost cannot be read, as by a 32-bit WindowTabs on 64-bit
+    /// Windows, is it still heard from everywhere.
+    member this.eventSource =
+        if this.isConsoleWindow then ConsoleHost.ProcessId(this.pid.pid),0
+        else this.pid.pid, this.tid
+
     member this.setWinEventHook (event:WinEvent) handler =
         let winEventProc hWinEventHook event _hwnd idObject idChild dwEventThread dwmsEventTime =
-            if hwnd = _hwnd then 
+            if hwnd = _hwnd then
                 handler()
-        let pid,tid =
-            //console winevents come from CONHOST.exe on windows 7, a different
-            //pid/tid than the window owner so can't filter on pid tid
-            if this.isConsoleWindow then 0,0 else this.pid.pid, this.tid
+        let pid,tid = this.eventSource
         os.setWinEventHook(event, event, winEventProc, pid, tid)
 
     member this.trackMouseLeave() =

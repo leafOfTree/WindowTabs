@@ -771,6 +771,41 @@ let main() =
                     CloakProbe.DwmSetWindowAttribute(other.Handle,13,&cloak,4) |> ignore
             finally TaskbarProxies.remove proxy.Handle
         finally Environment.CurrentDirectory <- previous
-    printfn "PASS: startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation, DPI geometry and cloaked windows inside an input-synchronous call and the switcher."
+    // A console window's events are heard from its conhost, not from every app on the desktop,
+    // and still reach its group: a move of the window is heard.
+    do
+        let title = "WindowTabs console probe " + string(Guid.NewGuid())
+        // conhost has no 32-bit copy: a 32-bit host reaches the 64-bit one through Sysnative.
+        let system =
+            if Environment.Is64BitOperatingSystem && not Environment.Is64BitProcess then
+                IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"Sysnative")
+            else Environment.SystemDirectory
+        let start = Diagnostics.ProcessStartInfo(IO.Path.Combine(system,"conhost.exe"),"cmd.exe /k title " + title,UseShellExecute=false)
+        use host = Diagnostics.Process.Start(start)
+        try
+            let pumpUntil (ready:unit -> bool) =
+                let watch = Diagnostics.Stopwatch.StartNew()
+                while not(ready()) && watch.ElapsedMilliseconds < 10000L do
+                    System.Windows.Forms.Application.DoEvents()
+                    Thread.Sleep(20)
+            let mutable hwnd = IntPtr.Zero
+            pumpUntil(fun () -> hwnd <- WinUserApi.FindWindow("ConsoleWindowClass",title); hwnd<>IntPtr.Zero)
+            check (hwnd<>IntPtr.Zero) "The console fixture did not open a window"
+            let window = OS().windowFromHwnd(hwnd)
+            check window.isConsoleWindow "The console fixture's window was not taken for a console"
+            // Windows answers which conhost only to a 64-bit caller, as WindowTabs is on 64-bit
+            // Windows; this 32-bit host falls back to hearing the window from everywhere.
+            let expected = if Environment.Is64BitOperatingSystem && not Environment.Is64BitProcess then (0,0) else (host.Id,0)
+            check (window.eventSource=expected) (sprintf "A console window's events were heard from %A, not %A (conhost %d)" window.eventSource expected host.Id)
+            check (Environment.Is64BitProcess || not Environment.Is64BitOperatingSystem || ConsoleHost.ProcessId(window.pid.pid)=0)
+                  "A 32-bit caller was expected to be refused which conhost a console has"
+            let mutable moves = 0
+            use hook = window.setWinEventHook WinEvent.EVENT_OBJECT_LOCATIONCHANGE (fun () -> moves <- moves+1)
+            WinUserApi.SetWindowPos(hwnd,IntPtr.Zero,120,140,0,0,SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
+            pumpUntil(fun () -> moves>0)
+            check (moves>0) "A console window's move was not heard from its conhost"
+        finally
+            try host.Kill() with _ -> ()
+    printfn "PASS: startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation, DPI geometry and cloaked windows inside an input-synchronous call and the switcher, console windows heard from their conhost."
 
 TestInit.run main
