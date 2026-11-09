@@ -1033,6 +1033,7 @@ module Strings =
         let ungroup = { en="Ungroup"; zh="解除分组"; ja="グループを解除"; ar="إلغاء التجميع" }
         let removeFromGroup = { en="Remove from group"; zh="从分组中移除"; ja="グループから外す"; ar="إزالة من المجموعة" }
         let browseApplication = { en="Browse…"; zh="浏览…"; ja="参照…"; ar="استعراض…" }
+        let findApplication = { en="Find an app"; zh="查找程序"; ja="アプリを検索"; ar="ابحث عن تطبيق" }
         let applicationFiles = { en="Applications (*.exe)|*.exe"; zh="应用程序 (*.exe)|*.exe"; ja="アプリ (*.exe)|*.exe"; ar="التطبيقات (*.exe)|*.exe" }
         let allWindows = { en="All windows"; zh="全部窗口"; ja="すべてのウィンドウ"; ar="كل النوافذ" }
         let targetGroup = { en="Target group"; zh="目标组"; ja="宛先グループ"; ar="المجموعة المستهدفة" }

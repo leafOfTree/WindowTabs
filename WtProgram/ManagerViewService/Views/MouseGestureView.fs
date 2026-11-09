@@ -679,7 +679,7 @@ type MouseGestureEditor() as this =
                     scope |> Option.iter(fun path -> notices.Remove path |> ignore)
                     saveBindings (fun bindings -> MouseGestures.bind bindings binding)))
         addApp.Click.Add(fun _ ->
-            menu.Open(addApp.RectangleToScreen(addApp.ClientRectangle),apps() |> List.map(fun app -> app.path)))
+            menu.OpenFresh(addApp.RectangleToScreen(addApp.ClientRectangle),apps() |> List.map(fun app -> app.path)))
         menu.Picked.Add(fun path ->
             if (MouseGestures.appFor (table()) path).IsNone then
                 let preset = MouseGesturePresets.forApp path

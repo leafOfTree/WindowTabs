@@ -148,6 +148,17 @@ type GroupingApplicationMenu() as this =
         dropDown <- None
         for icon in icons do icon.Dispose()
         icons <- [||]
+    /// Where to open once the apps running now are known, and how long to wait for them at most.
+    let mutable pending : (Rectangle * string list) option = None
+    let pendingTimer = new Timer(Interval=300)
+    let openPending() =
+        pendingTimer.Stop()
+        match pending with
+        | Some(anchor,excluded) -> pending <- None; this.Open(anchor,excluded)
+        | None -> ()
+    do
+        scanned.Publish.Add(fun _ -> openPending())
+        pendingTimer.Tick.Add(fun _ -> openPending())
 
     member _.Owner with set(control:Control) = owner <- control
     member _.UpdateApplications(applications:string list) =
@@ -188,6 +199,13 @@ type GroupingApplicationMenu() as this =
     /// The list of the drop-down last opened.
     member _.DropDown = dropDown
     member _.Picked = picked.Publish
+    /// Opens as `Open` does, once the running apps are looked for again: one started after the
+    /// page opened was missing. A slow look opens with what is known.
+    member this.OpenFresh(anchor:Rectangle, excluded:string list) =
+        pending <- Some(anchor,excluded)
+        pendingTimer.Stop()
+        pendingTimer.Start()
+        this.Scan()
     /// Opens below a box on screen, leaving out the apps the group has already.
     member this.Open(anchor:Rectangle, excluded:string list) =
         retire()
@@ -198,6 +216,10 @@ type GroupingApplicationMenu() as this =
         let next = SettingsUi.choice (Array.append (shown |> Array.map ApplicationNames.label) [|tr Strings.AppRules.browseApplication|])
         next.ItemImages <- icons
         next.AccessibleName <- tr Strings.AppRules.chooseApplication
+        // Many apps running: a box over them narrows the list as one types.
+        if shown.Length>8 then
+            next.SearchCue <- Some(tr Strings.AppRules.findApplication)
+            next.MaxRows <- Some 10
         next.DropDownAnchor <- Some anchor
         next.Visible <- false
         owner.Controls.Add(next)
@@ -211,12 +233,16 @@ type GroupingApplicationMenu() as this =
         choice <- Some next
         dropDown <- next.CreateDropDown() |> Option.map(fun window ->
             window.Show(window.Location)
-            let frame = (window.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame
-            frame.List.Focus() |> ignore
+            // The search box has the keys where there is one, else the list.
+            let hosted = window.Items |> Seq.cast<ToolStripItem> |> Seq.choose(function :? ToolStripControlHost as host -> Some host.Control | _ -> None) |> List.ofSeq
+            match hosted |> List.tryPick(function :? SettingsSearchBox as field -> Some(field.Controls.[0]) | _ -> None) with
+            | Some input -> input.Focus() |> ignore
+            | None -> hosted |> List.tryPick(function :? SettingsListFrame as frame -> Some frame.List | _ -> None) |> Option.iter(fun list -> list.Focus() |> ignore)
             window :> ToolStripDropDown)
     interface IDisposable with
         member _.Dispose() =
             (scanner :> IDisposable).Dispose()
+            pendingTimer.Dispose()
             retire()
 
 /// Which of an app's windows its chip takes, in a drop-down that opens from the arrow on the
