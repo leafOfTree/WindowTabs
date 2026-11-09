@@ -579,15 +579,18 @@ let main() =
                     check (charts.Visible && charts.Height>=Dpi.scale 96 && charts.Width>Dpi.scale 180 && charts.AccessibleDescription.Contains(latestPrivate))
                           "Opening the charts did not show a chart for each, with the values now"
                     // Taller than the window, the page scrolls, and at its end the report shows whole.
-                    let page = controls form |> Seq.pick(function :? SettingsListPage as page when page.Visible && page.AutoScroll -> Some page | _ -> None)
+                    // Its scroll bar is the settings pages' own, over the margin, not Windows' grey one.
+                    let page = controls form |> Seq.pick(function :? SettingsListPage as page when page.Visible -> Some page | _ -> None)
                     let reportCard = (controls form |> Seq.pick(function :? SettingsTextView as view when view.Visible -> Some view | _ -> None)).Parent
-                    check page.VerticalScroll.Visible "The Support page, taller than its window, shows no scroll bar"
-                    page.AutoScrollPosition <- Point(0,Int32.MaxValue/2)
-                    page.PerformLayout()
+                    let bar = page.Controls |> Seq.cast<Control> |> Seq.tryPick(function :? SettingsScrollBar as bar -> Some bar | _ -> None)
+                    check (page.ScrollMaximum>0 && not page.AutoScroll && bar |> Option.exists(fun bar -> bar.Visible && bar.Right=page.ClientSize.Width))
+                          "The Support page, taller than its window, shows no themed scroll bar"
+                    let widthBefore = reportCard.Width
+                    page.ScrollTo(Int32.MaxValue/2)
                     Application.DoEvents()
-                    check (page.AutoScrollPosition.Y<0 && reportCard.Top>=0 && reportCard.Bottom<=page.ClientSize.Height && reportCard.Height>=Dpi.scale 300)
+                    check (page.ScrollOffset=page.ScrollMaximum && reportCard.Top>=0 && reportCard.Bottom<=page.ClientSize.Height && reportCard.Height>=Dpi.scale 300 && reportCard.Width=widthBefore)
                           (sprintf "Scrolled to its end, the Support page's report is at %A in %A" reportCard.Bounds page.ClientSize)
-                    page.AutoScrollPosition <- Point(0,0)
+                    page.ScrollTo(0)
                     for name,part in ["overview",(overview.Value :> Control);"charts",(charts :> Control)] do
                         use picture = new Bitmap(part.Width,part.Height)
                         part.DrawToBitmap(picture,Rectangle(Point.Empty,picture.Size))
