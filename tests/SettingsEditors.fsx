@@ -92,7 +92,8 @@ let main() =
         // Many apps running: the list opens under a box that narrows it.
         menu.UpdateApplications [ for index in 1..12 -> sprintf "app%d.exe" index ]
         menu.Open(Rectangle(0,0,10,10),[])
-        assertTrue menu.Choice.Value.SearchCue.IsSome "A long app list had no search box"
+        assertTrue (menu.Choice.Value.SearchCue.IsSome && menu.Choice.Value.MaxRows.IsNone && menu.Choice.Value.RowHeight.IsSome)
+            "A long app list had no search box, cut its rows short or kept the settings' tall rows"
         menu.DropDown |> Option.iter(fun window -> window.Close())
         // An app's icon is the one its windows show, as in App rules above, not the exe's:
         // packaged apps carry a different one in the exe.

@@ -1342,6 +1342,9 @@ type SettingsCombo(items:string[]) as this =
     member val SearchCue : string option = None with get,set
     /// The most rows shown at once; more scroll.
     member val MaxRows : int option = None with get,set
+    /// Each row's height in logical pixels, where a long list should show whole: tighter than the
+    /// settings' own rows, never tighter than its text.
+    member val RowHeight : int option = None with get,set
     /// Choices a line is drawn above in the list, as a menu parts its items.
     member val SeparatorsBefore : int list = [] with get,set
     /// A line over the list saying what the choices are, in small muted type, for a menu.
@@ -1520,7 +1523,10 @@ type SettingsCombo(items:string[]) as this =
             // Native handle creation can change item metrics at non-100% DPI.
             // Realize the list first, then size the client area using its final row height.
             list.Handle |> ignore
-            list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
+            list.ItemHeight <-
+                match this.RowHeight with
+                | Some height -> max (Dpi.scale height) (list.Font.Height+Dpi.scale 6)
+                | None -> max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
             // As tall as all the choices, or as MaxRows of them, whatever a search leaves.
             let rows = match this.MaxRows with Some most -> min most shown.Count | None -> shown.Count
             let searchHeight = match search with Some host -> host.Control.Height+Dpi.scale 4 | None -> 0

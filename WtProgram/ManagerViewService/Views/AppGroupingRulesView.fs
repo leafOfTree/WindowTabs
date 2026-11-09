@@ -216,10 +216,11 @@ type GroupingApplicationMenu() as this =
         let next = SettingsUi.choice (Array.append (shown |> Array.map ApplicationNames.label) [|tr Strings.AppRules.browseApplication|])
         next.ItemImages <- icons
         next.AccessibleName <- tr Strings.AppRules.chooseApplication
-        // Many apps running: a box over them narrows the list as one types.
+        // Many apps running: a box over them narrows the list as one types, and tighter rows keep
+        // the whole list in sight; only a screen too short for it scrolls.
         if shown.Length>8 then
             next.SearchCue <- Some(tr Strings.AppRules.findApplication)
-            next.MaxRows <- Some 10
+            next.RowHeight <- Some 28
         next.DropDownAnchor <- Some anchor
         next.Visible <- false
         owner.Controls.Add(next)
