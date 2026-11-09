@@ -52,13 +52,20 @@ type ResourceMetric =
     | Cpu | PrivateMemory | WorkingSet | ManagedHeap | TabPictures | Threads | Handles
     | GdiObjects | UserObjects | EventHooks | DesktopHooks | Groups | Tabs
 
+/// What private memory holds besides the native heaps, in megabytes: the .NET heap as committed,
+/// live objects and room for new ones, compiled code, the loaded libraries' writable data and
+/// the threads' stacks.
+type MemoryParts = { heapMB: float32; codeMB: float32; libraryDataMB: float32; stacksMB: float32 }
+    with static member none = { heapMB=0.0f; codeMB=0.0f; libraryDataMB=0.0f; stacksMB=0.0f }
+
 /// One reading of the process. CPU is a share of all processors since the reading before, as
 /// Task Manager shows it; memory in megabytes, tab pictures in kilobytes.
 type ResourceSample = {
     time: DateTime
     cpu: float32; privateMB: float32; workingSetMB: float32; managedMB: float32; picturesKB: float32
     threads: float32; handles: float32; gdi: float32; user: float32
-    hooks: float32; desktopHooks: float32; groups: float32; tabs: float32 }
+    hooks: float32; desktopHooks: float32; groups: float32; tabs: float32
+    memory: MemoryParts }
     with
     member s.value metric =
         match metric with
@@ -83,7 +90,9 @@ type ResourceHistory(recentCapacity:int, minuteCapacity:int) =
           privateMB=peak(fun s -> s.privateMB); workingSetMB=peak(fun s -> s.workingSetMB); managedMB=peak(fun s -> s.managedMB)
           picturesKB=peak(fun s -> s.picturesKB); threads=peak(fun s -> s.threads); handles=peak(fun s -> s.handles)
           gdi=peak(fun s -> s.gdi); user=peak(fun s -> s.user); hooks=peak(fun s -> s.hooks)
-          desktopHooks=peak(fun s -> s.desktopHooks); groups=peak(fun s -> s.groups); tabs=peak(fun s -> s.tabs) }
+          desktopHooks=peak(fun s -> s.desktopHooks); groups=peak(fun s -> s.groups); tabs=peak(fun s -> s.tabs)
+          // Shown only as they are now.
+          memory=samples.[samples.Count-1].memory }
     member _.add(sample:ResourceSample) =
         lock gate (fun () ->
             recentQueue.Enqueue(sample)
@@ -106,6 +115,13 @@ module ResourceMonitor =
     let history = ResourceHistory(3600/(intervalMs/1000),24*60)
     /// When the last reading was taken and the CPU time by then: the first is measured from start.
     let mutable private last : (DateTime * TimeSpan) option = None
+    /// An object pinned for a moment says where the .NET heap is.
+    let private heapProbe = Array.zeroCreate<byte> 16
+    let memoryParts() =
+        let pinned = GCHandle.Alloc(heapProbe,GCHandleType.Pinned)
+        let parts = try ProcessMemoryMap.Read(pinned.AddrOfPinnedObject()) finally pinned.Free()
+        let mb (bytes:int64) = float32(float bytes/1048576.0)
+        { heapMB=mb parts.DotNetHeap; codeMB=mb parts.CompiledCode; libraryDataMB=mb parts.LibraryData; stacksMB=mb parts.ThreadStacks }
     let read (groups:int, tabs:int) =
         use current = Process.GetCurrentProcess()
         let now = DateTime.UtcNow
@@ -121,7 +137,8 @@ module ResourceMonitor =
           threads=float32 current.Threads.Count; handles=float32 current.HandleCount
           gdi=float32(GetGuiResources(current.Handle,0u)); user=float32(GetGuiResources(current.Handle,1u))
           hooks=float32(ResourceCounters.hookCount()); desktopHooks=float32(ResourceCounters.globalHookCount())
-          groups=float32 groups; tabs=float32 tabs }
+          groups=float32 groups; tabs=float32 tabs
+          memory=(try memoryParts() with _ -> MemoryParts.none) }
     /// Samples now and every interval after until disposed. Groups and tabs are counted on the
     /// calling thread, which owns them; the rest is read on the pool: the process's figures list
     /// every process on the machine, 4 to 12 ms where hundreds run, which the main thread, the

@@ -815,7 +815,8 @@ let main() =
         let start = DateTime(2026,11,9,10,0,0,DateTimeKind.Utc)
         let reading seconds cpu memory =
             { time=start.AddSeconds(float seconds); cpu=cpu; privateMB=memory; workingSetMB=memory; managedMB=1.0f; picturesKB=0.0f
-              threads=1.0f; handles=1.0f; gdi=1.0f; user=1.0f; hooks=1.0f; desktopHooks=0.0f; groups=1.0f; tabs=1.0f }
+              threads=1.0f; handles=1.0f; gdi=1.0f; user=1.0f; hooks=1.0f; desktopHooks=0.0f; groups=1.0f; tabs=1.0f
+              memory=MemoryParts.none }
         check (history.latest.IsNone && history.minutes.Length=0) "An empty resource history had readings"
         for seconds,cpu,memory in [0,1.0f,10.0f;20,3.0f,30.0f;40,2.0f,20.0f] do history.add(reading seconds cpu memory)
         let minute = history.minutes
@@ -824,6 +825,15 @@ let main() =
         for seconds in [60;80;120;180] do history.add(reading seconds 0.0f 5.0f)
         check (history.recent.Length=5 && history.recent.[0].time=start.AddSeconds(40.0)) "The recent readings outgrew their capacity"
         check (history.minutes |> Array.map(fun s -> s.time.Minute)=[|1;2;3|]) (sprintf "The minutes kept were %A" (history.minutes |> Array.map(fun s -> s.time)))
+        // A reading finds each part of this process's memory, and together they are no more than
+        // its private bytes, the native heaps being the rest.
+        let reading = ResourceMonitor.read(1,1)
+        let parts = reading.memory
+        check (parts.heapMB>0.0f && parts.codeMB>0.0f && parts.libraryDataMB>0.0f && parts.stacksMB>0.0f)
+              (sprintf "A resource reading missed part of the memory: %A" parts)
+        check (parts.heapMB>=reading.managedMB*0.9f) (sprintf "The .NET heap read %.1f MB for %.1f MB of objects" parts.heapMB reading.managedMB)
+        check (parts.heapMB+parts.codeMB+parts.libraryDataMB+parts.stacksMB<=reading.privateMB*1.05f)
+              (sprintf "The memory's parts, %A, came to more than its %.1f MB" parts reading.privateMB)
         // Event hooks are counted while they last, those heard from everywhere apart.
         let os = OS()
         let hooks,desktop = ResourceCounters.hookCount(),ResourceCounters.globalHookCount()

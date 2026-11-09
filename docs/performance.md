@@ -832,9 +832,15 @@ globally. `Reliability` checks a real conhost window's hooks and that its move i
 
 ### Watching resources
 
-Support in Settings shows what WindowTabs uses: an overview of the figures now, private
-memory split into the .NET heap, saved tab pictures and the rest, and below it, folded
-until opened, a chart for each over the last hour or 24 hours. Readings are taken every 10
+Support in Settings shows what WindowTabs uses: an overview of the figures now, each
+explained while pointed at, and below it, folded until opened, a chart for each over the
+last hour or 24 hours. The overview splits private memory by a scan of the process's own
+address space (`ProcessMemoryMap`): the .NET heap as committed (the reservation holding a
+pinned object), split into its objects, the tab pictures among them, and its free space;
+private executable pages as compiled code; writable image pages as library data; and the
+allocations with a guard page as thread stacks. Private bytes are those and the private
+pages besides, so the rest, shown as Other, is the native heaps and .NET's type data. The
+scan takes about a millisecond on the pool with each reading. Readings are taken every 10
 seconds (`ResourceMonitor`) and kept in memory only: the last hour as read, and 24 hours a
 minute at a time, each minute's average CPU and the highest of everything else, so a short
 peak still shows. CPU is a share of all processors, as Task Manager shows it.

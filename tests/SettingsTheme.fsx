@@ -538,7 +538,8 @@ let main() =
                 ResourceMonitor.history.add
                     { time=now.AddSeconds(float(i-359)*10.0); cpu=(if i%40=0 then 3.0f else 0.2f)
                       privateMB=70.0f+f*0.05f; workingSetMB=110.0f+f*0.05f; managedMB=18.0f+float32(i%30)*0.3f; picturesKB=600.0f+f
-                      threads=27.0f; handles=800.0f; gdi=120.0f; user=340.0f; hooks=160.0f; desktopHooks=8.0f; groups=6.0f; tabs=14.0f }
+                      threads=27.0f; handles=800.0f; gdi=120.0f; user=340.0f; hooks=160.0f; desktopHooks=8.0f; groups=6.0f; tabs=14.0f
+                      memory={ heapMB=30.0f; codeMB=3.0f; libraryDataMB=17.0f; stacksMB=4.0f } }
         let support = DiagnosticsView() :> ISettingsView
         let beforeOpen = File.ReadAllText(settings.path)
         let frame = DesktopManagerForm(views=[
@@ -577,6 +578,16 @@ let main() =
                     Application.DoEvents()
                     check (charts.Visible && charts.Height>=Dpi.scale 96 && charts.Width>Dpi.scale 180 && charts.AccessibleDescription.Contains(latestPrivate))
                           "Opening the charts did not show a chart for each, with the values now"
+                    // Taller than the window, the page scrolls, and at its end the report shows whole.
+                    let page = controls form |> Seq.pick(function :? SettingsListPage as page when page.Visible && page.AutoScroll -> Some page | _ -> None)
+                    let reportCard = (controls form |> Seq.pick(function :? SettingsTextView as view when view.Visible -> Some view | _ -> None)).Parent
+                    check page.VerticalScroll.Visible "The Support page, taller than its window, shows no scroll bar"
+                    page.AutoScrollPosition <- Point(0,Int32.MaxValue/2)
+                    page.PerformLayout()
+                    Application.DoEvents()
+                    check (page.AutoScrollPosition.Y<0 && reportCard.Top>=0 && reportCard.Bottom<=page.ClientSize.Height && reportCard.Height>=Dpi.scale 300)
+                          (sprintf "Scrolled to its end, the Support page's report is at %A in %A" reportCard.Bounds page.ClientSize)
+                    page.AutoScrollPosition <- Point(0,0)
                     for name,part in ["overview",(overview.Value :> Control);"charts",(charts :> Control)] do
                         use picture = new Bitmap(part.Width,part.Height)
                         part.DrawToBitmap(picture,Rectangle(Point.Empty,picture.Size))

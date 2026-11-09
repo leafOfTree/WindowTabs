@@ -6,8 +6,12 @@ open System.Windows.Forms
 /// Layout for settings pages built around a list (App rules, Workspaces):
 /// the same margins and column as SettingsPage, a title and description, a row of
 /// actions, and the list in a rounded card that follows the light/dark theme.
+/// `minimumListHeight`, in logical pixels: the list is never shorter, and the page scrolls when
+/// the window leaves less, as Support's does under its other sections; without it the list takes
+/// what is left, however little, and the page never scrolls.
 type SettingsListPage(title:string, description:string, list:Control, actions:Control list, ?helpText:string,
-                      ?links:(string*string) list, ?extra:Control, ?footer:Control, ?compact:bool, ?header:Control) as this =
+                      ?links:(string*string) list, ?extra:Control, ?footer:Control, ?compact:bool, ?header:Control,
+                      ?minimumListHeight:int) as this =
     inherit Panel()
     let inset() = Dpi.scale 32
     let mutable arranging = false
@@ -50,6 +54,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
     do
         this.Dock <- DockStyle.Fill
         this.DoubleBuffered <- true
+        this.AutoScroll <- minimumListHeight.IsSome
         for action in actions do
             action.Margin <- Padding(0,0,Dpi.scale 8,0)
             actionRow.Controls.Add(action)
@@ -93,8 +98,13 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
         if not (isNull heading) && not arranging then
           arranging <- true
           try
-            let width = max 120 (min (Dpi.scale 760) (this.ClientSize.Width-inset()*2))
-            let left = max (inset()) ((this.ClientSize.Width-width)/2)
+            // A page that scrolls keeps room for its scroll bar shown or not: the width changing
+            // as it came and went re-wrapped the sections above, which brought it back, and so on.
+            let available =
+                if minimumListHeight.IsSome && not this.VerticalScroll.Visible then this.ClientSize.Width-SystemInformation.VerticalScrollBarWidth
+                else this.ClientSize.Width
+            let width = max 120 (min (Dpi.scale 760) (available-inset()*2))
+            let left = max (inset()) ((available-width)/2)
             // A page may leave out its title and description, and start with its extra block.
             let hasTitle = heading.Text<>""
             heading.Visible <- hasTitle
@@ -184,6 +194,14 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                     else control.Width <- width
                     control.Height+Dpi.scale 12
                 | None -> 0
-            card.Bounds <- Rectangle(left,top,width,max (Dpi.scale 80) (this.ClientSize.Height-top-inset()-footerHeight))
+            let least = Dpi.scale (defaultArg minimumListHeight 80)
+            card.Bounds <- Rectangle(left,top,width,max least (this.ClientSize.Height-top-inset()-footerHeight))
             footer |> Option.iter(fun control -> control.Location <- Point(left,card.Bottom+Dpi.scale 12))
+            // Placed as if unscrolled above; a page that scrolls then moves everything by how far it is.
+            if minimumListHeight.IsSome then
+                let bottom = card.Bottom+footerHeight+inset()
+                this.AutoScrollMinSize <- Size(0,if bottom>this.ClientSize.Height then bottom else 0)
+                let offset = this.AutoScrollPosition.Y
+                if offset<>0 then
+                    for control in this.Controls do control.Top <- control.Top+offset
           finally arranging <- false

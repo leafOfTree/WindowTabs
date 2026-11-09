@@ -83,41 +83,70 @@ module ResourceFormat =
         | TabPictures -> if value>=1024.0f then sprintf "%.1f MB" (value/1024.0f) else sprintf "%.0f KB" value
         | _ -> sprintf "%.0f" value
 
-/// The Support page's resources at a glance, as they are now: private memory split into the .NET
-/// heap, the tab pictures and the rest, then each other figure on its own line.
+/// The Support page's resources at a glance, as they are now: private memory as a bar of what it
+/// holds with a line for each part, then each other figure on its own line. What an item is shows
+/// at the foot while it is pointed at.
 type ResourceOverview() as this =
     inherit Control()
     let timer = new Timer(Interval=ResourceMonitor.intervalMs)
     let figures =
-        [Cpu,Strings.Diagnostics.cpu; Threads,Strings.Diagnostics.threads; Handles,Strings.Diagnostics.handles
-         GdiObjects,Strings.Diagnostics.gdiObjects; UserObjects,Strings.Diagnostics.userObjects
-         EventHooks,Strings.Diagnostics.eventHooks; DesktopHooks,Strings.Diagnostics.desktopHooks
-         Groups,Strings.Diagnostics.groups; Tabs,Strings.Diagnostics.tabs]
+        [Cpu,Strings.Diagnostics.cpu,Strings.Diagnostics.cpuMeaning
+         WorkingSet,Strings.Diagnostics.workingSet,Strings.Diagnostics.workingSetMeaning
+         Threads,Strings.Diagnostics.threads,Strings.Diagnostics.threadsMeaning
+         Handles,Strings.Diagnostics.handles,Strings.Diagnostics.handlesMeaning
+         GdiObjects,Strings.Diagnostics.gdiObjects,Strings.Diagnostics.gdiObjectsMeaning
+         UserObjects,Strings.Diagnostics.userObjects,Strings.Diagnostics.userObjectsMeaning
+         EventHooks,Strings.Diagnostics.eventHooks,Strings.Diagnostics.eventHooksMeaning
+         DesktopHooks,Strings.Diagnostics.desktopHooks,Strings.Diagnostics.desktopHooksMeaning
+         Groups,Strings.Diagnostics.groups,Strings.Diagnostics.groupsMeaning
+         Tabs,Strings.Diagnostics.tabs,Strings.Diagnostics.tabsMeaning]
+    let partCount = 7
     // Logical pixels, scaled where they are used.
     let rowHeight,headerHeight,barHeight,columnGap,columnWidth = 26,52,8,48,300
     let twoColumns width = width >= Dpi.scale(2*columnWidth+columnGap)
-    let memoryHeight = headerHeight+barHeight+Dpi.scale 10+3*rowHeight
+    let memoryHeight = headerHeight+barHeight+10+partCount*rowHeight
     let heightFor width =
         let figuresHeight = figures.Length*rowHeight
-        Dpi.scale(if twoColumns width then max memoryHeight figuresHeight + 8 else memoryHeight+16+figuresHeight+8)
-    /// Private memory's parts, each with its colour: the .NET heap, the tab pictures and the rest.
-    let parts (sample:ResourceSample) (p:SettingsPalette) =
-        let highContrast = SystemInformation.HighContrast
+        let body = if twoColumns width then max memoryHeight figuresHeight else memoryHeight+16+figuresHeight
+        Dpi.scale(body+12+rowHeight)
+    /// The colour of each part, told apart in either theme; in high contrast, Windows' own.
+    let colors (p:SettingsPalette) =
         let dark = ThemeService.currentIsDark()
-        let pictures = sample.picturesKB/1024.0f
-        let heap = min sample.managedMB (max 0.0f (sample.privateMB-pictures))
-        [Strings.Diagnostics.managedHeap,heap,(if highContrast then SystemColors.Highlight else p.accent)
-         Strings.Diagnostics.tabPictures,pictures,(if highContrast then SystemColors.HotTrack elif dark then Color.FromRGB(0xF0955F) else Color.FromRGB(0xD9622B))
-         Strings.Diagnostics.runtimeAndOther,max 0.0f (sample.privateMB-heap-pictures),(if highContrast then SystemColors.GrayText elif dark then Color.FromRGB(0x8A8A8A) else Color.FromRGB(0xA0A0A0))]
+        let pick (light:int) (darkColor:int) = Color.FromRGB(if dark then darkColor else light)
+        if SystemInformation.HighContrast then
+            [SystemColors.Highlight;SystemColors.HotTrack;SystemColors.InactiveCaption;SystemColors.ActiveCaption
+             SystemColors.ControlDark;SystemColors.WindowText;SystemColors.GrayText]
+        else
+            // The objects' own colour, lighter: room on the same heap.
+            let mix (a:byte) (b:byte) = (int a*3+int b*2)/5
+            let faded = Color.FromArgb(mix p.accent.R p.surface.R,mix p.accent.G p.surface.G,mix p.accent.B p.surface.B)
+            [p.accent;pick 0xD9622B 0xF0955F;faded;pick 0x1E9E8F 0x3FBFAE;pick 0xC29A1F 0xE0BE4A;pick 0xC2577E 0xDB7A9E;pick 0xA0A0A0 0x8A8A8A]
+    /// Private memory's parts in megabytes, in the bar's order. Tab pictures are kept on the .NET
+    /// heap, so they come out of its objects; what no part accounts for is the native heaps.
+    let parts (s:ResourceSample) =
+        let pictures = s.picturesKB/1024.0f
+        let objects = max 0.0f (s.managedMB-pictures)
+        let heap = max s.memory.heapMB s.managedMB
+        let free = max 0.0f (heap-s.managedMB)
+        let measured = heap+s.memory.codeMB+s.memory.libraryDataMB+s.memory.stacksMB
+        [Strings.Diagnostics.dotNetObjects,Strings.Diagnostics.dotNetObjectsMeaning,objects
+         Strings.Diagnostics.tabPictures,Strings.Diagnostics.tabPicturesMeaning,pictures
+         Strings.Diagnostics.heapFree,Strings.Diagnostics.heapFreeMeaning,free
+         Strings.Diagnostics.compiledCode,Strings.Diagnostics.compiledCodeMeaning,s.memory.codeMB
+         Strings.Diagnostics.libraryData,Strings.Diagnostics.libraryDataMeaning,s.memory.libraryDataMB
+         Strings.Diagnostics.threadStacks,Strings.Diagnostics.threadStacksMeaning,s.memory.stacksMB
+         Strings.Diagnostics.otherMemory,Strings.Diagnostics.otherMemoryMeaning,max 0.0f (s.privateMB-measured)]
+    /// Where each item was drawn last, with what it is, for the pointer.
+    let mutable regions : (Rectangle * LocalizedText) list = []
+    let mutable hovered : int option = None
     let describe() =
         this.AccessibleDescription <-
             match ResourceMonitor.history.latest with
             | None -> tr Strings.Diagnostics.collecting
             | Some s ->
-                let memory = parts s (SettingsColors.current()) |> List.map(fun (caption,mb,_) -> sprintf "%s %.1f MB" (tr caption) mb)
-                let others = figures |> List.map(fun (metric,caption) -> tr caption + " " + ResourceFormat.value metric (s.value metric))
-                [tr Strings.Diagnostics.privateMemory + " " + ResourceFormat.value PrivateMemory s.privateMB] @ memory @
-                [tr Strings.Diagnostics.workingSet + " " + ResourceFormat.value WorkingSet s.workingSetMB] @ others
+                let memory = parts s |> List.map(fun (caption,_,mb) -> sprintf "%s %.1f MB" (tr caption) mb)
+                let others = figures |> List.map(fun (metric,caption,_) -> tr caption + " " + ResourceFormat.value metric (s.value metric))
+                [tr Strings.Diagnostics.privateMemory + " " + ResourceFormat.value PrivateMemory s.privateMB] @ memory @ others
                 |> String.concat "; "
     do
         this.SetStyle(ControlStyles.AllPaintingInWmPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.UserPaint ||| ControlStyles.ResizeRedraw,true)
@@ -134,6 +163,17 @@ type ResourceOverview() as this =
         let height = heightFor this.ClientSize.Width
         if this.Height<>height then this.Height <- height
     override this.GetPreferredSize(proposed) = Size(proposed.Width,heightFor proposed.Width)
+    override this.OnMouseMove(e) =
+        base.OnMouseMove(e)
+        let over = regions |> List.tryFindIndex(fun (bounds,_) -> bounds.Contains(e.Location))
+        if over<>hovered then
+            hovered <- over
+            this.Invalidate()
+    override this.OnMouseLeave(e) =
+        base.OnMouseLeave(e)
+        if hovered.IsSome then
+            hovered <- None
+            this.Invalidate()
     override this.Dispose(disposing) =
         if disposing then timer.Dispose()
         base.Dispose(disposing)
@@ -141,6 +181,7 @@ type ResourceOverview() as this =
         let g = e.Graphics
         let p = SettingsColors.current()
         g.Clear(this.BackColor)
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let rowFont = SettingsUi.rowFont()
         let captionFont = SettingsUi.font (SettingsUi.uiFamily()) 9.5f FontStyle.Regular
         let totalFont = SettingsUi.font (SettingsUi.uiSemiboldFamily()) 16.0f FontStyle.Regular
@@ -150,46 +191,70 @@ type ResourceOverview() as this =
         let memoryWidth = if two then (width-Dpi.scale columnGap)/2 else width
         let text (s:string) font color (bounds:Rectangle) right =
             TextRenderer.DrawText(g,s,font,bounds,color,flags ||| (if right then TextFormatFlags.Right else TextFormatFlags.Left))
+        let found = ResizeArray<Rectangle * LocalizedText>()
+        /// A row the pointer can ask about; the one it is over is shaded, as a list's row is.
+        let item (bounds:Rectangle) meaning =
+            if hovered=Some found.Count then
+                use shade = new SolidBrush(p.hover)
+                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X-float32(Dpi.scale 6),float32 bounds.Y,float32 bounds.Width+float32(Dpi.scale 12),float32 bounds.Height)) (float32(Dpi.scale 4))
+                g.FillPath(shade,shape)
+            found.Add(bounds,meaning)
         match ResourceMonitor.history.latest with
         | None -> text (tr Strings.Diagnostics.collecting) rowFont p.description (Rectangle(0,0,width,Dpi.scale rowHeight)) false
         | Some s ->
-            // Private memory: the total, the working set beside it, the bar of its parts and a line for each.
+            // Private memory: its total, the bar of its parts and a line for each.
+            let header = Rectangle(0,0,memoryWidth,Dpi.scale(headerHeight+barHeight))
+            item header Strings.Diagnostics.privateMemoryMeaning
             text (tr Strings.Diagnostics.privateMemory) captionFont p.description (Rectangle(0,0,memoryWidth,captionFont.Height)) false
-            let totalTop = captionFont.Height+Dpi.scale 2
-            text (ResourceFormat.value PrivateMemory s.privateMB) totalFont p.text (Rectangle(0,totalTop,memoryWidth,totalFont.Height)) false
-            text (tr Strings.Diagnostics.workingSet + "  " + ResourceFormat.value WorkingSet s.workingSetMB) captionFont p.description
-                 (Rectangle(0,totalTop,memoryWidth,totalFont.Height)) true
-            let barTop = Dpi.scale headerHeight
-            let memory = parts s p
-            let total = max 0.001f (memory |> List.sumBy(fun (_,mb,_) -> mb))
-            let mutable x = 0.0f
-            for (_,mb,color) in memory do
-                let w = float32 memoryWidth*mb/total
-                if w>0.5f then
-                    use brush = new SolidBrush(color)
-                    // A hairline of the page between parts tells them apart.
-                    g.FillRectangle(brush,x,float32 barTop,max 1.0f (w-(if x+w<float32 memoryWidth-0.5f then 2.0f else 0.0f)),float32(Dpi.scale barHeight))
-                x <- x+w
-            let swatch = Dpi.scale 10
-            memory |> List.iteri(fun index (caption,mb,color) ->
-                let top = barTop+Dpi.scale(barHeight+10)+index*Dpi.scale rowHeight
+            text (ResourceFormat.value PrivateMemory s.privateMB) totalFont p.text (Rectangle(0,captionFont.Height+Dpi.scale 2,memoryWidth,totalFont.Height)) false
+            let barTop = float32(Dpi.scale headerHeight)
+            let bar = RectangleF(0.0f,barTop,float32 memoryWidth,float32(Dpi.scale barHeight))
+            let memory = parts s
+            let palette = colors p
+            let total = max 0.001f (memory |> List.sumBy(fun (_,_,mb) -> mb))
+            do
+                // Rounded at both ends, the parts cut out of it with a hairline of the page between.
+                use outline = SettingsShapes.rounded bar (bar.Height/2.0f)
+                let clip = g.Clip
+                g.SetClip(outline)
+                let mutable x = 0.0f
+                List.zip memory palette |> List.iter(fun ((_,_,mb),color) ->
+                    let w = bar.Width*mb/total
+                    if w>0.5f then
+                        use brush = new SolidBrush(color)
+                        let last = x+w>=bar.Width-0.5f
+                        g.FillRectangle(brush,x,bar.Y,max 1.0f (w-(if last then 0.0f else 2.0f)),bar.Height)
+                    x <- x+w)
+                g.Clip <- clip
+            let swatch = float32(Dpi.scale 10)
+            let percentWidth,valueWidth = Dpi.scale 52,Dpi.scale 90
+            List.zip memory palette |> List.iteri(fun index ((caption,meaning,mb),color) ->
+                let top = Dpi.scale(headerHeight+barHeight+10)+index*Dpi.scale rowHeight
                 let row = Rectangle(0,top,memoryWidth,Dpi.scale rowHeight)
+                item row meaning
                 use brush = new SolidBrush(color)
-                g.FillRectangle(brush,0,top+(row.Height-swatch)/2,swatch,swatch)
-                let percentWidth = Dpi.scale 52
-                let valueWidth = Dpi.scale 90
-                text (tr caption) rowFont p.text (Rectangle(swatch+Dpi.scale 12,top,memoryWidth-swatch-Dpi.scale 12-percentWidth-valueWidth,row.Height)) false
+                use chip = SettingsShapes.rounded (RectangleF(0.0f,float32 top+(float32 row.Height-swatch)/2.0f,swatch,swatch)) (float32(Dpi.scale 2))
+                g.FillPath(brush,chip)
+                let labelLeft = int swatch+Dpi.scale 12
+                text (tr caption) rowFont p.text (Rectangle(labelLeft,top,memoryWidth-labelLeft-percentWidth-valueWidth,row.Height)) false
                 text (sprintf "%.1f MB" mb) rowFont p.description (Rectangle(memoryWidth-percentWidth-valueWidth,top,valueWidth,row.Height)) true
                 text (sprintf "%.0f%%" (mb/total*100.0f)) rowFont p.text (Rectangle(memoryWidth-percentWidth,top,percentWidth,row.Height)) true)
             // The other figures: beside the memory where the page is wide enough, else below it.
-            let left,top0 = if two then memoryWidth+Dpi.scale columnGap,0 else 0,Dpi.scale(headerHeight+barHeight+10+3*rowHeight+16)
+            let left,top0 = if two then memoryWidth+Dpi.scale columnGap,0 else 0,Dpi.scale(memoryHeight+16)
             let figuresWidth = width-left
             use separator = new Pen(p.border)
             if not two then g.DrawLine(separator,0,top0-Dpi.scale 8,width,top0-Dpi.scale 8)
-            figures |> List.iteri(fun index (metric,caption) ->
-                let top = top0+index*Dpi.scale rowHeight
-                text (tr caption) rowFont p.text (Rectangle(left,top,figuresWidth-Dpi.scale 100,Dpi.scale rowHeight)) false
-                text (ResourceFormat.value metric (s.value metric)) rowFont p.text (Rectangle(left+figuresWidth-Dpi.scale 100,top,Dpi.scale 100,Dpi.scale rowHeight)) true)
+            figures |> List.iteri(fun index (metric,caption,meaning) ->
+                let row = Rectangle(left,top0+index*Dpi.scale rowHeight,figuresWidth,Dpi.scale rowHeight)
+                item row meaning
+                text (tr caption) rowFont p.text (Rectangle(row.X,row.Y,row.Width-Dpi.scale 100,row.Height)) false
+                text (ResourceFormat.value metric (s.value metric)) rowFont p.text (Rectangle(row.Right-Dpi.scale 100,row.Y,Dpi.scale 100,row.Height)) true)
+            // At the foot, what the item pointed at is, or how to find out.
+            let foot = Rectangle(0,this.ClientSize.Height-Dpi.scale rowHeight,width,Dpi.scale rowHeight)
+            g.DrawLine(separator,0,foot.Top-Dpi.scale 6,width,foot.Top-Dpi.scale 6)
+            let meaning = hovered |> Option.bind(fun index -> if index<found.Count then Some(snd found.[index]) else None)
+            text (tr (defaultArg meaning Strings.Diagnostics.pointForMeaning)) captionFont p.description foot false
+        regions <- List.ofSeq found
 
 /// The Support page's resources: a tile for each, with its value now, its lowest and highest over
 /// the range shown and a line across that range. Pointing at a line shows that moment instead.
@@ -508,7 +573,9 @@ type DiagnosticsView() =
                                     match RuntimeDiagnostics.crashLogPath() with
                                     | Some path -> yield tr Strings.Diagnostics.openCrashLog,path
                                     | None -> ()],
-                             extra=fileSection)
+                             extra=fileSection,
+                             // The report stays readable under the resources; the page scrolls to it.
+                             minimumListHeight=300)
     do
         owner <- panel
         panel.HandleCreated.Add(fun _ -> guarded refresh)
