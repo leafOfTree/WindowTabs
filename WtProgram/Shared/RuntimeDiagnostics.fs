@@ -98,8 +98,7 @@ type ResourceHistory(recentCapacity:int, minuteCapacity:int) =
     member _.minutes = lock gate (fun () -> Array.append (minuteQueue.ToArray()) (if current.Count>0 then [|summarize current|] else [||]))
     member _.latest = lock gate (fun () -> if recentQueue.Count=0 then None else Some(Seq.last recentQueue))
 
-/// Reads the process every ten seconds on the main thread while WindowTabs runs; kept in memory
-/// only, a day at most.
+/// Reads the process every ten seconds while WindowTabs runs; kept in memory only, a day at most.
 module ResourceMonitor =
     [<DllImport("user32.dll")>]
     extern uint32 private GetGuiResources(IntPtr current, uint32 flags)
@@ -123,14 +122,19 @@ module ResourceMonitor =
           gdi=float32(GetGuiResources(current.Handle,0u)); user=float32(GetGuiResources(current.Handle,1u))
           hooks=float32(ResourceCounters.hookCount()); desktopHooks=float32(ResourceCounters.globalHookCount())
           groups=float32 groups; tabs=float32 tabs }
-    let sample counts =
-        try history.add(read(counts()))
-        with error -> Trace.TraceWarning("Resource sample failed: {0}",error.Message)
-    /// Samples now and every interval after, on the calling thread, until disposed.
+    /// Samples now and every interval after until disposed. Groups and tabs are counted on the
+    /// calling thread, which owns them; the rest is read on the pool: the process's figures list
+    /// every process on the machine, 4 to 12 ms where hundreds run, which the main thread, the
+    /// keyboard and mouse hooks' own, does not wait for.
     let start (counts:unit -> int * int) =
         let timer = new Windows.Forms.Timer(Interval=intervalMs)
-        timer.Tick.Add(fun _ -> sample counts)
-        sample counts
+        let sample() =
+            let counted = try counts() with _ -> 0,0
+            Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+                try history.add(read counted)
+                with error -> Trace.TraceWarning("Resource sample failed: {0}",error.Message)) |> ignore
+        timer.Tick.Add(fun _ -> sample())
+        sample()
         timer.Start()
         timer :> IDisposable
     /// Each metric now, at its lowest and highest over the day kept, and an hour before, for the

@@ -75,6 +75,122 @@ module SettingsFile =
             replace fresh "before-reset" (tr Strings.General.resetTitle) (fun backup -> tr (Strings.General.resetRestarting backup))
         | _ -> ()
 
+module ResourceFormat =
+    let value metric (value:float32) =
+        match metric with
+        | Cpu -> sprintf "%.1f%%" value
+        | PrivateMemory | WorkingSet | ManagedHeap -> sprintf "%.1f MB" value
+        | TabPictures -> if value>=1024.0f then sprintf "%.1f MB" (value/1024.0f) else sprintf "%.0f KB" value
+        | _ -> sprintf "%.0f" value
+
+/// The Support page's resources at a glance, as they are now: private memory split into the .NET
+/// heap, the tab pictures and the rest, then each other figure on its own line.
+type ResourceOverview() as this =
+    inherit Control()
+    let timer = new Timer(Interval=ResourceMonitor.intervalMs)
+    let figures =
+        [Cpu,Strings.Diagnostics.cpu; Threads,Strings.Diagnostics.threads; Handles,Strings.Diagnostics.handles
+         GdiObjects,Strings.Diagnostics.gdiObjects; UserObjects,Strings.Diagnostics.userObjects
+         EventHooks,Strings.Diagnostics.eventHooks; DesktopHooks,Strings.Diagnostics.desktopHooks
+         Groups,Strings.Diagnostics.groups; Tabs,Strings.Diagnostics.tabs]
+    // Logical pixels, scaled where they are used.
+    let rowHeight,headerHeight,barHeight,columnGap,columnWidth = 26,52,8,48,300
+    let twoColumns width = width >= Dpi.scale(2*columnWidth+columnGap)
+    let memoryHeight = headerHeight+barHeight+Dpi.scale 10+3*rowHeight
+    let heightFor width =
+        let figuresHeight = figures.Length*rowHeight
+        Dpi.scale(if twoColumns width then max memoryHeight figuresHeight + 8 else memoryHeight+16+figuresHeight+8)
+    /// Private memory's parts, each with its colour: the .NET heap, the tab pictures and the rest.
+    let parts (sample:ResourceSample) (p:SettingsPalette) =
+        let highContrast = SystemInformation.HighContrast
+        let dark = ThemeService.currentIsDark()
+        let pictures = sample.picturesKB/1024.0f
+        let heap = min sample.managedMB (max 0.0f (sample.privateMB-pictures))
+        [Strings.Diagnostics.managedHeap,heap,(if highContrast then SystemColors.Highlight else p.accent)
+         Strings.Diagnostics.tabPictures,pictures,(if highContrast then SystemColors.HotTrack elif dark then Color.FromRGB(0xF0955F) else Color.FromRGB(0xD9622B))
+         Strings.Diagnostics.runtimeAndOther,max 0.0f (sample.privateMB-heap-pictures),(if highContrast then SystemColors.GrayText elif dark then Color.FromRGB(0x8A8A8A) else Color.FromRGB(0xA0A0A0))]
+    let describe() =
+        this.AccessibleDescription <-
+            match ResourceMonitor.history.latest with
+            | None -> tr Strings.Diagnostics.collecting
+            | Some s ->
+                let memory = parts s (SettingsColors.current()) |> List.map(fun (caption,mb,_) -> sprintf "%s %.1f MB" (tr caption) mb)
+                let others = figures |> List.map(fun (metric,caption) -> tr caption + " " + ResourceFormat.value metric (s.value metric))
+                [tr Strings.Diagnostics.privateMemory + " " + ResourceFormat.value PrivateMemory s.privateMB] @ memory @
+                [tr Strings.Diagnostics.workingSet + " " + ResourceFormat.value WorkingSet s.workingSetMB] @ others
+                |> String.concat "; "
+    do
+        this.SetStyle(ControlStyles.AllPaintingInWmPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.UserPaint ||| ControlStyles.ResizeRedraw,true)
+        this.AccessibleRole <- AccessibleRole.Grouping
+        this.AccessibleName <- tr Strings.Diagnostics.resourcesTitle
+        this.Margin <- Padding(0,Dpi.scale 8,0,Dpi.scale 4)
+        timer.Tick.Add(fun _ -> if this.Visible then this.Invalidate(); describe())
+        describe()
+    override this.OnHandleCreated(e) =
+        base.OnHandleCreated(e)
+        timer.Start()
+    override this.OnSizeChanged(e) =
+        base.OnSizeChanged(e)
+        let height = heightFor this.ClientSize.Width
+        if this.Height<>height then this.Height <- height
+    override this.GetPreferredSize(proposed) = Size(proposed.Width,heightFor proposed.Width)
+    override this.Dispose(disposing) =
+        if disposing then timer.Dispose()
+        base.Dispose(disposing)
+    override this.OnPaint(e) =
+        let g = e.Graphics
+        let p = SettingsColors.current()
+        g.Clear(this.BackColor)
+        let rowFont = SettingsUi.rowFont()
+        let captionFont = SettingsUi.font (SettingsUi.uiFamily()) 9.5f FontStyle.Regular
+        let totalFont = SettingsUi.font (SettingsUi.uiSemiboldFamily()) 16.0f FontStyle.Regular
+        let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.VerticalCenter
+        let width = this.ClientSize.Width
+        let two = twoColumns width
+        let memoryWidth = if two then (width-Dpi.scale columnGap)/2 else width
+        let text (s:string) font color (bounds:Rectangle) right =
+            TextRenderer.DrawText(g,s,font,bounds,color,flags ||| (if right then TextFormatFlags.Right else TextFormatFlags.Left))
+        match ResourceMonitor.history.latest with
+        | None -> text (tr Strings.Diagnostics.collecting) rowFont p.description (Rectangle(0,0,width,Dpi.scale rowHeight)) false
+        | Some s ->
+            // Private memory: the total, the working set beside it, the bar of its parts and a line for each.
+            text (tr Strings.Diagnostics.privateMemory) captionFont p.description (Rectangle(0,0,memoryWidth,captionFont.Height)) false
+            let totalTop = captionFont.Height+Dpi.scale 2
+            text (ResourceFormat.value PrivateMemory s.privateMB) totalFont p.text (Rectangle(0,totalTop,memoryWidth,totalFont.Height)) false
+            text (tr Strings.Diagnostics.workingSet + "  " + ResourceFormat.value WorkingSet s.workingSetMB) captionFont p.description
+                 (Rectangle(0,totalTop,memoryWidth,totalFont.Height)) true
+            let barTop = Dpi.scale headerHeight
+            let memory = parts s p
+            let total = max 0.001f (memory |> List.sumBy(fun (_,mb,_) -> mb))
+            let mutable x = 0.0f
+            for (_,mb,color) in memory do
+                let w = float32 memoryWidth*mb/total
+                if w>0.5f then
+                    use brush = new SolidBrush(color)
+                    // A hairline of the page between parts tells them apart.
+                    g.FillRectangle(brush,x,float32 barTop,max 1.0f (w-(if x+w<float32 memoryWidth-0.5f then 2.0f else 0.0f)),float32(Dpi.scale barHeight))
+                x <- x+w
+            let swatch = Dpi.scale 10
+            memory |> List.iteri(fun index (caption,mb,color) ->
+                let top = barTop+Dpi.scale(barHeight+10)+index*Dpi.scale rowHeight
+                let row = Rectangle(0,top,memoryWidth,Dpi.scale rowHeight)
+                use brush = new SolidBrush(color)
+                g.FillRectangle(brush,0,top+(row.Height-swatch)/2,swatch,swatch)
+                let percentWidth = Dpi.scale 52
+                let valueWidth = Dpi.scale 90
+                text (tr caption) rowFont p.text (Rectangle(swatch+Dpi.scale 12,top,memoryWidth-swatch-Dpi.scale 12-percentWidth-valueWidth,row.Height)) false
+                text (sprintf "%.1f MB" mb) rowFont p.description (Rectangle(memoryWidth-percentWidth-valueWidth,top,valueWidth,row.Height)) true
+                text (sprintf "%.0f%%" (mb/total*100.0f)) rowFont p.text (Rectangle(memoryWidth-percentWidth,top,percentWidth,row.Height)) true)
+            // The other figures: beside the memory where the page is wide enough, else below it.
+            let left,top0 = if two then memoryWidth+Dpi.scale columnGap,0 else 0,Dpi.scale(headerHeight+barHeight+10+3*rowHeight+16)
+            let figuresWidth = width-left
+            use separator = new Pen(p.border)
+            if not two then g.DrawLine(separator,0,top0-Dpi.scale 8,width,top0-Dpi.scale 8)
+            figures |> List.iteri(fun index (metric,caption) ->
+                let top = top0+index*Dpi.scale rowHeight
+                text (tr caption) rowFont p.text (Rectangle(left,top,figuresWidth-Dpi.scale 100,Dpi.scale rowHeight)) false
+                text (ResourceFormat.value metric (s.value metric)) rowFont p.text (Rectangle(left+figuresWidth-Dpi.scale 100,top,Dpi.scale 100,Dpi.scale rowHeight)) true)
+
 /// The Support page's resources: a tile for each, with its value now, its lowest and highest over
 /// the range shown and a line across that range. Pointing at a line shows that moment instead.
 type ResourceCharts() as this =
@@ -90,12 +206,7 @@ type ResourceCharts() as this =
     let timer = new Timer(Interval=ResourceMonitor.intervalMs)
     let samples() = if day then ResourceMonitor.history.minutes else ResourceMonitor.history.recent
     let span() = if day then TimeSpan.FromHours(24.0) else TimeSpan.FromHours(1.0)
-    let format metric (value:float32) =
-        match metric with
-        | Cpu -> sprintf "%.1f%%" value
-        | PrivateMemory | WorkingSet | ManagedHeap -> sprintf "%.1f MB" value
-        | TabPictures -> if value>=1024.0f then sprintf "%.1f MB" (value/1024.0f) else sprintf "%.0f KB" value
-        | _ -> sprintf "%.0f" value
+    let format = ResourceFormat.value
     // Sizes in logical pixels, scaled where they are used.
     let tileWidth,tileHeight,gap = 180,96,16
     let columns width = max 1 ((width+Dpi.scale gap)/(Dpi.scale tileWidth+Dpi.scale gap))
@@ -345,17 +456,45 @@ type DiagnosticsView() =
         let reset = SettingsUi.button (tr Strings.General.reset)
         reset.Click.Add(run SettingsFile.reset)
         SettingsUi.settingRow card "settings-reset" reset
-        // What WindowTabs uses, over the last hour or day, before the report that copies it.
+        // What WindowTabs uses, before the report that copies it: at a glance now, then, opened,
+        // a chart for each over the last hour or day. Folded, the charts are not drawn.
+        SettingsUi.section table (tr Strings.Diagnostics.resourcesTitle)
+        SettingsUi.note table (tr Strings.Diagnostics.resourcesHelp)
+        let overview = new SettingsCard()
+        SettingsUi.add table overview
+        SettingsUi.add overview (new ResourceOverview())
         let charts = new ResourceCharts()
         let range = SettingsUi.choice [|tr Strings.Diagnostics.lastHour;tr Strings.Diagnostics.lastDay|]
-        range.AccessibleName <- tr Strings.Diagnostics.resourcesTitle
+        range.AccessibleName <- tr Strings.Diagnostics.charts
         range.SelectedIndex <- 0
         range.SelectedIndexChanged.Add(fun _ -> charts.Day <- range.SelectedIndex=1)
-        SettingsUi.sectionHeading table (tr Strings.Diagnostics.resourcesTitle) [range]
-        SettingsUi.note table (tr Strings.Diagnostics.resourcesHelp)
-        let resources = new SettingsCard()
-        SettingsUi.add table resources
-        SettingsUi.add resources charts
+        let expander = new SettingsExpanderButton(AccessibleName=tr Strings.Diagnostics.charts,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 4,0,0,0))
+        let caption = new Label(Text=tr Strings.Diagnostics.charts,AutoSize=true,Font=SettingsUi.subsectionFont(),Anchor=AnchorStyles.Left,
+                                Margin=Padding.Empty,Cursor=Cursors.Hand)
+        let heading = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=3,RowCount=1,
+                                           Margin=Padding(0,Dpi.scale 12,0,Dpi.scale 4))
+        heading.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        heading.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        heading.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        let titled = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,Margin=Padding.Empty,Anchor=AnchorStyles.Left)
+        titled.Controls.Add(caption)
+        titled.Controls.Add(expander)
+        heading.Controls.Add(titled,0,0)
+        range.Anchor <- AnchorStyles.Right
+        heading.Controls.Add(range,2,0)
+        // Keeps the heading as tall as the drop-down, shown or not, so opening moves nothing.
+        heading.MinimumSize <- Size(0,range.Height)
+        SettingsUi.add table heading
+        let chartsCard = new SettingsCard()
+        SettingsUi.add table chartsCard
+        SettingsUi.add chartsCard charts
+        let show opened =
+            expander.Open <- opened
+            range.Visible <- opened
+            chartsCard.Visible <- opened
+        show false
+        expander.Click.Add(fun _ -> show (not expander.Open))
+        caption.Click.Add(fun _ -> show (not expander.Open))
         SettingsUi.section table (tr Strings.Diagnostics.reportTitle)
         SettingsUi.note table (tr Strings.Diagnostics.description)
         table :> Control

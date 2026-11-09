@@ -832,10 +832,21 @@ globally. `Reliability` checks a real conhost window's hooks and that its move i
 
 ### Watching resources
 
-Support in Settings charts what WindowTabs uses, read every 10 seconds on the main thread
-(`ResourceMonitor`) and kept in memory only: the last hour as read, and 24 hours a minute
-at a time, each minute's average CPU and the highest of everything else, so a short peak
-still shows. CPU is a share of all processors, as Task Manager shows it. Besides the
+Support in Settings shows what WindowTabs uses: an overview of the figures now, private
+memory split into the .NET heap, saved tab pictures and the rest, and below it, folded
+until opened, a chart for each over the last hour or 24 hours. Readings are taken every 10
+seconds (`ResourceMonitor`) and kept in memory only: the last hour as read, and 24 hours a
+minute at a time, each minute's average CPU and the highest of everything else, so a short
+peak still shows. CPU is a share of all processors, as Task Manager shows it.
+
+What it costs, measured with 426 processes running: a reading took 3.7 ms (median, 12.5 ms
+at most), since the process's own figures make .NET list every process on the machine, so
+it is taken on the thread pool; only groups and tabs are counted on the main thread, which
+also runs the keyboard and mouse hooks. A day of history is under 100 KB. The overview and
+charts are drawn only while Support is open, every 10 seconds or as the pointer moves over
+a chart; folded charts are not drawn. Drawing all 13 charts over a full day took 1.3 ms.
+
+Besides the
 process's own counters it shows the bytes held by saved tab pictures and the live event
 hooks, with those heard from the whole desktop counted apart (`ResourceCounters`): a
 count that climbs while nothing changes points at the leak or the global hook. The

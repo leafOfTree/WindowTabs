@@ -565,12 +565,25 @@ let main() =
                 check painted (sprintf "The %s page failed to paint in the %s theme" (tr page) mode)
                 if page=Strings.Pages.diagnostics then
                     image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-support-"+mode+".png"),ImageFormat.Png)
-                    // The resources show a tile for each, laid out to the page's width, with the values now.
-                    let charts = controls form |> Seq.tryPick(function :? ResourceCharts as charts -> Some charts | _ -> None)
-                    check (charts |> Option.exists(fun charts -> charts.Visible && charts.Height>=Dpi.scale 96 && charts.Width>Dpi.scale 180))
-                          "The Support page shows no resource charts"
-                    check (charts |> Option.exists(fun charts -> charts.AccessibleDescription.Contains(tr Strings.Diagnostics.privateMemory + sprintf " %.1f MB" (70.0f+359.0f*0.05f))))
-                          (sprintf "The resource charts do not say the values now: %A" (charts |> Option.map(fun charts -> charts.AccessibleDescription)))
+                    // The resources at a glance first, with the values now; the charts folded under it.
+                    let overview = controls form |> Seq.tryPick(function :? ResourceOverview as overview -> Some overview | _ -> None)
+                    let latestPrivate = tr Strings.Diagnostics.privateMemory + sprintf " %.1f MB" (70.0f+359.0f*0.05f)
+                    check (overview |> Option.exists(fun overview -> overview.Visible && overview.Height>=Dpi.scale 200 && overview.AccessibleDescription.Contains(latestPrivate)))
+                          (sprintf "The Support page's overview does not say the values now: %A" (overview |> Option.map(fun overview -> overview.AccessibleDescription)))
+                    let charts = controls form |> Seq.pick(function :? ResourceCharts as charts -> Some charts | _ -> None)
+                    check (not charts.Visible) "The resource charts were open before they were asked for"
+                    let expander = controls form |> Seq.pick(function :? SettingsExpanderButton as button when button.AccessibleName=tr Strings.Diagnostics.charts -> Some button | _ -> None)
+                    expander.PerformClick()
+                    Application.DoEvents()
+                    check (charts.Visible && charts.Height>=Dpi.scale 96 && charts.Width>Dpi.scale 180 && charts.AccessibleDescription.Contains(latestPrivate))
+                          "Opening the charts did not show a chart for each, with the values now"
+                    for name,part in ["overview",(overview.Value :> Control);"charts",(charts :> Control)] do
+                        use picture = new Bitmap(part.Width,part.Height)
+                        part.DrawToBitmap(picture,Rectangle(Point.Empty,picture.Size))
+                        picture.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "settings-support-%s-%s.png" name mode),ImageFormat.Png)
+                    expander.PerformClick()
+                    Application.DoEvents()
+                    check (not charts.Visible) "Folding the charts left them shown"
         // Text in Windows 11's face where it is installed, sections headed in Semibold, not Bold.
         let variable = FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text")
         check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))

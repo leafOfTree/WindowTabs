@@ -1166,10 +1166,12 @@ module Strings =
         let releasesHint = { en="Check Releases ↗"; zh="查看发布版本 ↗"; ja="リリースを確認 ↗"; ar="التحقق من الإصدارات ↗" }
         let openCrashLog = { en="Crash log"; zh="崩溃日志"; ja="クラッシュログ"; ar="سجل الأعطال" }
         let resourcesTitle = { en="Resources"; zh="资源占用"; ja="リソース"; ar="الموارد" }
-        let resourcesHelp = { en="Read every 10 seconds and kept for 24 hours, in memory only. Point at a chart to see a past value."
-                              zh="每 10 秒读取一次，保留 24 小时，只存在内存中。鼠标指向图表可查看过去的数值。"
-                              ja="10 秒ごとに読み取り、メモリ内にのみ 24 時間保持します。グラフをポイントすると過去の値を表示します。"
-                              ar="تُقرأ كل 10 ثوانٍ ويُحتفظ بها لمدة 24 ساعة في الذاكرة فقط. أشر إلى مخطط لرؤية قيمة سابقة." }
+        let resourcesHelp = { en="What WindowTabs uses now, read every 10 seconds. The charts keep 24 hours, in memory only; point at one to see a past value."
+                              zh="WindowTabs 当前占用的资源，每 10 秒读取一次。详细图表保留 24 小时，只存在内存中；鼠标指向图表可查看过去的数值。"
+                              ja="WindowTabs が現在使っているリソース。10 秒ごとに読み取ります。グラフはメモリ内にのみ 24 時間保持し、ポイントすると過去の値を表示します。"
+                              ar="ما يستخدمه WindowTabs الآن، يُقرأ كل 10 ثوانٍ. تحتفظ المخططات بـ 24 ساعة في الذاكرة فقط؛ أشر إلى أحدها لرؤية قيمة سابقة." }
+        let charts = { en="Charts"; zh="详细图表"; ja="詳細グラフ"; ar="المخططات" }
+        let runtimeAndOther = { en="Runtime and other"; zh="运行时和其他"; ja="ランタイムとその他"; ar="وقت التشغيل وغيره" }
         let lastHour = { en="Last hour"; zh="最近 1 小时"; ja="過去 1 時間"; ar="آخر ساعة" }
         let lastDay = { en="Last 24 hours"; zh="最近 24 小时"; ja="過去 24 時間"; ar="آخر 24 ساعة" }
         let collecting = { en="Collecting…"; zh="正在收集…"; ja="収集中…"; ar="جارٍ الجمع…" }
