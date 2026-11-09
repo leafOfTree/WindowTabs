@@ -572,16 +572,21 @@ let main() =
                     check (overview |> Option.exists(fun overview -> overview.Visible && overview.Height>=Dpi.scale 200 && overview.AccessibleDescription.Contains(latestPrivate)))
                           (sprintf "The Support page's overview does not say the values now: %A" (overview |> Option.map(fun overview -> overview.AccessibleDescription)))
                     let charts = controls form |> Seq.pick(function :? ResourceCharts as charts -> Some charts | _ -> None)
-                    check (not charts.Visible) "The resource charts were open before they were asked for"
-                    let expander = controls form |> Seq.pick(function :? SettingsExpanderButton as button when button.AccessibleName=tr Strings.Diagnostics.charts -> Some button | _ -> None)
+                    let report = controls form |> Seq.pick(function :? SettingsTextView as view -> Some view | _ -> None)
+                    let page = controls form |> Seq.pick(function :? SettingsListPage as page when page.Visible -> Some page | _ -> None)
+                    // Each section folds; at first only the resources are open.
+                    check (not charts.Visible && not report.Visible && not page.ListShown) "The charts or the report were open before they were asked for"
+                    let folder caption = controls form |> Seq.pick(function :? SettingsExpanderButton as button when button.AccessibleName=tr caption -> Some button | _ -> None)
+                    let expander = folder Strings.Diagnostics.charts
                     expander.PerformClick()
+                    (folder Strings.Diagnostics.reportTitle).PerformClick()
                     Application.DoEvents()
                     check (charts.Visible && charts.Height>=Dpi.scale 96 && charts.Width>Dpi.scale 180 && charts.AccessibleDescription.Contains(latestPrivate))
                           "Opening the charts did not show a chart for each, with the values now"
+                    check (report.Visible && page.ListShown) "Opening the report did not show it"
                     // Taller than the window, the page scrolls, and at its end the report shows whole.
                     // Its scroll bar is the settings pages' own, over the margin, not Windows' grey one.
-                    let page = controls form |> Seq.pick(function :? SettingsListPage as page when page.Visible -> Some page | _ -> None)
-                    let reportCard = (controls form |> Seq.pick(function :? SettingsTextView as view when view.Visible -> Some view | _ -> None)).Parent
+                    let reportCard = report.Parent
                     let bar = page.Controls |> Seq.cast<Control> |> Seq.tryPick(function :? SettingsScrollBar as bar -> Some bar | _ -> None)
                     check (page.ScrollMaximum>0 && not page.AutoScroll && bar |> Option.exists(fun bar -> bar.Visible && bar.Right=page.ClientSize.Width))
                           "The Support page, taller than its window, shows no themed scroll bar"
@@ -595,9 +600,18 @@ let main() =
                         use picture = new Bitmap(part.Width,part.Height)
                         part.DrawToBitmap(picture,Rectangle(Point.Empty,picture.Size))
                         picture.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "settings-support-%s-%s.png" name mode),ImageFormat.Png)
-                    expander.PerformClick()
+                    // Folding the resources takes their open charts with them; opened again, both return.
+                    let resources = folder Strings.Diagnostics.resourcesTitle
+                    resources.PerformClick()
                     Application.DoEvents()
-                    check (not charts.Visible) "Folding the charts left them shown"
+                    check (not overview.Value.Visible && not charts.Visible) "Folding the resources left their overview or charts shown"
+                    resources.PerformClick()
+                    Application.DoEvents()
+                    check (overview.Value.Visible && charts.Visible) "Opening the resources again did not bring back their open charts"
+                    expander.PerformClick()
+                    (folder Strings.Diagnostics.reportTitle).PerformClick()
+                    Application.DoEvents()
+                    check (not charts.Visible && not report.Visible && page.ScrollOffset<=page.ScrollMaximum) "Folding the charts or the report left them shown"
         // Text in Windows 11's face where it is installed, sections headed in Semibold, not Bold.
         let variable = FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text")
         check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))

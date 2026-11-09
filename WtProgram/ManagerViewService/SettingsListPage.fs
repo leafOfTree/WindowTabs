@@ -24,6 +24,8 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
     let scroll = new SettingsScrollBar(TabStop=false,Visible=false)
     let mutable offset = 0
     let mutable maximum = 0
+    /// The list folded away, as Support's report can be.
+    let mutable listShown = true
     let clamp value = max 0 (min maximum value)
     let smooth = new SmoothScroller((fun () -> offset),clamp,(fun value ->
         let value = clamp value
@@ -107,6 +109,13 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             list.Invalidate()
             card.Invalidate())
     /// How far a page that scrolls can, and is, scrolled; 0 for one that does not.
+    /// Whether the list's card is shown; folded, the page ends above it.
+    member this.ListShown
+        with get() = listShown
+        and set value =
+            if listShown<>value then
+                listShown <- value
+                this.PerformLayout()
     member _.ScrollMaximum = maximum
     member _.ScrollOffset = offset
     /// Scrolls at once, without easing.
@@ -214,11 +223,14 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                     control.Height+Dpi.scale 12
                 | None -> 0
             let least = Dpi.scale (defaultArg minimumListHeight 80)
-            card.Bounds <- Rectangle(left,top,width,max least (this.ClientSize.Height-top-inset()-footerHeight))
+            card.Visible <- listShown
+            card.Bounds <- Rectangle(left,top,width,(if listShown then max least (this.ClientSize.Height-top-inset()-footerHeight) else 0))
             footer |> Option.iter(fun control -> control.Location <- Point(left,card.Bottom+Dpi.scale 12))
             // Placed as if unscrolled above; a page that scrolls then moves everything up by how far it is.
             if scrolls then
-                maximum <- max 0 (card.Bottom+footerHeight+inset()-this.ClientSize.Height)
+                // A folded list leaves the page ending with what is above it.
+                let bottom = if listShown then card.Bottom else top-gap()
+                maximum <- max 0 (bottom+footerHeight+inset()-this.ClientSize.Height)
                 offset <- clamp offset
                 if offset<>0 then
                     for control in this.Controls do

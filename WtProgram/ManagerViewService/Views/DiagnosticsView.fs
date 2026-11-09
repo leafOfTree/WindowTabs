@@ -105,10 +105,12 @@ type ResourceOverview() as this =
     let rowHeight,headerHeight,barHeight,columnGap,columnWidth = 26,52,8,48,300
     let twoColumns width = width >= Dpi.scale(2*columnWidth+columnGap)
     let memoryHeight = headerHeight+barHeight+10+partCount*rowHeight
+    /// Room for what an item is: two lines where the page is narrow, so the longest still fits.
+    let footHeight width = if twoColumns width then rowHeight else 2*rowHeight
     let heightFor width =
         let figuresHeight = figures.Length*rowHeight
         let body = if twoColumns width then max memoryHeight figuresHeight else memoryHeight+16+figuresHeight
-        Dpi.scale(body+12+rowHeight)
+        Dpi.scale(body+12+footHeight width)
     /// The colour of each part, told apart in either theme; in high contrast, Windows' own.
     let colors (p:SettingsPalette) =
         let dark = ThemeService.currentIsDark()
@@ -250,10 +252,11 @@ type ResourceOverview() as this =
                 text (tr caption) rowFont p.text (Rectangle(row.X,row.Y,row.Width-Dpi.scale 100,row.Height)) false
                 text (ResourceFormat.value metric (s.value metric)) rowFont p.text (Rectangle(row.Right-Dpi.scale 100,row.Y,Dpi.scale 100,row.Height)) true)
             // At the foot, what the item pointed at is, or how to find out.
-            let foot = Rectangle(0,this.ClientSize.Height-Dpi.scale rowHeight,width,Dpi.scale rowHeight)
+            let foot = Rectangle(0,this.ClientSize.Height-Dpi.scale(footHeight width),width,Dpi.scale(footHeight width))
             g.DrawLine(separator,0,foot.Top-Dpi.scale 6,width,foot.Top-Dpi.scale 6)
             let meaning = hovered |> Option.bind(fun index -> if index<found.Count then Some(snd found.[index]) else None)
-            text (tr (defaultArg meaning Strings.Diagnostics.pointForMeaning)) captionFont p.description foot false
+            TextRenderer.DrawText(g,tr (defaultArg meaning Strings.Diagnostics.pointForMeaning),captionFont,foot,p.description,
+                                  TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
         regions <- List.ofSeq found
 
 /// The Support page's resources: a tile for each, with its value now, its lowest and highest over
@@ -498,6 +501,9 @@ type DiagnosticsView() =
         strip.SizeChanged.Add(fun _ -> place())
         strip
     let repository = "https://github.com/leafOfTree/WindowTabs"
+    /// The page, once built, and how to fold its report: the report's card is the page's list.
+    let mutable listPage : SettingsListPage option = None
+    let mutable foldReport : bool -> unit = ignore
     // Settings file rows, then the report section's heading and note; its links, actions and
     // the report itself follow.
     let fileSection =
@@ -521,10 +527,43 @@ type DiagnosticsView() =
         let reset = SettingsUi.button (tr Strings.General.reset)
         reset.Click.Add(run SettingsFile.reset)
         SettingsUi.settingRow card "settings-reset" reset
-        // What WindowTabs uses, before the report that copies it: at a glance now, then, opened,
-        // a chart for each over the last hour or day. Folded, the charts are not drawn.
-        SettingsUi.section table (tr Strings.Diagnostics.resourcesTitle)
-        SettingsUi.note table (tr Strings.Diagnostics.resourcesHelp)
+        /// A heading that folds what follows it: its name and a chevron, either clicked, and a
+        /// control at its right end shown only while open. `set` folds or opens it.
+        let folding (caption:string) (font:Font) (top:int) (right:Control option) (changed:bool -> unit) =
+            let expander = new SettingsExpanderButton(AccessibleName=caption,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 4,0,0,0))
+            let label = new Label(Text=caption,AutoSize=true,Font=font,Anchor=AnchorStyles.Left,Margin=Padding.Empty,Cursor=Cursors.Hand)
+            let heading = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=3,RowCount=1,
+                                               Margin=Padding(0,Dpi.scale top,0,Dpi.scale 4))
+            heading.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+            heading.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+            heading.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+            let titled = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,Margin=Padding.Empty,Anchor=AnchorStyles.Left)
+            titled.Controls.Add(label)
+            titled.Controls.Add(expander)
+            heading.Controls.Add(titled,0,0)
+            right |> Option.iter(fun control ->
+                control.Anchor <- AnchorStyles.Right
+                heading.Controls.Add(control,2,0)
+                // As tall as the control, shown or not, so opening moves nothing.
+                heading.MinimumSize <- Size(0,control.Height))
+            SettingsUi.add table heading
+            let set opened =
+                expander.Open <- opened
+                right |> Option.iter(fun control -> control.Visible <- opened)
+                changed opened
+            expander.Click.Add(fun _ -> set (not expander.Open))
+            label.Click.Add(fun _ -> set (not expander.Open))
+            set
+        // What WindowTabs uses, open at first: at a glance now, then, opened, a chart for each over
+        // the last hour or day. Folded, nothing in it is drawn.
+        let resourceParts = ResizeArray<Control>()
+        let chartsOpen = ref false
+        let chartsCard = new SettingsCard()
+        let showResources = folding (tr Strings.Diagnostics.resourcesTitle) (SettingsUi.sectionFont()) 24 None (fun opened ->
+            for part in resourceParts do part.Visible <- opened
+            chartsCard.Visible <- opened && chartsOpen.Value)
+        let note = new Label(Text=tr Strings.Diagnostics.resourcesHelp,AutoSize=true,Tag="muted",Margin=Padding(0,0,0,Dpi.scale 12))
+        SettingsUi.add table note
         let overview = new SettingsCard()
         SettingsUi.add table overview
         SettingsUi.add overview (new ResourceOverview())
@@ -533,35 +572,23 @@ type DiagnosticsView() =
         range.AccessibleName <- tr Strings.Diagnostics.charts
         range.SelectedIndex <- 0
         range.SelectedIndexChanged.Add(fun _ -> charts.Day <- range.SelectedIndex=1)
-        let expander = new SettingsExpanderButton(AccessibleName=tr Strings.Diagnostics.charts,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 4,0,0,0))
-        let caption = new Label(Text=tr Strings.Diagnostics.charts,AutoSize=true,Font=SettingsUi.subsectionFont(),Anchor=AnchorStyles.Left,
-                                Margin=Padding.Empty,Cursor=Cursors.Hand)
-        let heading = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=3,RowCount=1,
-                                           Margin=Padding(0,Dpi.scale 12,0,Dpi.scale 4))
-        heading.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
-        heading.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
-        heading.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
-        let titled = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,Margin=Padding.Empty,Anchor=AnchorStyles.Left)
-        titled.Controls.Add(caption)
-        titled.Controls.Add(expander)
-        heading.Controls.Add(titled,0,0)
-        range.Anchor <- AnchorStyles.Right
-        heading.Controls.Add(range,2,0)
-        // Keeps the heading as tall as the drop-down, shown or not, so opening moves nothing.
-        heading.MinimumSize <- Size(0,range.Height)
-        SettingsUi.add table heading
-        let chartsCard = new SettingsCard()
+        let showCharts = folding (tr Strings.Diagnostics.charts) (SettingsUi.subsectionFont()) 12 (Some(range :> Control)) (fun opened ->
+            chartsOpen.Value <- opened
+            chartsCard.Visible <- opened)
+        let chartsHeading = table.Controls.[table.Controls.Count-1]
         SettingsUi.add table chartsCard
         SettingsUi.add chartsCard charts
-        let show opened =
-            expander.Open <- opened
-            range.Visible <- opened
-            chartsCard.Visible <- opened
-        show false
-        expander.Click.Add(fun _ -> show (not expander.Open))
-        caption.Click.Add(fun _ -> show (not expander.Open))
-        SettingsUi.section table (tr Strings.Diagnostics.reportTitle)
-        SettingsUi.note table (tr Strings.Diagnostics.description)
+        resourceParts.AddRange([note :> Control;overview;chartsHeading])
+        showCharts false
+        showResources true
+        // The report, folded at first: its card is the page's list.
+        let reportNote = new Label(Text=tr Strings.Diagnostics.description,AutoSize=true,Tag="muted",Margin=Padding(0,0,0,Dpi.scale 12))
+        let showReport = folding (tr Strings.Diagnostics.reportTitle) (SettingsUi.sectionFont()) 24 None (fun opened ->
+            reportNote.Visible <- opened
+            listPage |> Option.iter(fun (page:SettingsListPage) -> page.ListShown <- opened))
+        reportNote.MaximumSize <- Size(Dpi.scale 550,0)
+        SettingsUi.add table reportNote
+        foldReport <- showReport
         table :> Control
     let panel =
         // No page title: the sidebar names the page, and its two sections carry their own headings.
@@ -578,6 +605,8 @@ type DiagnosticsView() =
                              minimumListHeight=300)
     do
         owner <- panel
+        listPage <- Some panel
+        foldReport false
         panel.HandleCreated.Add(fun _ -> guarded refresh)
         tools |> ignore
     interface ISettingsView with
