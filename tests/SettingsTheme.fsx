@@ -653,8 +653,12 @@ let main() =
                     pointAtChart line.Left middle
                     check (charts.Picked=Some recorded.[0].time) (sprintf "At the left end, the chart picked %A, not the first reading" charts.Picked)
                     pointAtChart (line.Right-1) middle
-                    // Under a pixel apart there, so the latest or the one before it.
-                    check (charts.Picked |> Option.exists(fun time -> time>=recorded.[recorded.Length-2].time)) (sprintf "At the right end, the chart picked %A, not the latest reading" charts.Picked)
+                    // Readings can be closer than a pixel there, by how wide the chart is at this
+                    // scale: any within two pixels' time of the latest is it, to the eye.
+                    let latest = recorded.[recorded.Length-1].time
+                    let twoPixels = TimeSpan.FromSeconds(charts.Span.TotalSeconds/float line.Width*2.0)
+                    check (charts.Picked |> Option.exists(fun time -> time>=latest-twoPixels))
+                          (sprintf "At the right end, the chart picked %A, not near the latest reading %A (two pixels are %A)" charts.Picked latest twoPixels)
                     WinUserApi.SendMessage(charts.Handle,0x02A3,0,0) |> ignore
                     check (report.Visible && page.ListShown) "Opening the report did not show it"
                     // Taller than the window, the page scrolls, and at its end the report shows whole.
