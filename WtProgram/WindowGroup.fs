@@ -320,9 +320,11 @@ module WindowGroupToken =
 /// tab's last good capture stands in for it, kept small: thumbnails are a few hundred pixels
 /// and a peek at a hidden tab may be soft. Kept by the group, for every picture of a tab: the
 /// strip's preview on hover, printed off its thread, as much as the taskbar's.
+/// Each is kept as a PNG: as pixels, every tab of every group held over a megabyte that nothing
+/// looked at until its preview.
 type TabCaptures() =
     let gate = obj()
-    let captures = Collections.Generic.Dictionary<IntPtr,Bitmap>()
+    let captures = Collections.Generic.Dictionary<IntPtr,byte[]>()
     /// Tabs that printed blank while hidden; printing them again before they come to the front
     /// would only be slow.
     let blank = Collections.Generic.HashSet<IntPtr>()
@@ -339,7 +341,7 @@ type TabCaptures() =
                     for j in 1..8 -> bitmap.GetPixel(width*i/9,height*(1+j)/10) }
             |> Seq.forall(fun pixel -> pixel = first)
 
-    static member private scaled (source:Bitmap) (size:Size) =
+    static member private scaled (source:Image) (size:Size) =
         let result = new Bitmap(size.Width,size.Height,PixelFormat.Format32bppArgb)
         try
             use g = Graphics.FromImage(result)
@@ -351,19 +353,25 @@ type TabCaptures() =
             reraise()
 
     member this.count = lock gate (fun () -> captures.Count)
+    member private this.keptBytesUnlocked = captures.Values |> Seq.sumBy(fun saved -> int64 saved.Length)
+    /// The bytes the kept captures hold.
+    member this.keptBytes = lock gate (fun () -> this.keptBytesUnlocked)
 
     /// Keeps a copy of a capture that shows the window.
     member this.remember (hwnd:IntPtr) (image:Bitmap) =
         if not(TabCaptures.isBlank image) then
             let ratio = min 1.0 (float TabCaptures.maxSide / float (max image.Width image.Height))
             let size = Size(max 1 (int(float image.Width * ratio)),max 1 (int(float image.Height * ratio)))
-            let copy = TabCaptures.scaled image size
+            let saved =
+                use copy = TabCaptures.scaled image size
+                use stream = new MemoryStream()
+                copy.Save(stream,ImageFormat.Png)
+                stream.ToArray()
             lock gate (fun () ->
                 blank.Remove hwnd |> ignore
-                match captures.TryGetValue hwnd with
-                | true,previous -> previous.Dispose()
-                | _ -> ()
-                captures.[hwnd] <- copy)
+                let previous = match captures.TryGetValue hwnd with | true,old -> int64 old.Length | _ -> 0L
+                captures.[hwnd] <- saved
+                ResourceCounters.capturesChanged (int64 saved.Length - previous))
 
     /// The capture to show for a window of the given size: a live one when it shows the window,
     /// else the last that did. A hidden tab known to print blank is not printed again. The live
@@ -371,7 +379,10 @@ type TabCaptures() =
     member this.preview (hwnd:IntPtr) (size:Size) (minimized:bool) (inFront:bool) (capture:unit -> Img) : Img =
         let fromSaved (size:Size) =
             match captures.TryGetValue hwnd with
-            | true,saved -> Some(Img(TabCaptures.scaled saved size))
+            | true,saved ->
+                use stream = new MemoryStream(saved)
+                use image = Image.FromStream(stream)
+                Some(Img(TabCaptures.scaled image size))
             | _ -> None
         let known = lock gate (fun () -> if not minimized && not inFront && blank.Contains hwnd then fromSaved size else None)
         match known with
@@ -399,14 +410,14 @@ type TabCaptures() =
             blank.Remove hwnd |> ignore
             match captures.TryGetValue hwnd with
             | true,saved ->
-                saved.Dispose()
                 captures.Remove hwnd |> ignore
+                ResourceCounters.capturesChanged (-(int64 saved.Length))
             | _ -> ())
 
     interface IDisposable with
         member this.Dispose() =
             lock gate (fun () ->
-                for saved in captures.Values do saved.Dispose()
+                ResourceCounters.capturesChanged (-this.keptBytesUnlocked)
                 captures.Clear()
                 blank.Clear())
 

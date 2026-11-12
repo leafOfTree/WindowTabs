@@ -792,3 +792,73 @@ the previous code in 18 states (built, switched, rescaled, shown after a rescale
 a resize while hidden, collapsed rows, dark theme, 20 round trips), and all deterministic
 `SettingsTheme`, `SettingsEditors` and `DpiLayout` PNGs were pixel-identical. High
 contrast was not rendered, as it needs a system setting; the change does not touch colours.
+
+## Idle memory: 2026-11-09
+
+Reported against 2026.11.5: about 200 MB working set and 155 MB private bytes at idle,
+46 threads, creeping up while watched. Measured on a Debug build, 64-bit, with N
+single-window groups on a hidden desktop, after groups settled:
+
+| Groups | Private | Working set | Live managed after a full GC |
+|---:|---:|---:|---:|
+| 1 | 37.9 MB | 63 MB | 2.4 MB |
+| 10 | 49.2 MB | 76 MB | 5.4 MB |
+| 30 | 68.3 MB | 95 MB | 14.1 MB |
+
+So roughly 38 MB fixed (24 MB of it the CLR, WinForms and FSharp.Core before `Program`
+starts) and about 1 MB, one STA thread and some 30 USER objects per group. In a real
+session the GC committed about 44 MB for 18 MB of live objects, and looking up Store app
+icons through `shell:AppsFolder` loads `Windows.UI.Xaml` and the state repository once.
+
+The rest was the stand-in captures added in 2026.11.5 (`TabCaptures`): every tab of a
+group with more than one tab kept its last picture as a 32-bit bitmap up to 800 pixels
+on its long side, about 1.4 MB of native GDI+ memory the GC never sees, collected as
+tabs came to the front. Forty kept captures of 1920×1080 windows added 56.8 MB of
+private bytes. They are now kept as PNG: an 800×450 capture of a real desktop took
+124 KB instead of 1,406 KB, with a 4.4 ms encode and a 2.6 ms decode, lossless, so
+previews look the same. The same forty captures now add 2.5 MB. `TaskbarPreview`
+checks that a kept capture is stored compressed.
+
+Idle CPU on this machine was 0 ms over 15 seconds on every thread. A grouped console
+window (`ConsoleWindowClass`, the default for cmd and PowerShell on Windows 10) hooked
+its ten window events across the whole desktop, because the window reports its
+client's process while conhost raises its events. A global `LOCATIONCHANGE` hook also
+receives every cursor and caret move; one received about 110 events a second under
+light use. A hook filtered to the conhost process (`NtQueryInformationProcess` with
+`ProcessConsoleHostProcess` on the client) received every move and title change the
+global hook did for that window, so console windows are now hooked there
+(`Window.eventSource`); only a console whose conhost cannot be read is still hooked
+globally. `Reliability` checks a real conhost window's hooks and that its move is heard.
+
+### Watching resources
+
+Support in Settings shows what WindowTabs uses: an overview of the figures now, each
+explained while pointed at, and below it, folded until opened, a chart for each over the
+last hour or 24 hours. The overview splits private memory by a scan of the process's own
+address space (`ProcessMemoryMap`): the .NET heap as committed (the reservation holding a
+pinned object), split into its objects, the tab pictures among them, and its free space;
+private executable pages as compiled code; writable image pages as library data; and the
+allocations with a guard page as thread stacks. Private bytes are those and the private
+pages besides, so the rest, shown as Other, is the native heaps and .NET's type data. The
+scan takes about a millisecond on the pool with each reading. Readings are taken every 10
+seconds (`ResourceMonitor`) and kept in memory only: the last hour as read, and 24 hours a
+minute at a time, each minute's average CPU and the highest of everything else, so a short
+peak still shows. CPU is a share of all processors, as Task Manager shows it.
+
+What it costs, measured with 441 processes running: a reading takes 0.42 ms (median). Its
+figures are asked of Windows about this process alone (`ProcessFigures`), where .NET's
+`Process` listed every process on the machine for them, 4.25 ms in the same run; threads are
+counted by their stacks in the address-space scan, two to a thread under WOW64, and matched
+`Process` in that run. The history's readings are taken on the thread pool; only groups and
+tabs are counted on the main thread, which also runs the keyboard and mouse hooks. A day of
+history is under 100 KB. The overview and the charts show the same readings, redrawn every
+10 seconds only while they can be seen, the charts also as the pointer moves over one;
+drawing all 13 over a full day took 1.3 ms. Reading more often was left alone: the hour's
+chart already has more readings than pixels, and leaks build over minutes.
+
+Besides the
+process's own counters it shows the bytes held by saved tab pictures and the live event
+hooks, with those heard from the whole desktop counted apart (`ResourceCounters`): a
+count that climbs while nothing changes points at the leak or the global hook. The
+troubleshooting report carries the same figures, now, lowest, highest and an hour
+before, under `resourceHistory`.

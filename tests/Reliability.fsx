@@ -535,9 +535,11 @@ let main() =
         check (current.["tabThemeMode"].ToString()="dark") "Reset changed the settings it read"
     check (report.["settings"].["workspaceCount"].Value<int>()=1) "Diagnostic summary missing workspace count"
     // Most telling first; crashes (none here) would sit before the developer figures at the end.
-    let order = ["version";"os";"dotNet";"settings";"otherTools";"environment";"monitors";"groups";"groupedWindows";"uptimeMinutes";"resources";"scans"]
+    let order = ["version";"os";"dotNet";"settings";"otherTools";"environment";"monitors";"groups";"groupedWindows";"uptimeMinutes";"resources";"resourceHistory";"scans"]
     let keys = report.Properties() |> Seq.map(fun property -> property.Name) |> Seq.toList
     check (keys=order) (sprintf "Diagnostic report fields are missing or out of order: %A" keys)
+    check (["eventHooks";"desktopHooks";"tabPicturesKB"] |> List.forall(fun key -> not(isNull report.["resources"].[key])))
+          (sprintf "The report's resources leave out hooks or tab pictures: %O" report.["resources"])
     check ((report.["monitors"] :?> JArray).Count >= 1) "Diagnostic report lists no displays"
     IO.File.WriteAllText(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","diagnostics-sample.json"),report.ToString())
     // Nothing that looks like a file path, whatever the machine has.
@@ -771,6 +773,99 @@ let main() =
                     CloakProbe.DwmSetWindowAttribute(other.Handle,13,&cloak,4) |> ignore
             finally TaskbarProxies.remove proxy.Handle
         finally Environment.CurrentDirectory <- previous
-    printfn "PASS: startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation, DPI geometry and cloaked windows inside an input-synchronous call and the switcher."
+    // A console window's events are heard from its conhost, not from every app on the desktop,
+    // and still reach its group: a move of the window is heard.
+    do
+        let token = string(Guid.NewGuid())
+        let title = "WindowTabs console probe " + token
+        // conhost has no 32-bit copy: a 32-bit host reaches the 64-bit one through Sysnative.
+        let system =
+            if Environment.Is64BitOperatingSystem && not Environment.Is64BitProcess then
+                IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"Sysnative")
+            else Environment.SystemDirectory
+        let start = Diagnostics.ProcessStartInfo(IO.Path.Combine(system,"conhost.exe"),"cmd.exe /k title " + title,UseShellExecute=false)
+        use host = Diagnostics.Process.Start(start)
+        try
+            let pumpUntil (ready:unit -> bool) =
+                let watch = Diagnostics.Stopwatch.StartNew()
+                while not(ready()) && watch.ElapsedMilliseconds < 10000L do
+                    System.Windows.Forms.Application.DoEvents()
+                    Thread.Sleep(20)
+            // By the title's own token: an elevated console, as on a build server, puts
+            // "Administrator: " before the title it is given.
+            let consoles() = OS().windowsInZorder.list |> List.filter(fun window -> window.className="ConsoleWindowClass")
+            let mutable hwnd = IntPtr.Zero
+            pumpUntil(fun () ->
+                hwnd <- consoles() |> List.tryFind(fun window -> window.text.Contains(token)) |> Option.map(fun window -> window.hwnd) |> Option.defaultValue IntPtr.Zero
+                hwnd<>IntPtr.Zero)
+            check (hwnd<>IntPtr.Zero)
+                  (sprintf "The console fixture did not open a window (conhost %s; consoles: %A)"
+                       (if host.HasExited then sprintf "exited with %d" host.ExitCode else "running")
+                       (consoles() |> List.map(fun window -> window.text)))
+            let window = OS().windowFromHwnd(hwnd)
+            check window.isConsoleWindow "The console fixture's window was not taken for a console"
+            // Windows answers which conhost only to a 64-bit caller, as WindowTabs is on 64-bit
+            // Windows; this 32-bit host falls back to hearing the window from everywhere.
+            let expected = if Environment.Is64BitOperatingSystem && not Environment.Is64BitProcess then (0,0) else (host.Id,0)
+            check (window.eventSource=expected) (sprintf "A console window's events were heard from %A, not %A (conhost %d)" window.eventSource expected host.Id)
+            check (Environment.Is64BitProcess || not Environment.Is64BitOperatingSystem || ConsoleHost.ProcessId(window.pid.pid)=0)
+                  "A 32-bit caller was expected to be refused which conhost a console has"
+            let mutable moves = 0
+            use hook = window.setWinEventHook WinEvent.EVENT_OBJECT_LOCATIONCHANGE (fun () -> moves <- moves+1)
+            WinUserApi.SetWindowPos(hwnd,IntPtr.Zero,120,140,0,0,SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
+            pumpUntil(fun () -> moves>0)
+            check (moves>0) "A console window's move was not heard from its conhost"
+        finally
+            try host.Kill() with _ -> ()
+    // Resource history: the last readings as taken, and each minute as its average CPU and its
+    // highest of everything else; both stop at their capacity.
+    do
+        let history = ResourceHistory(5,2)
+        let start = DateTime(2026,11,9,10,0,0,DateTimeKind.Utc)
+        let reading seconds cpu memory =
+            { time=start.AddSeconds(float seconds); cpu=cpu; privateMB=memory; workingSetMB=memory; managedMB=1.0f; picturesKB=0.0f
+              threads=1.0f; handles=1.0f; gdi=1.0f; user=1.0f; hooks=1.0f; desktopHooks=0.0f; groups=1.0f; tabs=1.0f
+              memory=MemoryParts.none }
+        check (history.latest.IsNone && history.minutes.Length=0) "An empty resource history had readings"
+        for seconds,cpu,memory in [0,1.0f,10.0f;20,3.0f,30.0f;40,2.0f,20.0f] do history.add(reading seconds cpu memory)
+        let minute = history.minutes
+        check (minute.Length=1 && minute.[0].cpu=2.0f && minute.[0].privateMB=30.0f && minute.[0].time=start)
+              (sprintf "A minute under way was not its average CPU and highest memory: %A" minute)
+        for seconds in [60;80;120;180] do history.add(reading seconds 0.0f 5.0f)
+        check (history.recent.Length=5 && history.recent.[0].time=start.AddSeconds(40.0)) "The recent readings outgrew their capacity"
+        check (history.minutes |> Array.map(fun s -> s.time.Minute)=[|1;2;3|]) (sprintf "The minutes kept were %A" (history.minutes |> Array.map(fun s -> s.time)))
+        // A reading finds each part of this process's memory, and together they are no more than
+        // its private bytes, the native heaps being the rest.
+        let reading = ResourceMonitor.read(1,1)
+        let parts = reading.memory
+        check (parts.heapMB>0.0f && parts.codeMB>0.0f && parts.libraryDataMB>0.0f && parts.stacksMB>0.0f)
+              (sprintf "A resource reading missed part of the memory: %A" parts)
+        check (parts.heapMB>=reading.managedMB*0.9f) (sprintf "The .NET heap read %.1f MB for %.1f MB of objects" parts.heapMB reading.managedMB)
+        check (parts.heapMB+parts.codeMB+parts.libraryDataMB+parts.stacksMB<=reading.privateMB*1.05f)
+              (sprintf "The memory's parts, %A, came to more than its %.1f MB" parts reading.privateMB)
+        // Asked of Windows about this process alone, the figures are Process's own: threads by
+        // their stacks, give or take one starting or ending meanwhile.
+        do
+            use current = Diagnostics.Process.GetCurrentProcess()
+            let near (a:float32) (b:float) (allowed:float) = abs(float a-b)<=allowed
+            check (near reading.threads (float current.Threads.Count) 2.0) (sprintf "Threads read %.0f by their stacks, %d by Process" reading.threads current.Threads.Count)
+            check (near reading.handles (float current.HandleCount) 30.0) (sprintf "Handles read %.0f, %d by Process" reading.handles current.HandleCount)
+            check (near reading.privateMB (float current.PrivateMemorySize64/1048576.0) 4.0) (sprintf "Private memory read %.1f MB, %d bytes by Process" reading.privateMB current.PrivateMemorySize64)
+        // A reading costs about a millisecond, a tenth of what Process's figures did.
+        do
+            let clock = ResourceMonitor.CpuClock()
+            ResourceMonitor.readWith clock (1,1) |> ignore
+            let watch = Diagnostics.Stopwatch.StartNew()
+            for _ in 1..20 do ResourceMonitor.readWith clock (1,1) |> ignore
+            check (watch.Elapsed.TotalMilliseconds/20.0 < 5.0) (sprintf "A resource reading took %.1f ms" (watch.Elapsed.TotalMilliseconds/20.0))
+        // Event hooks are counted while they last, those heard from everywhere apart.
+        let os = OS()
+        let hooks,desktop = ResourceCounters.hookCount(),ResourceCounters.globalHookCount()
+        let everywhere = os.setWinEventHook(WinEvent.EVENT_SYSTEM_FOREGROUND,WinEvent.EVENT_SYSTEM_FOREGROUND,(fun _ _ _ _ _ _ _ -> ()),0,0)
+        let own = os.setWinEventHook(WinEvent.EVENT_SYSTEM_FOREGROUND,WinEvent.EVENT_SYSTEM_FOREGROUND,(fun _ _ _ _ _ _ _ -> ()),Diagnostics.Process.GetCurrentProcess().Id,0)
+        check (ResourceCounters.hookCount()=hooks+2 && ResourceCounters.globalHookCount()=desktop+1) "Event hooks were not counted"
+        everywhere.Dispose(); everywhere.Dispose(); own.Dispose()
+        check (ResourceCounters.hookCount()=hooks && ResourceCounters.globalHookCount()=desktop) "Removed event hooks were still counted"
+    printfn "PASS:startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation, DPI geometry and cloaked windows inside an input-synchronous call and the switcher, console windows heard from their conhost."
 
 TestInit.run main

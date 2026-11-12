@@ -530,6 +530,16 @@ let main() =
             disposableSupport.control.Dispose()
             let sharedFont = SettingsUi.font "Consolas" 10.5f FontStyle.Regular
             check (sharedFont.GetHeight()>0.0f) "Closing diagnostics disposed its shared font"
+        // An hour of readings for the resource charts, memory climbing slowly.
+        do
+            let now = DateTime.UtcNow
+            for i in 0..359 do
+                let f = float32 i
+                ResourceMonitor.history.add
+                    { time=now.AddSeconds(float(i-359)*10.0); cpu=(if i%40=0 then 3.0f else 0.2f)
+                      privateMB=70.0f+f*0.05f; workingSetMB=110.0f+f*0.05f; managedMB=18.0f+float32(i%30)*0.3f; picturesKB=600.0f+f
+                      threads=27.0f; handles=800.0f; gdi=120.0f; user=340.0f; hooks=160.0f; desktopHooks=8.0f; groups=6.0f; tabs=14.0f
+                      memory={ heapMB=30.0f; codeMB=3.0f; libraryDataMB=17.0f; stacksMB=4.0f } }
         let support = DiagnosticsView() :> ISettingsView
         let beforeOpen = File.ReadAllText(settings.path)
         let frame = DesktopManagerForm(views=[
@@ -554,6 +564,90 @@ let main() =
                 use image = new Bitmap(form.Width,form.Height)
                 let painted = try form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size)); true with _ -> false
                 check painted (sprintf "The %s page failed to paint in the %s theme" (tr page) mode)
+                if page=Strings.Pages.diagnostics then
+                    image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-support-"+mode+".png"),ImageFormat.Png)
+                    // The resources at a glance first, with the values now; the charts folded under it.
+                    let overview = controls form |> Seq.tryPick(function :? ResourceOverview as overview -> Some overview | _ -> None)
+                    let latestPrivate = tr Strings.Diagnostics.privateMemory + sprintf " %.1f MB" (70.0f+359.0f*0.05f)
+                    // It shows the history's latest reading, as the charts and the report do.
+                    let showsLatest (overview:ResourceOverview) =
+                        let text = overview.AccessibleDescription
+                        overview.Visible && overview.Height>=Dpi.scale 200 &&
+                        text.StartsWith(tr Strings.Diagnostics.privateMemory) && text.Contains(latestPrivate)
+                    check (overview |> Option.exists showsLatest)
+                          (sprintf "The Support page's overview does not show the latest reading: %A" (overview |> Option.map(fun overview -> overview.AccessibleDescription)))
+                    let charts = controls form |> Seq.pick(function :? ResourceCharts as charts -> Some charts | _ -> None)
+                    let report = controls form |> Seq.pick(function :? SettingsTextView as view -> Some view | _ -> None)
+                    let page = controls form |> Seq.pick(function :? SettingsListPage as page when page.Visible -> Some page | _ -> None)
+                    // Each section folds; at first only the resources are open.
+                    check (not charts.Visible && not report.Visible && not page.ListShown) "The charts or the report were open before they were asked for"
+                    let folder caption = controls form |> Seq.pick(function :? SettingsExpanderButton as button when button.AccessibleName=tr caption -> Some button | _ -> None)
+                    let expander = folder Strings.Diagnostics.charts
+                    expander.PerformClick()
+                    (folder Strings.Diagnostics.reportTitle).PerformClick()
+                    Application.DoEvents()
+                    check (charts.Visible && charts.Height>=Dpi.scale 96 && charts.Width>Dpi.scale 180 && charts.AccessibleDescription.Contains(latestPrivate))
+                          "Opening the charts did not show a chart for each, with the values now"
+                    // In the report's order, by what they tell.
+                    check (charts.Order=ResourceSample.metrics) (sprintf "The charts are in the order %A" charts.Order)
+                    // The pointer picks the reading under it, none where there is none: over a day,
+                    // the hour of readings fills only the right end of each chart.
+                    // Drawn to a bitmap: off screen, as this window is, Windows paints nothing.
+                    let pointAtChart (x:int) (y:int) =
+                        WinUserApi.SendMessage(charts.Handle,0x0200,0,(y <<< 16) ||| x) |> ignore
+                        use drawn = new Bitmap(charts.Width,charts.Height)
+                        charts.DrawToBitmap(drawn,Rectangle(Point.Empty,drawn.Size))
+                    let line = charts.ChartBounds.Head
+                    let middle = line.Top+line.Height/2
+                    charts.Day <- true
+                    pointAtChart (line.Left+Dpi.scale 4) middle
+                    check charts.Picked.IsNone (sprintf "Left of the first reading, the chart picked %A" charts.Picked)
+                    pointAtChart (line.Right-Dpi.scale 2) middle
+                    check charts.Picked.IsSome (sprintf "At the latest reading, the chart picked none: line %A, minutes %A to %A" line
+                                                    (ResourceMonitor.history.minutes |> Array.tryHead |> Option.map(fun s -> s.time))
+                                                    (ResourceMonitor.history.latest |> Option.map(fun s -> s.time)))
+                    charts.Day <- false
+                    WinUserApi.SendMessage(charts.Handle,0x02A3,0,0) |> ignore
+                    check (report.Visible && page.ListShown) "Opening the report did not show it"
+                    // Taller than the window, the page scrolls, and at its end the report shows whole.
+                    // Its scroll bar is the settings pages' own, over the margin, not Windows' grey one.
+                    let reportCard = report.Parent
+                    let bar = page.Controls |> Seq.cast<Control> |> Seq.tryPick(function :? SettingsScrollBar as bar -> Some bar | _ -> None)
+                    check (page.ScrollMaximum>0 && not page.AutoScroll && bar |> Option.exists(fun bar -> bar.Visible && bar.Right=page.ClientSize.Width))
+                          "The Support page, taller than its window, shows no themed scroll bar"
+                    let widthBefore = reportCard.Width
+                    page.ScrollTo(Int32.MaxValue/2)
+                    Application.DoEvents()
+                    let shown = Rectangle(page.PointToClient(reportCard.PointToScreen(Point.Empty)),reportCard.Size)
+                    check (page.ScrollOffset=page.ScrollMaximum && shown.Top>=0 && shown.Bottom<=page.ClientSize.Height && shown.Height>=Dpi.scale 300 && shown.Width=widthBefore)
+                          (sprintf "Scrolled to its end, the Support page's report is at %A in %A" shown page.ClientSize)
+                    // Scrolling moves the page's content as one, leaving each part where it is in it:
+                    // moved part by part, they landed a moment apart and the page shook.
+                    let inContent = reportCard.Location
+                    page.ScrollTo(page.ScrollMaximum/2)
+                    Application.DoEvents()
+                    check (reportCard.Location=inContent && obj.ReferenceEquals(reportCard.Parent.Parent,page) && reportCard.Parent.Top = -page.ScrollOffset)
+                          "Scrolling moved the page's parts one by one"
+                    page.ScrollTo(0)
+                    // The pointer over private memory's total shades it with room on every side.
+                    let pointAt (x:int) (y:int) = WinUserApi.SendMessage(overview.Value.Handle,0x0200,0,(y <<< 16) ||| x) |> ignore
+                    pointAt (Dpi.scale 30) (Dpi.scale 20)
+                    for name,part in ["overview",(overview.Value :> Control);"charts",(charts :> Control)] do
+                        use picture = new Bitmap(part.Width,part.Height)
+                        part.DrawToBitmap(picture,Rectangle(Point.Empty,picture.Size))
+                        picture.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "settings-support-%s-%s.png" name mode),ImageFormat.Png)
+                    // Folding the resources takes their open charts with them; opened again, both return.
+                    let resources = folder Strings.Diagnostics.resourcesTitle
+                    resources.PerformClick()
+                    Application.DoEvents()
+                    check (not overview.Value.Visible && not charts.Visible) "Folding the resources left their overview or charts shown"
+                    resources.PerformClick()
+                    Application.DoEvents()
+                    check (overview.Value.Visible && charts.Visible) "Opening the resources again did not bring back their open charts"
+                    expander.PerformClick()
+                    (folder Strings.Diagnostics.reportTitle).PerformClick()
+                    Application.DoEvents()
+                    check (not charts.Visible && not report.Visible && page.ScrollOffset<=page.ScrollMaximum) "Folding the charts or the report left them shown"
         // Text in Windows 11's face where it is installed, sections headed in Semibold, not Bold.
         let variable = FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text")
         check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))

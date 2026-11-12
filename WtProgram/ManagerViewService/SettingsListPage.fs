@@ -6,14 +6,39 @@ open System.Windows.Forms
 /// Layout for settings pages built around a list (App rules, Workspaces):
 /// the same margins and column as SettingsPage, a title and description, a row of
 /// actions, and the list in a rounded card that follows the light/dark theme.
+/// `minimumListHeight`, in logical pixels: the list is never shorter, and the page scrolls when
+/// the window leaves less, as Support's does under its other sections; without it the list takes
+/// what is left, however little, and the page never scrolls.
 type SettingsListPage(title:string, description:string, list:Control, actions:Control list, ?helpText:string,
-                      ?links:(string*string) list, ?extra:Control, ?footer:Control, ?compact:bool, ?header:Control) as this =
+                      ?links:(string*string) list, ?extra:Control, ?footer:Control, ?compact:bool, ?header:Control,
+                      ?minimumListHeight:int) as this =
     inherit Panel()
     let inset() = Dpi.scale 32
     let mutable arranging = false
     let mutable relayoutPending = false
     let topInset() = Dpi.scale 16
     let gap() = Dpi.scale (if defaultArg compact false then 8 else 16)
+    /// A page that scrolls does so as the other settings pages do: their own scroll bar over the
+    /// right margin, in the theme, and the wheel eased.
+    let scrolls = minimumListHeight.IsSome
+    let scroll = new SettingsScrollBar(TabStop=false,Visible=false)
+    let mutable offset = 0
+    let mutable maximum = 0
+    /// The list folded away, as Support's report can be.
+    let mutable listShown = true
+    let clamp value = max 0 (min maximum value)
+    /// Everything on a page that scrolls, moved as one: laid out again and moved part by part at
+    /// each step of the wheel's easing, the parts landed a moment apart and the page shook.
+    let content = new Panel(Margin=Padding.Empty)
+    let smooth = new SmoothScroller((fun () -> offset),clamp,(fun value ->
+        let value = clamp value
+        if value<>offset then
+            offset <- value
+            // Moving the content asks the page for a layout it does not need.
+            arranging <- true
+            try content.Top <- -offset
+            finally arranging <- false
+            scroll.configure(maximum,this.ClientSize.Height,offset)))
     let heading = new Label(Text=title,AutoSize=true,Font=SettingsUi.sectionFont(),UseMnemonic=false)
     let helpButton = helpText |> Option.map(fun text ->
         new SettingsHelpButton(text,AccessibleName=tr Strings.SettingsWindow.howToUse,Font=SettingsUi.bodyFont()))
@@ -50,6 +75,12 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
     do
         this.Dock <- DockStyle.Fill
         this.DoubleBuffered <- true
+        if scrolls then
+            this.Controls.Add(scroll)
+            this.Controls.Add(content)
+            scroll.changed.Add(fun value -> smooth.jump value)
+            this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
+        let host = if scrolls then content :> Control else this :> Control
         for action in actions do
             action.Margin <- Padding(0,0,Dpi.scale 8,0)
             actionRow.Controls.Add(action)
@@ -67,12 +98,12 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             e.Graphics.FillPath(fill,shape)
             e.Graphics.DrawPath(border,shape))
         card.Resize.Add(fun _ -> card.Invalidate())
-        this.Controls.AddRange([|heading :> Control;detail;actionRow;status;card|])
-        helpButton |> Option.iter(fun button -> this.Controls.Add(button))
-        linkRow |> Option.iter(fun (row,_,_) -> this.Controls.Add(row))
-        extra |> Option.iter(fun control -> this.Controls.Add(control))
-        footer |> Option.iter(fun control -> this.Controls.Add(control))
-        header |> Option.iter(fun control -> this.Controls.Add(control))
+        host.Controls.AddRange([|heading :> Control;detail;actionRow;status;card|])
+        helpButton |> Option.iter(fun button -> host.Controls.Add(button))
+        linkRow |> Option.iter(fun (row,_,_) -> host.Controls.Add(row))
+        extra |> Option.iter(fun control -> host.Controls.Add(control))
+        footer |> Option.iter(fun control -> host.Controls.Add(control))
+        header |> Option.iter(fun control -> host.Controls.Add(control))
         // The link row is measured in OnLayout. The extra and footer blocks size themselves: rows only settle
         // once they have their real width, which can be after the pass that placed it, so a size
         // change lays the page out again afterwards rather than inside that pass.
@@ -86,6 +117,21 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             for link in allLinks() do link.LinkColor <- p.accentText
             list.Invalidate()
             card.Invalidate())
+    /// How far a page that scrolls can, and is, scrolled; 0 for one that does not.
+    /// Whether the list's card is shown; folded, the page ends above it.
+    member this.ListShown
+        with get() = listShown
+        and set value =
+            if listShown<>value then
+                listShown <- value
+                this.PerformLayout()
+    member _.ScrollMaximum = maximum
+    member _.ScrollOffset = offset
+    /// Scrolls at once, without easing.
+    member _.ScrollTo(value:int) = smooth.jump value
+    override this.OnMouseWheel(e) =
+        if scrolls then smooth.by(SmoothScroller.wheelStep e.Delta this.ClientSize.Height)
+        else base.OnMouseWheel(e)
     /// Short note above the list (scan progress, counts, errors).
     member _.Status with get() = status.Text and set(value) = status.Text <- value; this.PerformLayout()
     override this.OnLayout(e) =
@@ -93,6 +139,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
         if not (isNull heading) && not arranging then
           arranging <- true
           try
+            // The scroll bar stands in the right margin, so the width is the same with it or without.
             let width = max 120 (min (Dpi.scale 760) (this.ClientSize.Width-inset()*2))
             let left = max (inset()) ((this.ClientSize.Width-width)/2)
             // A page may leave out its title and description, and start with its extra block.
@@ -184,6 +231,17 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                     else control.Width <- width
                     control.Height+Dpi.scale 12
                 | None -> 0
-            card.Bounds <- Rectangle(left,top,width,max (Dpi.scale 80) (this.ClientSize.Height-top-inset()-footerHeight))
+            let least = Dpi.scale (defaultArg minimumListHeight 80)
+            card.Visible <- listShown
+            card.Bounds <- Rectangle(left,top,width,(if listShown then max least (this.ClientSize.Height-top-inset()-footerHeight) else 0))
             footer |> Option.iter(fun control -> control.Location <- Point(left,card.Bottom+Dpi.scale 12))
+            // On a page that scrolls, the parts are placed in the content, which moves up by how far it is.
+            if scrolls then
+                // A folded list leaves the page ending with what is above it.
+                let bottom = (if listShown then card.Bottom else top-gap())+footerHeight+inset()
+                maximum <- max 0 (bottom-this.ClientSize.Height)
+                offset <- clamp offset
+                content.Bounds <- Rectangle(0,-offset,this.ClientSize.Width,max bottom this.ClientSize.Height)
+                scroll.Bounds <- Rectangle(this.ClientSize.Width-scroll.Width,0,scroll.Width,this.ClientSize.Height)
+                scroll.configure(maximum,this.ClientSize.Height,offset)
           finally arranging <- false
