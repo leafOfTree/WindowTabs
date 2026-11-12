@@ -93,6 +93,7 @@ module CommandPalette =
                 | ANumberKeys _ -> fst (List.item (numberKeysNow()) (numberKeyOptions()))
                 | ASetting item ->
                     match item.binding with
+                    | _ when item.id=presetId -> presetNow()
                     | Number _ -> string (Services.settings.getValue item.id :?> int)
                     | Text(key,_) -> Services.settings.getValue key :?> string
                     | Colour -> hex (colorNow item.id)
@@ -193,6 +194,8 @@ module CommandPalette =
                       | ANumberKeys item -> { detail=fst (List.item (numberKeysNow()) (numberKeyOptions())); switch=None; swatch=None; shortcut=settingKey item; dropdown=true; small=false }
                       | ASetting item ->
                           match item.binding with
+                          // Its presets listed in place, as a choice setting's values are.
+                          | _ when item.id=presetId -> { detail=presetNow(); switch=None; swatch=None; shortcut=settingKey item; dropdown=true; small=false }
                           | Number _ -> { detail=string (Services.settings.getValue item.id :?> int); switch=None; swatch=None; shortcut=settingKey item; dropdown=false; small=false }
                           | Text(key,_) -> { detail=Services.settings.getValue key :?> string; switch=None; swatch=None; shortcut=settingKey item; dropdown=false; small=false }
                           | Colour -> let color = colorNow item.id in { detail=hex color; switch=None; swatch=Some color; shortcut=settingKey item; dropdown=false; small=false }
@@ -215,6 +218,7 @@ module CommandPalette =
               | ACommand command -> not command.chooses && (command.state active).IsNone
               | ASetting item ->
                   match item.binding with
+                  | _ when item.id=presetId -> false
                   | Number _ | Colour | Shortcut _ -> false
                   | Text(key,_) when key="numberLeaderKeys" -> false
                   | _ -> true

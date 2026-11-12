@@ -31,6 +31,8 @@ module SettingsCatalog =
     let all = [
         { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"ByWindow";"ByApp"],"Off") }
         { id="tab-color-style"; page=AppearanceSettings; text=Strings.Settings.tabColorStyle; binding=Choice("tabColorStyle",["Fill";"Stripe"],"Fill") }
+        // Kept in the appearance, not under a key of its own: the palette lists the presets itself.
+        { id="palette-preset"; page=AppearanceSettings; text=Strings.Settings.tabColorPreset; binding=Navigation }
         { id="theme"; page=AppearanceSettings; text=Strings.Settings.theme; binding=Choice("tabThemeMode",["system";"light";"dark"],"system") }
         { id="language"; page=GeneralSettings; text=Strings.Settings.language; binding=Choice("language",Localization.preferences,"system") }
         { id="launch-at-sign-in"; page=GeneralSettings; text=Strings.Settings.launchAtSignIn; binding=Toggle("runAtStartup",true,false) }

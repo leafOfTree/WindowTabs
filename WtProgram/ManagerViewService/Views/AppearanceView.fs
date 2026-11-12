@@ -80,21 +80,12 @@ type AppearanceView(?settings:ISettings) =
     // The light or dark look being edited, by the same rules the command palette edits colours.
     let customForProfile s = PaletteEditing.customForProfile editingDark s
     let activePalette s = PaletteEditing.activePalette editingDark s
-    let setActive palette s = PaletteEditing.setActive editingDark palette s
-    let values p = PaletteEditing.values p
-    let original index = PaletteEditing.original editingDark index
-    let editKey index = PaletteEditing.editKey editingDark index
     let presetPalette s index = PaletteEditing.presetPalette editingDark s index
-    let setPreset key s = PaletteEditing.setPreset editingDark key s
     let selection s = PaletteEditing.selection editingDark s
     let editPalette change = update(PaletteEditing.edit editingDark change)
-    let choosePreset index = update(fun s -> s |> setActive (presetPalette s index) |> setPreset ThemePresets.keys.[index])
-    let chooseCustom() = update(fun s -> s |> setActive (customForProfile s) |> setPreset ThemePresets.customKey)
-    /// The chosen preset's own colours again; from Custom, the Default preset.
-    let resetColors() =
-        update(fun s ->
-            let index = selection s |> Option.defaultValue 0
-            {(setActive (original index) s) with presetEdits=PaletteEditing.withoutEdit editingDark index s.presetEdits} |> setPreset ThemePresets.keys.[index])
+    let choosePreset index = update(PaletteEditing.choosePreset editingDark index)
+    let chooseCustom() = update(PaletteEditing.chooseCustom editingDark)
+    let resetColors() = update(PaletteEditing.resetColors editingDark)
     let preview = new TabPreview(Name="tab-preview",Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
                                  AccessibleName=tr Strings.Appearance.explorerPreview)
     /// Where the preview draws its tabs: all that a colour edit changes.
@@ -164,9 +155,8 @@ type AppearanceView(?settings:ISettings) =
             let settings = settings.appearance
             let palette = activePalette settings
             // A preset with changed colours says so, in the list and when chosen.
-            ThemePresets.names |> Array.iteri(fun index name ->
-                let label = if settings.presetEdits.ContainsKey(editKey index) then tr (Strings.Appearance.editedPreset (tr name)) else tr name
-                preset.SetItemText(index,label))
+            ThemePresets.names |> Array.iteri(fun index _ ->
+                preset.SetItemText(index,PaletteEditing.presetLabel editingDark settings index))
             preset.ItemColors <- Array.append (Array.init ThemePresets.names.Length (fun index -> (presetPalette settings index).tabNormalBgColor))
                                               [|(customForProfile settings).tabNormalBgColor|]
                                  |> Array.map(ThemePresets.previewColor editingDark)
@@ -188,10 +178,7 @@ type AppearanceView(?settings:ISettings) =
             preview.Height <- if preview.Position=TabDockTop then max (Dpi.scale 145) (tabHeight+Dpi.scale 56+2)
                               else max (Dpi.scale 145) ((preview.TabBounds tabHeight).Bottom+Dpi.scale 14)
             // A reset with nothing to undo would do nothing visible, so it is not offered.
-            resetColorsButton.Offered <-
-                match selection settings with
-                | Some index -> values palette<>values (original index)
-                | None -> true
+            resetColorsButton.Offered <- PaletteEditing.canReset editingDark settings
             resetLayoutButton.Offered <- not (Theme.isDefaultLayout geometry) || preview.ColumnWidth<>SettingsCatalog.columnWidthDefault
             let frame = Some(SettingsColors.current(),editingDark,settings.geometry,preview.Position,preview.ColumnWidth)
             if frame=previewFrame then preview.Invalidate(previewTabs())
@@ -315,7 +302,7 @@ type AppearanceView(?settings:ISettings) =
         SettingsUi.add table contrastComparison
         resetColorsButton.Click.Add(fun _ -> resetColors())
         swapColorsButton.Click.Add(fun _ ->
-            editPalette(fun palette -> {palette with tabActiveBgColor=palette.tabNormalBgColor; tabNormalBgColor=palette.tabActiveBgColor}))
+            editPalette PaletteEditing.swapActiveInactive)
         // After the colours, on a card of their own: changed less often than the style and the
         // colours. Set apart from them by the space a section heading would leave.
         let textCard = new SettingsCard(Margin=Padding(0,Dpi.scale 24,0,0))

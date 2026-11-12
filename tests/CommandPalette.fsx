@@ -513,6 +513,18 @@ let main() =
         attempt "delete-workspace" (fun () ->
             note (not ((Commands.find "delete-workspace").Value.enabled active)) "Delete workspace… is offered with no workspace saved"
             commandsRun.Add "delete-workspace" |> ignore)
+        // The buttons beside the Appearance page's preset list: swapped twice is as before, and a
+        // reset leaves the preset's own colours.
+        attempt "swap-tab-colors" (fun () ->
+            let before = api.appearance
+            let dark = ThemeService.currentIsDark()
+            let palette() = PaletteEditing.activePalette dark api.appearance
+            let front,back = (palette()).tabActiveBgColor,(palette()).tabNormalBgColor
+            runDone "swap-tab-colors" active
+            note ((palette()).tabActiveBgColor=back && (palette()).tabNormalBgColor=front) "Swap active and inactive tab colors did not swap them"
+            runDone "reset-tab-colors" active
+            note (not (PaletteEditing.canReset dark api.appearance)) "Reset tab colors left the preset's colors changed"
+            api.updateAppearance(fun _ -> before))
         attempt "open-settings" (fun () -> runDone "open-settings" active; note (called "settings") "Open settings did not open them")
         for command in Commands.all |> List.filter(fun command -> command.id.StartsWith "open-settings-") do
             attempt command.id (fun () ->
@@ -621,6 +633,11 @@ let main() =
             for caption in Localization.all command.text.caption do
                 let entry = page.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
                 note (TabSearch.matches caption entry) (sprintf "%s is not found by its name \"%s\"" command.id caption)
+        // Moving the tabs is how many put it: "move tab" finds where they sit and line up too.
+        for text in [Strings.Settings.tabPosition.caption;Strings.Settings.tabAlignment.caption;Strings.Commands.groupTabPosition.caption;Strings.Commands.groupTabAlignment.caption] do
+            match page.entries |> List.tryFind(fun entry -> entry.title=tr text) with
+            | Some entry -> note (TabSearch.matches "move tab" entry) (sprintf "\"move tab\" does not find %s" entry.title)
+            | None -> issues.Add(sprintf "%s is not on the Actions page" (tr text))
         for item in SettingsCatalog.all do
             match item.binding with
             | Shortcut _ -> ()
@@ -683,6 +700,23 @@ let main() =
                         note (not (called ("setting "+item.id))) (sprintf "%s opened the settings window" item.id)
                         note ((page.aside "" entry).detail="") (sprintf "%s, run here, names a page it does not open" item.id)
                     | outcome -> issues.Add(sprintf "%s answered %A" item.id outcome))
+            // The tab colour presets, picked in place as the Appearance page's list picks them.
+            | Some item when item.id=SettingRows.presetId ->
+                attempt ("setting "+item.id) (fun () ->
+                    note (not (page.concealed entry)) "The color presets hide the palette to list them"
+                    note ((page.aside "" entry).dropdown && (page.aside "" entry).detail=SettingRows.presetNow()) "The color presets row does not show the one chosen"
+                    let before = api.appearance
+                    match page.choose entry with
+                    | Choose options ->
+                        note (options.Length=ThemePresets.names.Length+1 && (options |> List.filter(fun option -> option.detail="✓")).Length=1)
+                             (sprintf "The color presets do not list each preset and Custom, the one chosen ticked: %A" (options |> List.map(fun option -> option.label,option.detail)))
+                        note (options |> List.forall(fun option -> option.swatch.IsSome)) "A color preset has no dot"
+                        note (not (called ("setting "+item.id))) "The color presets opened the settings window"
+                        let dark = ThemeService.currentIsDark()
+                        options.[1].run() |> ignore
+                        note (PaletteEditing.selection dark api.appearance=Some 1) "Choosing a color preset did not choose it"
+                    | outcome -> issues.Add(sprintf "The color presets answered %A" outcome)
+                    api.updateAppearance(fun _ -> before))
             | Some item ->
                 attempt ("setting "+item.id) (fun () ->
                     match item.binding,page.choose entry with

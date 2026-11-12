@@ -110,6 +110,31 @@ module SettingRows =
         let _,read,_ = colorField id
         read (PaletteEditing.activePalette (ThemeService.currentIsDark()) Services.settings.appearance)
     let hex (color:Drawing.Color) = sprintf "#%02X%02X%02X" color.R color.G color.B
+    /// The tab colour presets' row, kept in the appearance rather than under a key of its own.
+    let presetId = "palette-preset"
+    /// The preset of the look in use, light or dark, by name; Custom for the user's own colours.
+    let presetNow() =
+        let dark = ThemeService.currentIsDark()
+        let s = Services.settings.appearance
+        match PaletteEditing.selection dark s with
+        | Some index -> PaletteEditing.presetLabel dark s index
+        | None -> tr Strings.Appearance.custom
+    /// The presets and Custom as the Appearance page lists them, each with its dot and tried as
+    /// the choice moves onto it; the one chosen ticked.
+    let presetChoices() : CommandChoice list =
+        let dark = ThemeService.currentIsDark()
+        let s = Services.settings.appearance
+        let now = PaletteEditing.selection dark s
+        let undo = Some(fun () -> Services.settings.updateAppearance(fun _ -> s))
+        let entry label chosen (color:Drawing.Color) change =
+            let apply () = Services.settings.updateAppearance change
+            { label=label; detail=(if chosen then "✓" else ""); swatch=Some(ThemePresets.previewColor dark color); windows=[]
+              run=(fun () -> apply(); Done); preview=Some apply; undo=undo; concealed=true }
+        [ for index in 0..ThemePresets.names.Length-1 do
+            yield entry (PaletteEditing.presetLabel dark s index) (now=Some index) (PaletteEditing.presetPalette dark s index).tabNormalBgColor
+                  (PaletteEditing.choosePreset dark index)
+          yield entry (tr Strings.Appearance.custom) now.IsNone (PaletteEditing.customForProfile dark s).tabNormalBgColor
+                      (PaletteEditing.chooseCustom dark) ]
     /// A size typed in the box: a whole number in the setting's range.
     let askNumber (item:SettingDefinition) =
         let low,high = SettingsCatalog.range item.id
@@ -180,6 +205,7 @@ module SettingRows =
                          preview=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box value)))
                          undo=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box current)))
                          concealed=true } ]
+        | _ when item.id=presetId -> Choose(presetChoices())
         | Number _ -> askNumber item
         | Text(key,_) when key="numberLeaderKeys" -> askText item key
         | Colour -> askColor item
@@ -562,6 +588,12 @@ module Commands =
             snd (workspaces()) |> List.map(fun (ws,count) ->
                 choice ws.name (tr (Strings.TabSearch.windows count)) (fun () -> Services.program.restoreWorkspaceNamed ws.name)))
         choosing "delete-workspace" Strings.Commands.deleteWorkspace WorkspaceCommands anyWorkspace (fun _ -> deleteChoices())
+        // The buttons beside the Appearance page's preset list, for the look in use.
+        plain "swap-tab-colors" Strings.Commands.swapTabColors SettingsCommands always (fun _ ->
+            Services.settings.updateAppearance(PaletteEditing.edit (ThemeService.currentIsDark()) PaletteEditing.swapActiveInactive))
+        // Never dimmed, as no settings command is: with nothing to reset it changes nothing.
+        plain "reset-tab-colors" Strings.Commands.resetTabColors SettingsCommands always (fun _ ->
+            Services.settings.updateAppearance(PaletteEditing.resetColors (ThemeService.currentIsDark())))
         plain "open-settings" Strings.Commands.openSettings SettingsCommands always (fun _ -> Services.managerView.show())
         // The pages are reached from the palette's settings page; these are for keys and the command line.
         for page in [GeneralSettings;AppearanceSettings;HotKeySettings;MouseGestureSettings;ProgramSettings;LayoutSettings;DiagnosticsSettings] do
@@ -575,7 +607,7 @@ module Commands =
         // A setting's row in the palette, opened by a key of its own, as a group's choices are.
         for item in SettingsCatalog.all |> List.filter SettingRows.takesKey do
             let asks =
-                item.id="switch-tabs-by-number" ||
+                item.id="switch-tabs-by-number" || item.id=SettingRows.presetId ||
                 (match item.binding with Choice _ | Number _ | Colour -> true | Text(key,_) -> key="numberLeaderKeys" | _ -> false)
             { plain (SettingRows.commandId item) item.text SettingsCommands always ignore
                 with listed=false; chooses=asks; run=fun _ -> SettingRows.run item }
