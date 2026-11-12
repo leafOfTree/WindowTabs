@@ -851,10 +851,9 @@ figures are asked of Windows about this process alone (`ProcessFigures`), where 
 counted by their stacks in the address-space scan, two to a thread under WOW64, and matched
 `Process` in that run. The history's readings are taken on the thread pool; only groups and
 tabs are counted on the main thread, which also runs the keyboard and mouse hooks. A day of
-history is under 100 KB. While the overview can be seen it takes its own reading every 2
-seconds, kept out of the history, and stops when Support closes or Resources folds. The
-charts are drawn only while open, every 10 seconds or as the pointer moves over one; drawing
-all 13 over a full day took 1.3 ms. Sampling the history faster was left alone: the hour's
+history is under 100 KB. The overview and the charts show the same readings, redrawn every
+10 seconds only while they can be seen, the charts also as the pointer moves over one;
+drawing all 13 over a full day took 1.3 ms. Reading more often was left alone: the hour's
 chart already has more readings than pixels, and leaks build over minutes.
 
 Besides the

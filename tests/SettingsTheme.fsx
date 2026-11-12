@@ -569,13 +569,13 @@ let main() =
                     // The resources at a glance first, with the values now; the charts folded under it.
                     let overview = controls form |> Seq.tryPick(function :? ResourceOverview as overview -> Some overview | _ -> None)
                     let latestPrivate = tr Strings.Diagnostics.privateMemory + sprintf " %.1f MB" (70.0f+359.0f*0.05f)
-                    // Shown, it reads for itself, not the history's last reading seeded above.
-                    let readsLive (overview:ResourceOverview) =
+                    // It shows the history's latest reading, as the charts and the report do.
+                    let showsLatest (overview:ResourceOverview) =
                         let text = overview.AccessibleDescription
                         overview.Visible && overview.Height>=Dpi.scale 200 &&
-                        text.StartsWith(tr Strings.Diagnostics.privateMemory) && not (text.Contains(latestPrivate))
-                    check (overview |> Option.exists readsLive)
-                          (sprintf "The Support page's overview does not read the values now: %A" (overview |> Option.map(fun overview -> overview.AccessibleDescription)))
+                        text.StartsWith(tr Strings.Diagnostics.privateMemory) && text.Contains(latestPrivate)
+                    check (overview |> Option.exists showsLatest)
+                          (sprintf "The Support page's overview does not show the latest reading: %A" (overview |> Option.map(fun overview -> overview.AccessibleDescription)))
                     let charts = controls form |> Seq.pick(function :? ResourceCharts as charts -> Some charts | _ -> None)
                     let report = controls form |> Seq.pick(function :? SettingsTextView as view -> Some view | _ -> None)
                     let page = controls form |> Seq.pick(function :? SettingsListPage as page when page.Visible -> Some page | _ -> None)

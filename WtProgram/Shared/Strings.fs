@@ -1166,10 +1166,10 @@ module Strings =
         let releasesHint = { en="Check Releases ↗"; zh="查看发布版本 ↗"; ja="リリースを確認 ↗"; ar="التحقق من الإصدارات ↗" }
         let openCrashLog = { en="Crash log"; zh="崩溃日志"; ja="クラッシュログ"; ar="سجل الأعطال" }
         let resourcesTitle = { en="Resources"; zh="资源占用"; ja="リソース"; ar="الموارد" }
-        let resourcesHelp = { en="Updated here every 2 seconds; the charts keep a reading every 10 seconds for 24 hours, in memory only."
-                              zh="此处每 2 秒更新；详细图表每 10 秒记录一次，在内存中保留 24 小时。"
-                              ja="ここは 2 秒ごとに更新。グラフは 10 秒ごとの値をメモリ内に 24 時間保持します。"
-                              ar="تُحدَّث هنا كل ثانيتين؛ تحتفظ المخططات بقراءة كل 10 ثوانٍ لمدة 24 ساعة في الذاكرة فقط." }
+        let resourcesHelp = { en="Read every 10 seconds and kept for 24 hours, in memory only."
+                              zh="每 10 秒读取一次，在内存中保留 24 小时。"
+                              ja="10 秒ごとに読み取り、メモリ内に 24 時間保持します。"
+                              ar="تُقرأ كل 10 ثوانٍ ويُحتفظ بها لمدة 24 ساعة في الذاكرة فقط." }
         let charts = { en="Charts"; zh="详细图表"; ja="詳細グラフ"; ar="المخططات" }
         let chartsCpuMemory = { en="CPU and memory"; zh="CPU 和内存"; ja="CPU とメモリ"; ar="المعالج والذاكرة" }
         let chartsSystemObjects = { en="System objects"; zh="系统对象"; ja="システム オブジェクト"; ar="كائنات النظام" }

@@ -117,8 +117,7 @@ module ResourceMonitor =
     let history = ResourceHistory(3600/(intervalMs/1000),24*60)
     [<DllImport("kernel32.dll")>]
     extern IntPtr private GetCurrentProcess()
-    /// CPU is the time used since the reading before, so each series of readings keeps its own:
-    /// the history's, and the overview's while it is shown.
+    /// CPU is the time used since the reading before, so each series of readings keeps its own.
     type CpuClock() =
         let mutable last : (DateTime * int64) option = None
         /// The share of all processors since the last call; the first is measured from start.
@@ -154,11 +153,6 @@ module ResourceMonitor =
                   | None -> MemoryParts.none) }
     /// A reading for the history.
     let read counts = readWith historyClock counts
-    /// A reading for the overview while it is shown, not kept: groups and tabs as last counted,
-    /// their thread being the main one.
-    let readLive (clock:CpuClock) =
-        let counts = history.latest |> Option.map(fun s -> int s.groups,int s.tabs) |> Option.defaultValue (0,0)
-        readWith clock counts
     /// Samples now and every interval after until disposed. Groups and tabs are counted on the
     /// calling thread, which owns them; the rest is read on the pool, out of the way of the main
     /// thread, the keyboard and mouse hooks' own.

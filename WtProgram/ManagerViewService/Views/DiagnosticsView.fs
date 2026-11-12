@@ -88,12 +88,9 @@ module ResourceFormat =
 /// at the foot while it is pointed at.
 type ResourceOverview() as this =
     inherit Control()
-    /// While shown, the overview reads every 2 seconds for itself; the history keeps its 10.
-    let timer = new Timer(Interval=2000)
-    let clock = ResourceMonitor.CpuClock()
-    /// Its own last reading, not kept in the history; until one, the history's.
-    let mutable live : ResourceSample option = None
-    let current() = match live with Some _ -> live | None -> ResourceMonitor.history.latest
+    /// Shows the history's latest reading, as the charts and the report do, redrawn as each comes.
+    let timer = new Timer(Interval=ResourceMonitor.intervalMs)
+    let current() = ResourceMonitor.history.latest
     let figures =
         [Cpu,Strings.Diagnostics.cpu,Strings.Diagnostics.cpuMeaning
          WorkingSet,Strings.Diagnostics.workingSet,Strings.Diagnostics.workingSetMeaning
@@ -163,31 +160,21 @@ type ResourceOverview() as this =
         this.AccessibleRole <- AccessibleRole.Grouping
         this.AccessibleName <- tr Strings.Diagnostics.resourcesTitle
         this.Margin <- Padding(0,Dpi.scale 8,0,Dpi.scale 4)
-        timer.Tick.Add(fun _ -> if this.Visible then this.ReadNow())
+        timer.Tick.Add(fun _ -> if this.Visible then this.Redraw())
         describe()
-    /// Reads now, about a millisecond; the first only starts the clock CPU is measured on, so its
-    /// share stays the history's rather than the average since start.
-    member this.ReadNow() =
-        try
-            let reading = ResourceMonitor.readLive clock
-            live <- Some(match live,ResourceMonitor.history.latest with
-                         | None,Some latest -> { reading with cpu=latest.cpu }
-                         | _ -> reading)
-        with _ -> ()
+    member this.Redraw() =
         describe()
         this.Invalidate()
-    /// Read only while it can be seen: shown, its page open, its section unfolded.
+    /// Redrawn only while it can be seen: shown, its page open, its section unfolded.
     override this.OnVisibleChanged(e) =
         base.OnVisibleChanged(e)
         if this.Visible && this.IsHandleCreated then
-            this.ReadNow()
+            this.Redraw()
             timer.Start()
         else timer.Stop()
     override this.OnHandleCreated(e) =
         base.OnHandleCreated(e)
-        if this.Visible then
-            this.ReadNow()
-            timer.Start()
+        if this.Visible then timer.Start()
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
         let height = heightFor this.ClientSize.Width
