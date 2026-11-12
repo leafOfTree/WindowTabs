@@ -88,9 +88,12 @@ module ResourceFormat =
 /// at the foot while it is pointed at.
 type ResourceOverview() as this =
     inherit Control()
-    /// Shows the history's latest reading, as the charts and the report do, redrawn as each comes.
-    let timer = new Timer(Interval=ResourceMonitor.intervalMs)
-    let current() = ResourceMonitor.history.latest
+    /// Its own readings, taken only while it can be seen: nothing is read for it in the background.
+    let timer = new Timer(Interval=ResourceMonitor.liveIntervalMs)
+    let clock = ResourceMonitor.CpuClock()
+    let mutable latest : ResourceSample option = None
+    let mutable reading = false
+    let current() = latest
     let figures =
         [Cpu,Strings.Diagnostics.cpu,Strings.Diagnostics.cpuMeaning
          WorkingSet,Strings.Diagnostics.workingSet,Strings.Diagnostics.workingSetMeaning
@@ -160,21 +163,43 @@ type ResourceOverview() as this =
         this.AccessibleRole <- AccessibleRole.Grouping
         this.AccessibleName <- tr Strings.Diagnostics.resourcesTitle
         this.Margin <- Padding(0,Dpi.scale 8,0,Dpi.scale 4)
-        timer.Tick.Add(fun _ -> if this.Visible then this.Redraw())
+        timer.Tick.Add(fun _ -> if this.Visible then this.Read())
         describe()
     member this.Redraw() =
         describe()
         this.Invalidate()
-    /// Redrawn only while it can be seen: shown, its page open, its section unfolded.
+    /// A reading, shown once taken. Groups and tabs are counted here, on the thread that owns
+    /// them; the rest is read on the pool, as the history's readings are. One at a time.
+    member this.Read() =
+        if not reading && this.IsHandleCreated then
+            reading <- true
+            let counted =
+                try
+                    let groups = Services.desktop.groups
+                    groups.count,groups.collect(fun group -> group.windows).count
+                with _ -> 0,0
+            Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+                let sample = try Some(ResourceMonitor.readWith clock counted) with _ -> None
+                try
+                    this.BeginInvoke(Action(fun () ->
+                        reading <- false
+                        if sample.IsSome then
+                            latest <- sample
+                            this.Redraw())) |> ignore
+                // Closed meanwhile.
+                with _ -> reading <- false) |> ignore
+    /// Read only while it can be seen: shown, its page open, its section unfolded.
     override this.OnVisibleChanged(e) =
         base.OnVisibleChanged(e)
         if this.Visible && this.IsHandleCreated then
-            this.Redraw()
+            this.Read()
             timer.Start()
         else timer.Stop()
     override this.OnHandleCreated(e) =
         base.OnHandleCreated(e)
-        if this.Visible then timer.Start()
+        if this.Visible then
+            this.Read()
+            timer.Start()
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
         let height = heightFor this.ClientSize.Width
@@ -302,12 +327,26 @@ type ResourceCharts() as this =
          Strings.Diagnostics.chartsGroupsTabs,
             [Groups,Strings.Diagnostics.groups; Tabs,Strings.Diagnostics.tabs]]
     let tiles = groups |> List.collect snd
-    let mutable day = false
+    let mutable ranged : string -> unit = ignore
     let mutable pointer : Point option = None
     let mutable picked : DateTime option = None
-    let timer = new Timer(Interval=ResourceMonitor.intervalMs)
-    let samples() = if day then ResourceMonitor.history.minutes else ResourceMonitor.history.recent
-    let span() = if day then TimeSpan.FromHours(24.0) else TimeSpan.FromHours(1.0)
+    /// Looks for a new reading each second, so the first shows as soon as the charts are switched
+    /// on; redrawn only when there is one.
+    let timer = new Timer(Interval=1000)
+    let mutable drawn : DateTime option = None
+    /// A line is not stretched over less: the first readings come in from the right.
+    let leastSpan = TimeSpan.FromMinutes(5.0)
+    /// All that was recorded, however long: reading by reading while the hour kept that way
+    /// reaches back to the first, a minute at a time once it no longer does. With them, whether
+    /// by the minute, when they start and how long they run to the latest.
+    let recorded() =
+        let history = ResourceMonitor.history
+        let recent,minutes = history.recent,history.minutes
+        let byMinute = recent.Length>0 && minutes.Length>0 && recent.[0].time-minutes.[0].time>=TimeSpan.FromMinutes(1.0)
+        let samples = if byMinute then minutes else recent
+        let now = if recent.Length>0 then recent.[recent.Length-1].time else DateTime.UtcNow
+        let first = if samples.Length>0 then samples.[0].time else now
+        samples,byMinute,first,(if now-first>leastSpan then now-first else leastSpan)
     let format = ResourceFormat.value
     // Sizes in logical pixels, scaled where they are used.
     let tileWidth,tileHeight,gap,headingHeight = 180,96,16,28
@@ -331,8 +370,12 @@ type ResourceCharts() as this =
     let heightFor width = let _,_,height = layout width in height
     let chartBounds (tile:Rectangle) =
         Rectangle(tile.X,tile.Bottom-Dpi.scale 40,tile.Width,Dpi.scale 36)
-    /// A screen reader reads the values now, as the tiles show them.
+    /// A screen reader reads the values now, as the tiles show them; the heading says from when.
     let describe() =
+        let samples,_,first,_ = recorded()
+        ranged (match ResourceMonitor.history.latest with
+                | Some latest when samples.Length>0 -> sprintf "%s – %s" (first.ToLocalTime().ToString("HH:mm")) (latest.time.ToLocalTime().ToString("HH:mm"))
+                | _ -> "")
         this.AccessibleDescription <-
             match ResourceMonitor.history.latest with
             | None -> tr Strings.Diagnostics.collecting
@@ -342,13 +385,19 @@ type ResourceCharts() as this =
         this.AccessibleRole <- AccessibleRole.Chart
         this.AccessibleName <- tr Strings.Diagnostics.resourcesTitle
         this.Margin <- Padding(0,Dpi.scale 8,0,Dpi.scale 8)
-        timer.Tick.Add(fun _ -> if this.Visible then this.Invalidate(); describe())
+        timer.Tick.Add(fun _ ->
+            if this.Visible then
+                let newest = ResourceMonitor.history.latest |> Option.map(fun s -> s.time)
+                if newest<>drawn then
+                    drawn <- newest
+                    this.Invalidate()
+                    describe())
         describe()
 
-    /// The last 24 hours, a minute at a time, instead of the last hour.
-    member _.Day
-        with get() = day
-        and set value = day <- value; this.Invalidate()
+    /// Told the times the charts run from and to, as each reading comes; "" while there is none.
+    member _.Ranged with set value = ranged <- value; describe()
+    /// How long a time the charts cover.
+    member _.Span = let _,_,_,span = recorded() in span
     /// The charts in their order, for a test.
     member _.Order = tiles |> List.map fst
     /// When the reading the pointer picked was taken, as last drawn; None where it is over none.
@@ -356,9 +405,17 @@ type ResourceCharts() as this =
     /// Where each chart's line is drawn, in their order, for a test.
     member this.ChartBounds = let _,placed,_ = layout this.ClientSize.Width in placed |> List.map(fun (_,_,tile) -> chartBounds tile)
 
+    /// Watched only while they can be seen.
+    override this.OnVisibleChanged(e) =
+        base.OnVisibleChanged(e)
+        if this.Visible && this.IsHandleCreated then
+            describe()
+            this.Invalidate()
+            timer.Start()
+        else timer.Stop()
     override this.OnHandleCreated(e) =
         base.OnHandleCreated(e)
-        timer.Start()
+        if this.Visible then timer.Start()
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
         let height = heightFor this.ClientSize.Width
@@ -386,9 +443,9 @@ type ResourceCharts() as this =
         let valueFont = SettingsUi.font (SettingsUi.uiSemiboldFamily()) 14.0f FontStyle.Regular
         let headingFont = SettingsUi.subsectionFont()
         let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis
-        let all = samples()
+        let all,byMinute,_,span = recorded()
         let now = match ResourceMonitor.history.latest with Some latest -> latest.time | None -> DateTime.UtcNow
-        let start = now-span()
+        let start = now-span
         let shown = all |> Array.filter(fun s -> s.time>=start)
         let headings,placed,_ = layout this.ClientSize.Width
         picked <- None
@@ -397,7 +454,7 @@ type ResourceCharts() as this =
         for metric,caption,tile in placed do
             let chart = chartBounds tile
             let values = shown |> Array.map(fun s -> s.value metric)
-            let xOf (time:DateTime) = float32 chart.Left + float32((time-start).TotalMilliseconds/(span()).TotalMilliseconds)*float32 chart.Width
+            let xOf (time:DateTime) = float32 chart.Left + float32((time-start).TotalMilliseconds/span.TotalMilliseconds)*float32 chart.Width
             // The reading under the pointer: only where there is one, not the nearest from
             // anywhere, so left of the first reading, or across a gap, nothing is picked.
             let hovered =
@@ -410,7 +467,7 @@ type ResourceCharts() as this =
             let captionHeight = captionFont.Height
             let rangeText,valueText =
                 match hovered,ResourceMonitor.history.latest with
-                | Some s,_ -> s.time.ToLocalTime().ToString(if day then "HH:mm" else "HH:mm:ss"),format metric (s.value metric)
+                | Some s,_ -> s.time.ToLocalTime().ToString(if byMinute then "HH:mm" else "HH:mm:ss"),format metric (s.value metric)
                 | None,Some latest when values.Length>0 ->
                     // The range only where the figure moved, as shown.
                     let low,high = format metric (Array.min values),format metric (Array.max values)
@@ -565,6 +622,8 @@ type DiagnosticsView() =
     // the report itself follow.
     let fileSection =
         let table = new TableLayoutPanel(ColumnCount=1,Margin=Padding.Empty,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink)
+        // Laid out once, when all of it is there, instead of again as each part is added.
+        table.SuspendLayout()
         table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         let card = SettingsUi.sectionCardWithHelp table (tr Strings.General.settingsFile) (tr Strings.General.settingsFileHelp)
         let run action = fun _ ->
@@ -585,8 +644,9 @@ type DiagnosticsView() =
         reset.Click.Add(run SettingsFile.reset)
         SettingsUi.settingRow card "settings-reset" reset
         /// A heading that folds what follows it: its name and a chevron, either clicked, and a
-        /// control at its right end shown only while open. `set` folds or opens it.
-        let folding (caption:string) (font:Font) (top:int) (right:Control option) (changed:bool -> unit) =
+        /// control at its right end shown only while open, then one shown folded too. `set` folds
+        /// or opens it.
+        let folding (caption:string) (font:Font) (top:int) (right:Control option) (pinned:Control option) (changed:bool -> unit) =
             let expander = new SettingsExpanderButton(AccessibleName=caption,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 4,0,0,0))
             let label = new Label(Text=caption,AutoSize=true,Font=font,Anchor=AnchorStyles.Left,Margin=Padding.Empty,Cursor=Cursors.Hand)
             let heading = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=3,RowCount=1,
@@ -598,54 +658,96 @@ type DiagnosticsView() =
             titled.Controls.Add(label)
             titled.Controls.Add(expander)
             heading.Controls.Add(titled,0,0)
-            right |> Option.iter(fun control ->
-                control.Anchor <- AnchorStyles.Right
-                heading.Controls.Add(control,2,0)
-                // As tall as the control, shown or not, so opening moves nothing.
-                heading.MinimumSize <- Size(0,control.Height))
+            let ends = Option.toList right @ Option.toList pinned
+            if not ends.IsEmpty then
+                let side = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
+                                               Margin=Padding.Empty,Anchor=AnchorStyles.Right)
+                ends |> List.iteri(fun index control ->
+                    control.Anchor <- AnchorStyles.None
+                    control.Margin <- Padding((if index=0 then 0 else Dpi.scale 12),0,0,0)
+                    side.Controls.Add(control))
+                heading.Controls.Add(side,2,0)
+                // As tall as the tallest, shown or not, so opening moves nothing.
+                heading.MinimumSize <- Size(0,ends |> List.map(fun control -> control.Height) |> List.max)
             SettingsUi.add table heading
             let set opened =
-                expander.Open <- opened
-                right |> Option.iter(fun control -> control.Visible <- opened)
-                changed opened
+                // Laid out once for all that shows or goes, not once for each part.
+                table.SuspendLayout()
+                try
+                    expander.Open <- opened
+                    right |> Option.iter(fun control -> control.Visible <- opened)
+                    changed opened
+                finally table.ResumeLayout(true)
             expander.Click.Add(fun _ -> set (not expander.Open))
             label.Click.Add(fun _ -> set (not expander.Open))
             set
-        // What WindowTabs uses, open at first: at a glance now, then, opened, a chart for each over
-        // the last hour or day. Folded, nothing in it is drawn.
+        // What WindowTabs uses, open at first: at a glance now, read while it shows, then, once
+        // switched on, a chart for each over the last hour or day. Folded, nothing in it is read
+        // or drawn.
         let resourceParts = ResizeArray<Control>()
-        let chartsOpen = ref false
+        let resourcesOpen = ref true
         let chartsCard = new SettingsCard()
-        let showResources = folding (tr Strings.Diagnostics.resourcesTitle) (SettingsUi.sectionFont()) 24 None (fun opened ->
+        let chartsOpen = ref false
+        /// The charts' own parts, which show only while both sections are open.
+        let showChartParts : (unit -> unit) ref = ref ignore
+        let showResources = folding (tr Strings.Diagnostics.resourcesTitle) (SettingsUi.sectionFont()) 24 None None (fun opened ->
+            resourcesOpen.Value <- opened
             for part in resourceParts do part.Visible <- opened
-            chartsCard.Visible <- opened && chartsOpen.Value)
+            showChartParts.Value())
         let note = new Label(Text=tr Strings.Diagnostics.resourcesHelp,AutoSize=true,Tag="muted",Margin=Padding(0,0,0,Dpi.scale 12))
         SettingsUi.add table note
         let overview = new SettingsCard()
         SettingsUi.add table overview
         SettingsUi.add overview (new ResourceOverview())
         let charts = new ResourceCharts()
-        let range = SettingsUi.choice [|tr Strings.Diagnostics.lastHour;tr Strings.Diagnostics.lastDay|]
-        range.AccessibleName <- tr Strings.Diagnostics.charts
-        range.SelectedIndex <- 0
-        range.SelectedIndexChanged.Add(fun _ -> charts.Day <- range.SelectedIndex=1)
-        let showCharts = folding (tr Strings.Diagnostics.charts) (SettingsUi.subsectionFont()) 12 (Some(range :> Control)) (fun opened ->
+        // The times the charts run from and to: all that was recorded, a day at most.
+        let range = new Label(AutoSize=true,Tag="muted",UseMnemonic=false)
+        charts.Ranged <- fun text -> if range.Text<>text then range.Text <- text
+        // Folded like the rest, their switch at the heading's right end either way: off, nothing
+        // is read in the background. Opened, what the switch does, then, while it is on, the
+        // charts, with the times they cover under the switch, at the right end of that note.
+        let definition = SettingsCatalog.find "record-resources"
+        let recording = SettingsBindings.settingToggle (SettingsCatalog.toggleKey definition.id)
+        recording.Name <- definition.id
+        recording.AccessibleName <- tr definition.text.caption
+        recording.AccessibleDescription <- tr definition.text.description
+        let chartsNote = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=2,RowCount=1,
+                                              Margin=Padding(0,0,0,Dpi.scale 12))
+        chartsNote.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        chartsNote.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        chartsNote.Controls.Add(new Label(Text=tr definition.text.description,AutoSize=true,Tag="muted",Anchor=AnchorStyles.Left,Margin=Padding.Empty),0,0)
+        range.Anchor <- AnchorStyles.Right
+        range.Margin <- Padding(Dpi.scale 12,0,0,0)
+        chartsNote.Controls.Add(range,1,0)
+        let showCharts() =
+            chartsNote.Visible <- resourcesOpen.Value && chartsOpen.Value
+            chartsCard.Visible <- resourcesOpen.Value && chartsOpen.Value && recording.Checked
+            range.Visible <- recording.Checked
+        showChartParts.Value <- showCharts
+        let foldCharts = folding (tr Strings.Diagnostics.charts) (SettingsUi.subsectionFont()) 12 None (Some(recording :> Control)) (fun opened ->
             chartsOpen.Value <- opened
-            chartsCard.Visible <- opened)
+            showCharts())
         let chartsHeading = table.Controls.[table.Controls.Count-1]
+        SettingsUi.add table chartsNote
         SettingsUi.add table chartsCard
         SettingsUi.add chartsCard charts
+        // Switched on, they open; switched off, only their note is left.
+        recording.CheckedChanged.Add(fun _ -> foldCharts (chartsOpen.Value || recording.Checked))
         resourceParts.AddRange([note :> Control;overview;chartsHeading])
-        showCharts false
+        // Open at first where they are on.
+        foldCharts recording.Checked
         showResources true
         // The report, folded at first: its card is the page's list.
         let reportNote = new Label(Text=tr Strings.Diagnostics.description,AutoSize=true,Tag="muted",Margin=Padding(0,0,0,Dpi.scale 12))
-        let showReport = folding (tr Strings.Diagnostics.reportTitle) (SettingsUi.sectionFont()) 24 None (fun opened ->
+        let showReport = folding (tr Strings.Diagnostics.reportTitle) (SettingsUi.sectionFont()) 24 None None (fun opened ->
             reportNote.Visible <- opened
+            // Written when asked for, not with the page: it lists every process and window.
+            if opened then guarded refresh
             listPage |> Option.iter(fun (page:SettingsListPage) -> page.ListShown <- opened))
         reportNote.MaximumSize <- Size(Dpi.scale 550,0)
         SettingsUi.add table reportNote
         foldReport <- showReport
+        table.ResumeLayout(true)
         table :> Control
     let panel =
         // No page title: the sidebar names the page, and its two sections carry their own headings.
@@ -664,7 +766,6 @@ type DiagnosticsView() =
         owner <- panel
         listPage <- Some panel
         foldReport false
-        panel.HandleCreated.Add(fun _ -> guarded refresh)
         tools |> ignore
     interface ISettingsView with
         member _.key = DiagnosticsSettings

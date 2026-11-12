@@ -1686,10 +1686,14 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         StartupPlugins.initialize plugins.list (fun () ->
             this.refresh()
             initialDiscoveryComplete <- true
-            // The Support page's resources, from the first groups on.
-            lifetime.Own(ResourceMonitor.start(fun () ->
-                let groups = Services.desktop.groups
-                groups.count,groups.collect(fun group -> group.windows).count)) |> ignore
+            // The Support page's charts: nothing is read in the background until they are switched on.
+            let recordResources (on:obj) =
+                ResourceMonitor.record (unbox<bool> on) (fun () ->
+                    let groups = Services.desktop.groups
+                    groups.count,groups.collect(fun group -> group.windows).count)
+            recordResources (Services.settings.getValue("recordResources"))
+            lifetime.Own(Services.settings.notifyValue "recordResources" recordResources) |> ignore
+            lifetime.Own({ new IDisposable with member _.Dispose() = recordResources (box false) }) |> ignore
             if not trailed.IsEmpty then rememberSoon.Request()
             settleTimer.Tick.Add(fun _ -> this.settleTick())
             if settling.Count>0 then settleTimer.Start()

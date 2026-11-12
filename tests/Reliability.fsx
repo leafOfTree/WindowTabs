@@ -834,6 +834,18 @@ let main() =
         for seconds in [60;80;120;180] do history.add(reading seconds 0.0f 5.0f)
         check (history.recent.Length=5 && history.recent.[0].time=start.AddSeconds(40.0)) "The recent readings outgrew their capacity"
         check (history.minutes |> Array.map(fun s -> s.time.Minute)=[|1;2;3|]) (sprintf "The minutes kept were %A" (history.minutes |> Array.map(fun s -> s.time)))
+        // Nothing is recorded until asked for; on, a reading comes at once, and off again the
+        // history forgets what it held.
+        do
+            check (not (ResourceMonitor.isRecording()) && ResourceMonitor.history.latest.IsNone) "Resources were recorded before the charts were switched on"
+            ResourceMonitor.record true (fun () -> 2,3)
+            let waited = Diagnostics.Stopwatch.StartNew()
+            while ResourceMonitor.history.latest.IsNone && waited.ElapsedMilliseconds<5000L do Threading.Thread.Sleep(10)
+            check (ResourceMonitor.isRecording() && ResourceMonitor.history.latest |> Option.exists(fun s -> s.groups=2.0f && s.tabs=3.0f))
+                  "Switching the charts on did not take a reading at once"
+            ResourceMonitor.record false (fun () -> 0,0)
+            check (not (ResourceMonitor.isRecording()) && ResourceMonitor.history.latest.IsNone && ResourceMonitor.history.minutes.Length=0)
+                  "Switching the charts off kept recording or kept the history"
         // A reading finds each part of this process's memory, and together they are no more than
         // its private bytes, the native heaps being the rest.
         let reading = ResourceMonitor.read(1,1)

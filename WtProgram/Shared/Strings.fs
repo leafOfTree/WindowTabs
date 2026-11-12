@@ -455,6 +455,9 @@ module Strings =
         let diagnostics = { caption=Pages.diagnostics
                             description={ en="Troubleshooting report and where to get help."; zh="故障排查报告与获取帮助的途径。"; ja="トラブルシューティング用のレポートとヘルプの入手先。"; ar="تقرير استكشاف الأخطاء وإصلاحها ومكان الحصول على المساعدة." }
                             keywords={ en="about version log"; zh="关于 版本 日志"; ja="バージョン ログ"; ar="حول الإصدار السجل" } }
+        let recordResources = { caption={ en="Record resource charts"; zh="记录资源图表"; ja="リソースのグラフを記録"; ar="تسجيل مخططات الموارد" }
+                                description={ en="Reads every 10 seconds in the background and keeps 24 hours, in memory only."; zh="在后台每 10 秒读取一次，仅在内存中保留 24 小时。"; ja="バックグラウンドで 10 秒ごとに読み取り、メモリ内にのみ 24 時間保持します。"; ar="يقرأ كل 10 ثوانٍ في الخلفية ويحتفظ بـ 24 ساعة في الذاكرة فقط." }
+                                keywords={ en="cpu memory history usage monitor leak"; zh="CPU 内存 历史 占用 监控 泄漏"; ja="CPU メモリ 履歴 使用量 監視 リーク"; ar="المعالج الذاكرة السجل الاستخدام مراقبة تسرب" } }
         let settingsLocation = { caption={ en="Location"; zh="位置"; ja="場所"; ar="الموقع" }
                                  description=none
                                  keywords={ en="folder path portable"; zh="文件夹 路径 便携"; ja="フォルダー パス ポータブル"; ar="مجلد مسار محمول" } }
@@ -1177,10 +1180,10 @@ module Strings =
         let releasesHint = { en="Check Releases ↗"; zh="查看发布版本 ↗"; ja="リリースを確認 ↗"; ar="التحقق من الإصدارات ↗" }
         let openCrashLog = { en="Crash log"; zh="崩溃日志"; ja="クラッシュログ"; ar="سجل الأعطال" }
         let resourcesTitle = { en="Resources"; zh="资源占用"; ja="リソース"; ar="الموارد" }
-        let resourcesHelp = { en="Read every 10 seconds and kept for 24 hours, in memory only."
-                              zh="每 10 秒读取一次，在内存中保留 24 小时。"
-                              ja="10 秒ごとに読み取り、メモリ内に 24 時間保持します。"
-                              ar="تُقرأ كل 10 ثوانٍ ويُحتفظ بها لمدة 24 ساعة في الذاكرة فقط." }
+        let resourcesHelp = { en="As they are now, read every second only while shown here."
+                              zh="当前的实时数值，仅在此处显示时每秒读取一次。"
+                              ja="現在の値です。ここに表示している間だけ 1 秒ごとに読み取ります。"
+                              ar="كما هي الآن، وتُقرأ كل ثانية ما دامت معروضة هنا فقط." }
         let charts = { en="Charts"; zh="详细图表"; ja="詳細グラフ"; ar="المخططات" }
         let chartsCpuMemory = { en="CPU and memory"; zh="CPU 和内存"; ja="CPU とメモリ"; ar="المعالج والذاكرة" }
         let chartsSystemObjects = { en="System objects"; zh="系统对象"; ja="システム オブジェクト"; ar="كائنات النظام" }
@@ -1263,8 +1266,6 @@ module Strings =
         let libraryData = { en="Library data"; zh="系统库数据"; ja="ライブラリのデータ"; ar="بيانات المكتبات" }
         let threadStacks = { en="Thread stacks"; zh="线程栈"; ja="スレッドのスタック"; ar="مكدسات سلاسل التنفيذ" }
         let otherMemory = { en="Other"; zh="其他"; ja="その他"; ar="أخرى" }
-        let lastHour = { en="Last hour"; zh="最近 1 小时"; ja="過去 1 時間"; ar="آخر ساعة" }
-        let lastDay = { en="Last 24 hours"; zh="最近 24 小时"; ja="過去 24 時間"; ar="آخر 24 ساعة" }
         let collecting = { en="Collecting…"; zh="正在收集…"; ja="収集中…"; ar="جارٍ الجمع…" }
         let cpu = { en="CPU"; zh="CPU"; ja="CPU"; ar="المعالج" }
         let privateMemory = { en="Private memory"; zh="专用内存"; ja="プライベート メモリ"; ar="الذاكرة الخاصة" }

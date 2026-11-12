@@ -108,12 +108,17 @@ type ResourceHistory(recentCapacity:int, minuteCapacity:int) =
     /// A minute at a time, the minute under way last.
     member _.minutes = lock gate (fun () -> Array.append (minuteQueue.ToArray()) (if current.Count>0 then [|summarize current|] else [||]))
     member _.latest = lock gate (fun () -> if recentQueue.Count=0 then None else Some(Seq.last recentQueue))
+    member _.clear() = lock gate (fun () -> recentQueue.Clear(); minuteQueue.Clear(); current.Clear())
 
-/// Reads the process every ten seconds while WindowTabs runs; kept in memory only, a day at most.
+/// Reads the process: for the Support page's overview as often as it asks while it shows, and,
+/// only while the charts are switched on, every ten seconds into a history kept in memory, a day
+/// at most.
 module ResourceMonitor =
     [<DllImport("user32.dll")>]
     extern uint32 private GetGuiResources(IntPtr current, uint32 flags)
     let intervalMs = 10000
+    /// How often the overview reads while it can be seen.
+    let liveIntervalMs = 1000
     let history = ResourceHistory(3600/(intervalMs/1000),24*60)
     [<DllImport("kernel32.dll")>]
     extern IntPtr private GetCurrentProcess()
@@ -153,20 +158,36 @@ module ResourceMonitor =
                   | None -> MemoryParts.none) }
     /// A reading for the history.
     let read counts = readWith historyClock counts
-    /// Samples now and every interval after until disposed. Groups and tabs are counted on the
-    /// calling thread, which owns them; the rest is read on the pool, out of the way of the main
-    /// thread, the keyboard and mouse hooks' own.
-    let start (counts:unit -> int * int) =
-        let timer = new Windows.Forms.Timer(Interval=intervalMs)
-        let sample() =
-            let counted = try counts() with _ -> 0,0
-            Threading.ThreadPool.QueueUserWorkItem(fun _ ->
-                try history.add(read counted)
-                with error -> Trace.TraceWarning("Resource sample failed: {0}",error.Message)) |> ignore
-        timer.Tick.Add(fun _ -> sample())
-        sample()
-        timer.Start()
-        timer :> IDisposable
+    let private recordingGate = obj()
+    /// The timer of the history being recorded, if one is.
+    let mutable private recording : Windows.Forms.Timer option = None
+    let isRecording() = recording.IsSome
+    /// Starts the history, sampling now and every interval after, or stops it and forgets what it
+    /// held: what is left would show as a gap once it starts again. Called on the main thread,
+    /// which counts the groups and tabs it owns; the rest is read on the pool, out of the way of
+    /// the main thread, the keyboard and mouse hooks' own.
+    let record (on:bool) (counts:unit -> int * int) =
+        match on,recording with
+        | true,None ->
+            let timer = new Windows.Forms.Timer(Interval=intervalMs)
+            let sample() =
+                let counted = try counts() with _ -> 0,0
+                Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+                    try
+                        let reading = read counted
+                        // A reading under way as the history stops is not kept.
+                        lock recordingGate (fun () -> if recording=Some timer then history.add reading)
+                    with error -> Trace.TraceWarning("Resource sample failed: {0}",error.Message)) |> ignore
+            timer.Tick.Add(fun _ -> sample())
+            recording <- Some timer
+            sample()
+            timer.Start()
+        | false,Some timer ->
+            timer.Dispose()
+            lock recordingGate (fun () ->
+                recording <- None
+                history.clear())
+        | _ -> ()
     /// Each metric now, at its lowest and highest over the day kept, and an hour before, for the
     /// troubleshooting report.
     let summary() =
@@ -436,6 +457,7 @@ module RuntimeDiagnostics =
                                         JProperty("desktopHooks",ResourceCounters.globalHookCount()),
                                         JProperty("tabPicturesKB",Math.Round(float (ResourceCounters.captureByteCount())/1024.0,1)))
         // How they moved over the day kept: a leak climbs, a busy moment peaks and falls back.
+        // Empty unless the charts are switched on.
         result.["resourceHistory"] <- ResourceMonitor.summary()
         result.["scans"] <- JObject(JProperty("count",scans),JProperty("lastMs",Math.Round(last,1)),JProperty("maxMs",Math.Round(maximum,1)))
         result
