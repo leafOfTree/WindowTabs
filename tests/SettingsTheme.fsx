@@ -582,6 +582,21 @@ let main() =
                         Threading.Thread.Sleep(10)
                     check (overview |> Option.exists showsLive)
                           (sprintf "The Support page's overview does not show a reading of its own: %A" (overview |> Option.map(fun overview -> overview.AccessibleDescription)))
+                    // What each item is fits its foot on one line, in every language, as narrow as
+                    // the foot gets one line.
+                    if mode="light" then
+                        let width = overview.Value.OneLineFootWidth
+                        let font = SettingsUi.font (SettingsUi.uiFamily()) 9.5f FontStyle.Regular
+                        let meanings =
+                            typeof<LocalizedText>.Assembly.GetType("Bemo.Strings+Diagnostics").GetProperties()
+                            |> Array.filter(fun property -> property.Name.EndsWith("Meaning") && property.PropertyType=typeof<LocalizedText>)
+                        check (meanings.Length>=15) (sprintf "Found only %d meanings" meanings.Length)
+                        let tooLong =
+                            [ for property in meanings do
+                                for text in Localization.all (property.GetValue(null) :?> LocalizedText) do
+                                    let size = TextRenderer.MeasureText(text,font,Size(width,Int32.MaxValue),TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak)
+                                    if size.Height>font.Height then yield sprintf "%s (%d lines): %s" property.Name (size.Height/font.Height) text ]
+                        check tooLong.IsEmpty (sprintf "Item meanings wrap past one line at %d px:\n%s" width (String.concat "\n" tooLong))
                     check (not (ResourceMonitor.isRecording())) "Resources were recorded in the background before the charts were switched on"
                     let charts = controls form |> Seq.pick(function :? ResourceCharts as charts -> Some charts | _ -> None)
                     let report = controls form |> Seq.pick(function :? SettingsTextView as view -> Some view | _ -> None)
@@ -609,13 +624,24 @@ let main() =
                     Application.DoEvents()
                     check recording.Checked "The charts' switch did not follow its setting"
                     check (report.TextBox.Text.Contains("\"version\"")) "Opening the report did not write it"
+                    // Inset under the resources, as a part of them.
+                    let leftIn (control:Control) = page.PointToClient(control.PointToScreen(Point.Empty)).X
+                    check (leftIn charts>=leftIn overview.Value+Dpi.scale 12 && leftIn expander.Parent>=leftIn (folder Strings.Diagnostics.resourcesTitle).Parent+Dpi.scale 12)
+                          (sprintf "The charts are not inset under the resources: charts at %d, overview at %d" (leftIn charts) (leftIn overview.Value))
                     check (charts.Visible && charts.Height>=Dpi.scale 96 && charts.Width>Dpi.scale 180 && charts.AccessibleDescription.Contains(latestPrivate))
                           "Switching the charts on did not show a chart for each, with the values now"
+                    // Each chart's range is short, its unit given once, and none where it did not move.
+                    for metric,low,high,expected in [PrivateMemory,70.0f,88.0f,"70.0–88.0 MB";Cpu,0.2f,3.0f,"0.2–3.0%"
+                                                     TabPictures,600.0f,959.0f,"600–959 KB";Handles,800.0f,812.0f,"800–812";Handles,800.0f,800.0f,""] do
+                        check (ResourceFormat.range metric low high=expected) (sprintf "The %A range read %s" metric (ResourceFormat.range metric low high))
                     // In the report's order, by what they tell.
                     check (charts.Order=ResourceSample.metrics) (sprintf "The charts are in the order %A" charts.Order)
                     // They cover all that was recorded, here an hour less a reading, with no range to
                     // choose: the first reading at the left end of each line, the latest at its right.
                     let recorded = ResourceMonitor.history.recent
+                    // Under the switch, since when: they always run to now, so no end is given.
+                    let since = tr (Strings.Diagnostics.chartsSince (recorded.[0].time.ToLocalTime().ToString("HH:mm")))
+                    check (controls form |> Seq.exists(fun c -> c :? Label && c.Visible && c.Text=since)) (sprintf "The charts do not say %s" since)
                     check (abs((charts.Span-TimeSpan.FromSeconds(3590.0)).TotalSeconds)<1.0) (sprintf "An hour of readings is charted over %A" charts.Span)
                     // Drawn to a bitmap: off screen, as this window is, Windows paints nothing.
                     let pointAtChart (x:int) (y:int) =

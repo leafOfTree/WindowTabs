@@ -1184,6 +1184,8 @@ module Strings =
                               zh="当前的实时数值，仅在此处显示时每秒读取一次。"
                               ja="現在の値です。ここに表示している間だけ 1 秒ごとに読み取ります。"
                               ar="كما هي الآن، وتُقرأ كل ثانية ما دامت معروضة هنا فقط." }
+        /// When the charts start; they always run to now.
+        let chartsSince (time:string) = { en=sprintf "Since %s" time; zh=sprintf "自 %s 起" time; ja=sprintf "%s から" time; ar=sprintf "منذ %s" time }
         let charts = { en="Charts"; zh="详细图表"; ja="詳細グラフ"; ar="المخططات" }
         let chartsCpuMemory = { en="CPU and memory"; zh="CPU 和内存"; ja="CPU とメモリ"; ar="المعالج والذاكرة" }
         let chartsSystemObjects = { en="System objects"; zh="系统对象"; ja="システム オブジェクト"; ar="كائنات النظام" }
@@ -1191,9 +1193,9 @@ module Strings =
         let chartsGroupsTabs = { en="Groups and tabs"; zh="组和标签页"; ja="グループとタブ"; ar="المجموعات وعلامات التبويب" }
         /// What each figure is, shown while it is pointed at.
         let pointForMeaning = { en="Point at an item to see what it is."; zh="指向一项可查看它的含义。"; ja="項目をポイントすると意味を表示します。"; ar="أشر إلى عنصر لمعرفة ما هو." }
-        let privateMemoryMeaning = { en="Memory WindowTabs alone uses, whether in RAM or paged out. A leak shows here."
-                                     zh="只属于 WindowTabs 的内存，无论在物理内存中还是被换出。内存泄漏会体现在这里。"
-                                     ja="WindowTabs だけが使うメモリ。物理メモリ上でもページアウト中でも含みます。リークはここに表れます。"
+        let privateMemoryMeaning = { en="Memory WindowTabs alone uses, in RAM or paged out. A leak shows here."
+                                     zh="只属于 WindowTabs 的内存，含已换出的部分。内存泄漏会体现在这里。"
+                                     ja="WindowTabs だけが使うメモリ（ページアウト分も含む）。リークはここに表れます。"
                                      ar="الذاكرة التي يستخدمها WindowTabs وحده، سواء في الذاكرة الفعلية أو في ملف الترحيل. يظهر التسرب هنا." }
         let dotNetObjectsMeaning = { en="Objects of WindowTabs' own code in use, freed by .NET's garbage collector."
                                      zh="WindowTabs 自身代码正在使用的对象，由 .NET 垃圾回收释放。"
@@ -1217,20 +1219,20 @@ module Strings =
                                    ar="البيانات القابلة للكتابة لمكتبات Windows و.NET التي حمّلها WindowTabs." }
         let threadStacksMeaning = { en="Each thread's working memory: a group's thread has one, as has each of the app's."
                                     zh="每个线程的工作内存：每个组的线程一份，程序自己的线程也各一份。"
-                                    ja="各スレッドの作業用メモリ。グループのスレッドにも、アプリ自体のスレッドにも 1 つずつあります。"
+                                    ja="各スレッドの作業用メモリ。グループごとのスレッドとアプリのスレッドに 1 つずつ。"
                                     ar="ذاكرة عمل كل سلسلة تنفيذ: لكل سلسلة مجموعة واحدة، ولكل سلسلة من سلاسل التطبيق واحدة." }
-        let otherMemoryMeaning = { en=".NET's type data and the memory Windows libraries keep for themselves, such as drawing and shell components."
-                                   zh=".NET 的类型数据，以及 Windows 各个库自己保留的内存，例如绘图和外壳组件。"
-                                   ja=".NET の型データと、描画やシェル コンポーネントなど Windows の各ライブラリが自分で確保するメモリ。"
-                                   ar="بيانات الأنواع في .NET والذاكرة التي تحتفظ بها مكتبات Windows لنفسها، مثل مكونات الرسم والواجهة." }
+        let otherMemoryMeaning = { en=".NET's type data and memory Windows libraries keep, such as drawing and shell parts."
+                                   zh=".NET 类型数据，以及 Windows 各库自留的内存，如绘图和外壳组件。"
+                                   ja=".NET の型データと、描画やシェルなど Windows のライブラリが確保するメモリ。"
+                                   ar="بيانات الأنواع في .NET وذاكرة مكتبات Windows، مثل مكونات الرسم والواجهة." }
         let cpuMeaning = { en="Share of all processors over the last 10 seconds, as Task Manager shows it."
                            zh="最近 10 秒占全部处理器的比例，与任务管理器的算法相同。"
                            ja="直近 10 秒間の全プロセッサに対する割合。タスク マネージャーと同じ計算です。"
                            ar="الحصة من جميع المعالجات خلال آخر 10 ثوانٍ، كما يعرضها مدير المهام." }
-        let physicalMemoryMeaning = { en="The part of private memory in RAM now, as Task Manager's Memory column shows it. Windows moves idle pages out, so it falls."
-                                      zh="专用内存中当前留在物理内存里的部分，与任务管理器的“内存”列一致。Windows 会移出闲置的页，所以它会变小。"
-                                      ja="プライベート メモリのうち、いま物理メモリにある分。タスク マネージャーの「メモリ」列と同じです。使われないページは Windows が外へ移すので減ります。"
-                                      ar="الجزء من الذاكرة الخاصة الموجود في الذاكرة الفعلية الآن، كما يعرضه عمود «الذاكرة» في مدير المهام. ينقل Windows الصفحات الخاملة خارجها فينخفض." }
+        let physicalMemoryMeaning = { en="Private memory now in RAM, as in Task Manager's Memory column; falls when idle."
+                                      zh="专用内存中当前在物理内存里的部分，同任务管理器“内存”列；闲置时会变小。"
+                                      ja="物理メモリ上のプライベート メモリ。タスク マネージャーの「メモリ」列と同じで、アイドル時に減ります。"
+                                      ar="الذاكرة الخاصة الموجودة في الذاكرة الفعلية الآن، كعمود «الذاكرة» في مدير المهام؛ تنخفض عند الخمول." }
         let threadsMeaning = { en="Each group runs on a thread of its own, and the app on a few more."
                                zh="每个组在自己的线程上运行，程序本身另有几个线程。"
                                ja="各グループは専用のスレッドで動き、アプリ自体にもいくつかあります。"
@@ -1241,20 +1243,20 @@ module Strings =
                                ar="كائنات النظام المفتوحة، مثل الأحداث والملفات والعمليات." }
         let gdiObjectsMeaning = { en="Drawing resources such as bitmaps, fonts and brushes. Windows allows 10,000 per app."
                                   zh="位图、字体、画刷等绘图资源。Windows 允许每个程序最多 10,000 个。"
-                                  ja="ビットマップ、フォント、ブラシなどの描画リソース。Windows では 1 アプリあたり 10,000 個までです。"
+                                  ja="ビットマップ、フォント、ブラシなどの描画リソース。上限は 1 アプリ 10,000 個。"
                                   ar="موارد الرسم مثل الصور النقطية والخطوط والفرش. يسمح Windows بـ 10,000 لكل تطبيق." }
         let userObjectsMeaning = { en="Windows, menus and icons. Windows allows 10,000 per app."
                                    zh="窗口、菜单和图标。Windows 允许每个程序最多 10,000 个。"
-                                   ja="ウィンドウ、メニュー、アイコン。Windows では 1 アプリあたり 10,000 個までです。"
+                                   ja="ウィンドウ、メニュー、アイコン。上限は 1 アプリ 10,000 個。"
                                    ar="النوافذ والقوائم والأيقونات. يسمح Windows بـ 10,000 لكل تطبيق." }
         let eventHooksMeaning = { en="What WindowTabs listens to in other apps' windows, about ten for each tab."
                                   zh="WindowTabs 在其他程序窗口上监听的事件，每个标签页约 10 个。"
-                                  ja="WindowTabs がほかのアプリのウィンドウで受け取るイベント。タブ 1 つにつき約 10 個です。"
+                                  ja="WindowTabs がほかのアプリのウィンドウで受け取るイベント。タブ 1 つに約 10 個。"
                                   ar="ما يستمع إليه WindowTabs في نوافذ التطبيقات الأخرى، نحو عشرة لكل علامة تبويب." }
-        let desktopHooksMeaning = { en="Those that hear every app, for rare events such as switching windows: three for each group."
+        let desktopHooksMeaning = { en="Those hearing every app, for rare events such as switching windows: three per group."
                                     zh="监听所有程序的那部分，用于切换窗口这类少见的事件：每个组 3 个。"
-                                    ja="すべてのアプリから受け取るもの。ウィンドウの切り替えなどまれなイベント用で、グループ 1 つにつき 3 個です。"
-                                    ar="تلك التي تستمع إلى كل التطبيقات، لأحداث نادرة مثل تبديل النوافذ: ثلاثة لكل مجموعة." }
+                                    ja="全アプリから受け取るもの。ウィンドウ切り替えなどまれなイベント用で、グループごとに 3 個。"
+                                    ar="تلك التي تستمع إلى كل التطبيقات، لأحداث نادرة كتبديل النوافذ: ثلاثة لكل مجموعة." }
         let groupsMeaning = { en="Windows with a tab strip, each window alone in one counted too."
                               zh="带标签栏的窗口组，单独一个窗口的组也算。"
                               ja="タブ バーの付いたグループ。ウィンドウ 1 つだけのグループも数えます。"

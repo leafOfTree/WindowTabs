@@ -82,6 +82,17 @@ module ResourceFormat =
         | PrivateMemory | PhysicalMemory | ManagedHeap -> sprintf "%.1f MB" value
         | TabPictures -> if value>=1024.0f then sprintf "%.1f MB" (value/1024.0f) else sprintf "%.0f KB" value
         | _ -> sprintf "%.0f" value
+    /// From lowest to highest with the unit once, "70.0–88.0 MB"; "" where it did not move.
+    let range metric (low:float32) (high:float32) =
+        let number,unit =
+            match metric with
+            | Cpu -> (fun (v:float32) -> sprintf "%.1f" v),"%"
+            | PrivateMemory | PhysicalMemory | ManagedHeap -> (fun v -> sprintf "%.1f" v)," MB"
+            | TabPictures when high>=1024.0f -> (fun v -> sprintf "%.1f" (v/1024.0f))," MB"
+            | TabPictures -> (fun v -> sprintf "%.0f" v)," KB"
+            | _ -> (fun v -> sprintf "%.0f" v),""
+        let low,high = number low,number high
+        if low=high then "" else sprintf "%s–%s%s" low high unit
 
 /// The Support page's resources at a glance, as they are now: private memory as a bar of what it
 /// holds with a line for each part, then each other figure on its own line. What an item is shows
@@ -206,6 +217,8 @@ type ResourceOverview() as this =
         let height = heightFor this.ClientSize.Width
         if this.Height<>height then this.Height <- height
     override this.GetPreferredSize(proposed) = Size(proposed.Width,heightFor proposed.Width)
+    /// The narrowest the foot is while it has one line for what an item is, for a test.
+    member _.OneLineFootWidth = Dpi.scale(2*columnWidth+columnGap)
     override this.OnMouseMove(e) =
         base.OnMouseMove(e)
         let over = regions |> List.tryFindIndex(fun (bounds,_) -> bounds.Contains(e.Location))
@@ -371,12 +384,11 @@ type ResourceCharts() as this =
     let heightFor width = let _,_,height = layout width in height
     let chartBounds (tile:Rectangle) =
         Rectangle(tile.X,tile.Bottom-Dpi.scale 40,tile.Width,Dpi.scale 36)
-    /// A screen reader reads the values now, as the tiles show them; the heading says from when.
+    /// A screen reader reads the values now, as the tiles show them; the heading says since when,
+    /// as they always run to now.
     let describe() =
         let samples,_,first,_ = recorded()
-        ranged (match ResourceMonitor.history.latest with
-                | Some latest when samples.Length>0 -> sprintf "%s – %s" (first.ToLocalTime().ToString("HH:mm")) (latest.time.ToLocalTime().ToString("HH:mm"))
-                | _ -> "")
+        ranged (if samples.Length>0 then tr (Strings.Diagnostics.chartsSince (first.ToLocalTime().ToString("HH:mm"))) else "")
         this.AccessibleDescription <-
             match ResourceMonitor.history.latest with
             | None -> tr Strings.Diagnostics.collecting
@@ -395,7 +407,7 @@ type ResourceCharts() as this =
                     describe())
         describe()
 
-    /// Told the times the charts run from and to, as each reading comes; "" while there is none.
+    /// Told since when the charts run, as each reading comes; "" while there is none.
     member _.Ranged with set value = ranged <- value; describe()
     /// How long a time the charts cover.
     member _.Span = let _,_,_,span = recorded() in span
@@ -471,10 +483,12 @@ type ResourceCharts() as this =
                 | Some s,_ -> s.time.ToLocalTime().ToString(if byMinute then "HH:mm" else "HH:mm:ss"),format metric (s.value metric)
                 | None,Some latest when values.Length>0 ->
                     // The range only where the figure moved, as shown.
-                    let low,high = format metric (Array.min values),format metric (Array.max values)
-                    (if low=high then "" else sprintf "%s – %s" low high),format metric (latest.value metric)
+                    ResourceFormat.range metric (Array.min values) (Array.max values),format metric (latest.value metric)
                 | _ -> "",tr Strings.Diagnostics.collecting
-            let rangeWidth = TextRenderer.MeasureText(g,rangeText,captionFont,Size(Int32.MaxValue,Int32.MaxValue),flags).Width
+            let measure text = TextRenderer.MeasureText(g,text,captionFont,Size(Int32.MaxValue,Int32.MaxValue),flags).Width
+            // The name comes first: where both do not fit, the range is left out.
+            let rangeText = if measure (tr caption)+Dpi.scale 8+measure rangeText>tile.Width then "" else rangeText
+            let rangeWidth = measure rangeText
             TextRenderer.DrawText(g,tr caption,captionFont,Rectangle(tile.X,tile.Y,tile.Width-rangeWidth-Dpi.scale 8,captionHeight),p.description,flags)
             TextRenderer.DrawText(g,rangeText,captionFont,Rectangle(tile.Right-rangeWidth,tile.Y,rangeWidth,captionHeight),p.description,flags)
             TextRenderer.DrawText(g,valueText,valueFont,Rectangle(tile.X,tile.Y+captionHeight+Dpi.scale 2,tile.Width,valueFont.Height),p.text,flags)
@@ -701,12 +715,12 @@ type DiagnosticsView() =
         SettingsUi.add table overview
         SettingsUi.add overview (new ResourceOverview())
         let charts = new ResourceCharts()
-        // The times the charts run from and to: all that was recorded, a day at most.
+        // Since when the charts run: all that was recorded, a day at most, to now.
         let range = new Label(AutoSize=true,Tag="muted",UseMnemonic=false)
         charts.Ranged <- fun text -> if range.Text<>text then range.Text <- text
         // Folded like the rest, their switch at the heading's right end either way: off, nothing
         // is read in the background. Opened, what the switch does, then, while it is on, the
-        // charts, with the times they cover under the switch, at the right end of that note.
+        // charts, with since when they run under the switch, at the right end of that note.
         let definition = SettingsCatalog.find "record-resources"
         let recording = SettingsBindings.settingToggle (SettingsCatalog.toggleKey definition.id)
         recording.Name <- definition.id
@@ -732,6 +746,9 @@ type DiagnosticsView() =
         SettingsUi.add table chartsNote
         SettingsUi.add table chartsCard
         SettingsUi.add chartsCard charts
+        // A part of the resources, inset as a dependent setting is; the switch stays at the right edge.
+        for part in [chartsHeading;chartsNote :> Control;chartsCard] do
+            part.Margin <- Padding(Dpi.scale 20,part.Margin.Top,part.Margin.Right,part.Margin.Bottom)
         // Switched on, they open; switched off, only their note is left.
         recording.CheckedChanged.Add(fun _ -> foldCharts (chartsOpen.Value || recording.Checked))
         resourceParts.AddRange([note :> Control;overview;chartsHeading])
