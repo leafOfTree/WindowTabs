@@ -907,8 +907,10 @@ module Strings =
         let numberRefused low high ={ en=sprintf "Type a whole number from %d to %d." low high; zh=sprintf "请输入 %d 到 %d 之间的整数。" low high; ja=sprintf "%d～%d の整数を入力してください。" low high; ar=sprintf "اكتب عددًا صحيحًا من %d إلى %d." low high }
         /// Beside the Alt+Enter key cap on the commands page.
         let setShortcut = { en="Set shortcut"; zh="设置快捷键"; ja="ショートカットを設定"; ar="تعيين اختصار" }
-        /// Beside a workspace: how many windows it holds.
-        let windows count = { en=sprintf "%d windows" count; zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نوافذ" count }
+        /// Beside a workspace or a group: how many windows it holds.
+        let windows count =
+            { en=(if count=1 then "1 window" else sprintf "%d windows" count); zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count
+              ar=(match count with 1 -> "نافذة واحدة" | 2 -> "نافذتان" | n when n>=3 && n<=10 -> sprintf "%d نوافذ" n | n -> sprintf "%d نافذة" n) }
         /// Beside a setting that is on or off.
         let on = { en="On"; zh="开"; ja="オン"; ar="مفعّل" }
         let off = { en="Off"; zh="关"; ja="オフ"; ar="معطّل" }

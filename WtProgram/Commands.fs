@@ -27,7 +27,10 @@ and QuestionKind =
 /// One further step: its name, a detail beside it, a colour to show for it where it is one,
 /// and what choosing it does. A value that can be tried also says how to show it as the choice
 /// moves onto it, and how to put back what there was if none is chosen.
-and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome
+and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option
+                      /// Windows whose icons go before the name, side by side, as in the window search.
+                      windows:IntPtr list
+                      run:unit -> CommandOutcome
                       preview:(unit -> unit) option; undo:(unit -> unit) option
                       /// Run with the palette out of the way, as one that may put up a box of its own
                       /// needs; off for one that lists its choices again, which would flash it.
@@ -165,13 +168,13 @@ module SettingRows =
             let now = numberKeysNow()
             let options = numberKeyOptions()
             Choose [ for index,(label,apply) in List.indexed options ->
-                       { label=label; detail=(if index=now then "✓" else ""); swatch=None
+                       { label=label; detail=(if index=now then "✓" else ""); swatch=None; windows=[]
                          run=(fun () -> apply(); Done); preview=Some apply; undo=Some(snd options.[now]); concealed=true } ]
         // Its values to pick from, the one it has now ticked.
         | Choice(key,values,_) ->
             let current = Services.settings.getValue key :?> string
             Choose [ for value,label in choiceOptions item values ->
-                       { label=label; detail=(if value=current then "✓" else ""); swatch=None
+                       { label=label; detail=(if value=current then "✓" else ""); swatch=None; windows=[]
                          run=(fun () -> Services.settings.setValue(key,box value); Done)
                          // Shown as the choice moves, but for the language, which builds the app's text again.
                          preview=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box value)))
@@ -212,7 +215,7 @@ module Commands =
     /// A command that leaves a choice: what it offers for the window, each doing its part.
     let private choosing id text category enabled (options:IntPtr -> CommandChoice list) =
         { id=id; text=text; category=category; scope=categoryScope category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=true; run=fun hwnd -> Choose(options hwnd) }
-    let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=None; undo=None; concealed=true }
+    let private choice label detail action = { label=label; detail=detail; swatch=None; windows=[]; run=(fun () -> action(); Done); preview=None; undo=None; concealed=true }
     /// The group's side, alignment and auto-hide mode as last read, and reading them again once a
     /// command has changed one, so the palette shows the value now the next time.
     let private shownChoices hwnd =
@@ -306,6 +309,33 @@ module Commands =
             | _ -> false)
     let private tabName hwnd =
         Services.program.getWindowNameOverride hwnd |> Option.defaultValue (try OS().windowFromHwnd(hwnd).text with _ -> "")
+    /// Groups as rows to pick from, the most recently used first: an icon for each of its apps,
+    /// the one in front first, then the title of the window in front and the other tabs' titles in
+    /// strip order, so groups whose front windows share a title can be told apart and found by any
+    /// of their tabs; a named group's name first.
+    /// The most app icons a group's row shows; its titles still name every tab.
+    let private maxGroupIcons = 6
+    let private groupRows (groups:IGroup list) =
+        let zorders = OS().windowZorders
+        let depth hwnd = zorders.tryFind(hwnd).def(Int32.MaxValue)
+        let names =
+            try Services.settings.getValue "appGroupingTargets" :?> AppGroupingTarget list |> List.map(fun target -> target.id,target.name) |> Map.ofList
+            with _ -> Map.empty
+        groups
+        |> List.map(fun group ->
+            let windows = group.windows.list
+            let front = windows |> List.minBy depth
+            group,front)
+        |> List.sortBy(fun (_,front) -> depth front)
+        |> List.map(fun (group,front) ->
+            let windows = group.windows.list
+            let name = match group with :? GroupInfo as info -> info.ruleGroupId |> Option.bind(fun id -> Map.tryFind id names) | _ -> None
+            let ordered = front :: List.filter ((<>) front) windows
+            let titles = ordered |> List.map tabName |> List.filter(fun text -> not (String.IsNullOrWhiteSpace text))
+            let label = Option.toList name @ titles |> String.concat " · "
+            // One window of each app; windows whose app is unknown each stand for themselves.
+            let apps = ordered |> List.distinctBy(fun hwnd -> match AppIdentity.key (processPath hwnd) with "" -> string hwnd | key -> key)
+            group,{ choice label (tr (Strings.TabSearch.windows windows.Length)) ignore with windows=List.truncate maxGroupIcons apps })
     /// The saved workspaces as last written, each with how many windows it holds.
     let private workspaces() =
         let model = WorkspaceModel()
@@ -444,11 +474,13 @@ module Commands =
             | Some source ->
                 Services.desktop.groups.list
                 |> List.filter(fun target -> not (obj.ReferenceEquals(target,source)) && target.windows.count>0 && live target)
-                |> List.map(fun target ->
-                    choice (tabName target.windows.head) (tr (Strings.TabSearch.windows target.windows.count)) (fun () ->
-                        match target,source with
-                        | (:? GroupInfo as target),(:? GroupInfo as source) when live target && live source -> target.addAfterDetaching(source,hwnd)
-                        | _ -> ()))
+                |> groupRows
+                |> List.map(fun (target,choice) ->
+                    { choice with run=fun () ->
+                                    match target,source with
+                                    | (:? GroupInfo as target),(:? GroupInfo as source) when live target && live source -> target.addAfterDetaching(source,hwnd)
+                                    | _ -> ()
+                                    Done })
             | None -> [])
         // The tab menu's commands for the group, and for the app of the window in front.
         // A switch, as the setting it overrides is, showing the group's own choice. Until the group
