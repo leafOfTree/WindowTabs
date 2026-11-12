@@ -515,10 +515,12 @@ let main () =
                     let above = pixels |> List.takeWhile isBar |> List.length
                     let below = pixels |> List.rev |> List.takeWhile isBar |> List.length
                     check (above=below) (sprintf "The floating tab facing %A is off the middle: %d rows above, %d below" direction above below)
-                    // 4 pixels of bar above and below the shape, however much room the icon leaves.
+                    // No more bar above and below the shape than a third of the gap at its sides, so
+                    // the icon and title have room in it.
                     let shape = bitmap.Height-above-below
-                    check (shape <= tab.size.height-2*Dpi.scale 4)
-                        (sprintf "The floating tab facing %A leaves less than 4px of bar above and below: %d of %d rows" direction shape tab.size.height)
+                    let most = (Dpi.scale 6+1)/3
+                    check (shape >= tab.size.height-1-2*most)
+                        (sprintf "The floating tab facing %A leaves more than %dpx of bar above and below: %d of %d rows" direction most shape tab.size.height)
                     shape ]
         check (List.distinct heights |> List.length=1) (sprintf "The floating tab is not the same height facing up and down: %A" heights)
         // A raised folder tab's edge over the bar is crisp, as much bar showing facing either way,
