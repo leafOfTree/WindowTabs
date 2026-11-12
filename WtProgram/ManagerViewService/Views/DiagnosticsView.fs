@@ -88,7 +88,12 @@ module ResourceFormat =
 /// at the foot while it is pointed at.
 type ResourceOverview() as this =
     inherit Control()
-    let timer = new Timer(Interval=ResourceMonitor.intervalMs)
+    /// While shown, the overview reads every 2 seconds for itself; the history keeps its 10.
+    let timer = new Timer(Interval=2000)
+    let clock = ResourceMonitor.CpuClock()
+    /// Its own last reading, not kept in the history; until one, the history's.
+    let mutable live : ResourceSample option = None
+    let current() = match live with Some _ -> live | None -> ResourceMonitor.history.latest
     let figures =
         [Cpu,Strings.Diagnostics.cpu,Strings.Diagnostics.cpuMeaning
          WorkingSet,Strings.Diagnostics.workingSet,Strings.Diagnostics.workingSetMeaning
@@ -146,7 +151,7 @@ type ResourceOverview() as this =
     let mutable hovered : int option = None
     let describe() =
         this.AccessibleDescription <-
-            match ResourceMonitor.history.latest with
+            match current() with
             | None -> tr Strings.Diagnostics.collecting
             | Some s ->
                 let memory = parts s |> List.map(fun (caption,_,mb) -> sprintf "%s %.1f MB" (tr caption) mb)
@@ -158,11 +163,31 @@ type ResourceOverview() as this =
         this.AccessibleRole <- AccessibleRole.Grouping
         this.AccessibleName <- tr Strings.Diagnostics.resourcesTitle
         this.Margin <- Padding(0,Dpi.scale 8,0,Dpi.scale 4)
-        timer.Tick.Add(fun _ -> if this.Visible then this.Invalidate(); describe())
+        timer.Tick.Add(fun _ -> if this.Visible then this.ReadNow())
         describe()
+    /// Reads now, about a millisecond; the first only starts the clock CPU is measured on, so its
+    /// share stays the history's rather than the average since start.
+    member this.ReadNow() =
+        try
+            let reading = ResourceMonitor.readLive clock
+            live <- Some(match live,ResourceMonitor.history.latest with
+                         | None,Some latest -> { reading with cpu=latest.cpu }
+                         | _ -> reading)
+        with _ -> ()
+        describe()
+        this.Invalidate()
+    /// Read only while it can be seen: shown, its page open, its section unfolded.
+    override this.OnVisibleChanged(e) =
+        base.OnVisibleChanged(e)
+        if this.Visible && this.IsHandleCreated then
+            this.ReadNow()
+            timer.Start()
+        else timer.Stop()
     override this.OnHandleCreated(e) =
         base.OnHandleCreated(e)
-        timer.Start()
+        if this.Visible then
+            this.ReadNow()
+            timer.Start()
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
         let height = heightFor this.ClientSize.Width
@@ -211,7 +236,7 @@ type ResourceOverview() as this =
                 use shape = SettingsShapes.rounded (RectangleF.op_Implicit shaded) (float32(Dpi.scale 4))
                 g.FillPath(shade,shape)
             found.Add(Rectangle(shaded.X+inset,shaded.Y+inset,shaded.Width,shaded.Height),meaning)
-        match ResourceMonitor.history.latest with
+        match current() with
         | None -> text (tr Strings.Diagnostics.collecting) rowFont p.description (Rectangle(0,0,width,Dpi.scale rowHeight)) false
         | Some s ->
             // Private memory: its total, the bar of its parts and a line for each.

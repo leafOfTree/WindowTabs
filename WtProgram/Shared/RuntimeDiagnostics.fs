@@ -113,36 +113,53 @@ module ResourceMonitor =
     extern uint32 private GetGuiResources(IntPtr current, uint32 flags)
     let intervalMs = 10000
     let history = ResourceHistory(3600/(intervalMs/1000),24*60)
-    /// When the last reading was taken and the CPU time by then: the first is measured from start.
-    let mutable private last : (DateTime * TimeSpan) option = None
+    [<DllImport("kernel32.dll")>]
+    extern IntPtr private GetCurrentProcess()
+    /// CPU is the time used since the reading before, so each series of readings keeps its own:
+    /// the history's, and the overview's while it is shown.
+    type CpuClock() =
+        let mutable last : (DateTime * int64) option = None
+        /// The share of all processors since the last call; the first is measured from start.
+        member _.share (now:DateTime) (ticks:int64) (start:DateTime) =
+            let since,before = last |> Option.defaultValue (start,0L)
+            last <- Some(now,ticks)
+            let elapsed = float (now-since).Ticks
+            if elapsed<=0.0 then 0.0f
+            else float32(max 0.0 (min 100.0 (float(ticks-before)/elapsed/float Environment.ProcessorCount*100.0)))
+    let private historyClock = CpuClock()
     /// An object pinned for a moment says where the .NET heap is.
     let private heapProbe = Array.zeroCreate<byte> 16
-    let memoryParts() =
+    let private memoryMap() =
         let pinned = GCHandle.Alloc(heapProbe,GCHandleType.Pinned)
-        let parts = try ProcessMemoryMap.Read(pinned.AddrOfPinnedObject()) finally pinned.Free()
-        let mb (bytes:int64) = float32(float bytes/1048576.0)
-        { heapMB=mb parts.DotNetHeap; codeMB=mb parts.CompiledCode; libraryDataMB=mb parts.LibraryData; stacksMB=mb parts.ThreadStacks }
-    let read (groups:int, tabs:int) =
-        use current = Process.GetCurrentProcess()
+        try ProcessMemoryMap.Read(pinned.AddrOfPinnedObject()) finally pinned.Free()
+    /// A reading, about a millisecond: each figure asked about this process alone, and threads
+    /// counted by their stacks in the same scan that splits the memory.
+    let readWith (clock:CpuClock) (groups:int, tabs:int) =
         let now = DateTime.UtcNow
-        let cpuTime = current.TotalProcessorTime
-        let since,before = last |> Option.defaultWith(fun () -> current.StartTime.ToUniversalTime(),TimeSpan.Zero)
-        last <- Some(now,cpuTime)
-        let elapsed = (now-since).TotalMilliseconds
-        let cpu = if elapsed<=0.0 then 0.0 else (cpuTime-before).TotalMilliseconds/elapsed/float Environment.ProcessorCount*100.0
+        let figures = ProcessFigures.Read()
+        let parts = try Some(memoryMap()) with _ -> None
         let mb (bytes:int64) = float32(float bytes/1048576.0)
-        { time=now; cpu=float32(max 0.0 (min 100.0 cpu))
-          privateMB=mb current.PrivateMemorySize64; workingSetMB=mb current.WorkingSet64; managedMB=mb (GC.GetTotalMemory(false))
+        let self = GetCurrentProcess()
+        { time=now; cpu=clock.share now figures.CpuTicks figures.StartTimeUtc
+          privateMB=mb figures.PrivateBytes; workingSetMB=mb figures.WorkingSet; managedMB=mb (GC.GetTotalMemory(false))
           picturesKB=float32(float (ResourceCounters.captureByteCount())/1024.0)
-          threads=float32 current.Threads.Count; handles=float32 current.HandleCount
-          gdi=float32(GetGuiResources(current.Handle,0u)); user=float32(GetGuiResources(current.Handle,1u))
+          threads=(match parts with Some parts -> float32 parts.Threads | None -> 0.0f); handles=float32 figures.Handles
+          gdi=float32(GetGuiResources(self,0u)); user=float32(GetGuiResources(self,1u))
           hooks=float32(ResourceCounters.hookCount()); desktopHooks=float32(ResourceCounters.globalHookCount())
           groups=float32 groups; tabs=float32 tabs
-          memory=(try memoryParts() with _ -> MemoryParts.none) }
+          memory=(match parts with
+                  | Some parts -> { heapMB=mb parts.DotNetHeap; codeMB=mb parts.CompiledCode; libraryDataMB=mb parts.LibraryData; stacksMB=mb parts.ThreadStacks }
+                  | None -> MemoryParts.none) }
+    /// A reading for the history.
+    let read counts = readWith historyClock counts
+    /// A reading for the overview while it is shown, not kept: groups and tabs as last counted,
+    /// their thread being the main one.
+    let readLive (clock:CpuClock) =
+        let counts = history.latest |> Option.map(fun s -> int s.groups,int s.tabs) |> Option.defaultValue (0,0)
+        readWith clock counts
     /// Samples now and every interval after until disposed. Groups and tabs are counted on the
-    /// calling thread, which owns them; the rest is read on the pool: the process's figures list
-    /// every process on the machine, 4 to 12 ms where hundreds run, which the main thread, the
-    /// keyboard and mouse hooks' own, does not wait for.
+    /// calling thread, which owns them; the rest is read on the pool, out of the way of the main
+    /// thread, the keyboard and mouse hooks' own.
     let start (counts:unit -> int * int) =
         let timer = new Windows.Forms.Timer(Interval=intervalMs)
         let sample() =

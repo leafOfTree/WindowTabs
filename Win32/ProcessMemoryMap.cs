@@ -15,6 +15,8 @@ namespace Bemo
         public long CompiledCode;
         public long LibraryData;
         public long ThreadStacks;
+        /// <summary>The threads, by the stacks found: one each, two under WOW64.</summary>
+        public int Threads;
     }
 
     public static class ProcessMemoryMap
@@ -81,6 +83,9 @@ namespace Bemo
             }
             foreach (var allocation in stacks)
                 parts.ThreadStacks += committedByAllocation[allocation];
+            // A 32-bit process on 64-bit Windows gives each thread a 64-bit stack beside its own.
+            bool wow64 = Environment.Is64BitOperatingSystem && !Environment.Is64BitProcess;
+            parts.Threads = wow64 ? stacks.Count / 2 : stacks.Count;
             long heap;
             if (heapBase != IntPtr.Zero && committedByAllocation.TryGetValue(heapBase.ToInt64(), out heap))
                 parts.DotNetHeap = heap;

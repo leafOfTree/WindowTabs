@@ -845,12 +845,17 @@ seconds (`ResourceMonitor`) and kept in memory only: the last hour as read, and 
 minute at a time, each minute's average CPU and the highest of everything else, so a short
 peak still shows. CPU is a share of all processors, as Task Manager shows it.
 
-What it costs, measured with 426 processes running: a reading took 3.7 ms (median, 12.5 ms
-at most), since the process's own figures make .NET list every process on the machine, so
-it is taken on the thread pool; only groups and tabs are counted on the main thread, which
-also runs the keyboard and mouse hooks. A day of history is under 100 KB. The overview and
-charts are drawn only while Support is open, every 10 seconds or as the pointer moves over
-a chart; folded charts are not drawn. Drawing all 13 charts over a full day took 1.3 ms.
+What it costs, measured with 441 processes running: a reading takes 0.42 ms (median). Its
+figures are asked of Windows about this process alone (`ProcessFigures`), where .NET's
+`Process` listed every process on the machine for them, 4.25 ms in the same run; threads are
+counted by their stacks in the address-space scan, two to a thread under WOW64, and matched
+`Process` in that run. The history's readings are taken on the thread pool; only groups and
+tabs are counted on the main thread, which also runs the keyboard and mouse hooks. A day of
+history is under 100 KB. While the overview can be seen it takes its own reading every 2
+seconds, kept out of the history, and stops when Support closes or Resources folds. The
+charts are drawn only while open, every 10 seconds or as the pointer moves over one; drawing
+all 13 over a full day took 1.3 ms. Sampling the history faster was left alone: the hour's
+chart already has more readings than pixels, and leaks build over minutes.
 
 Besides the
 process's own counters it shows the bytes held by saved tab pictures and the live event

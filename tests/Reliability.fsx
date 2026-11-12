@@ -843,6 +843,21 @@ let main() =
         check (parts.heapMB>=reading.managedMB*0.9f) (sprintf "The .NET heap read %.1f MB for %.1f MB of objects" parts.heapMB reading.managedMB)
         check (parts.heapMB+parts.codeMB+parts.libraryDataMB+parts.stacksMB<=reading.privateMB*1.05f)
               (sprintf "The memory's parts, %A, came to more than its %.1f MB" parts reading.privateMB)
+        // Asked of Windows about this process alone, the figures are Process's own: threads by
+        // their stacks, give or take one starting or ending meanwhile.
+        do
+            use current = Diagnostics.Process.GetCurrentProcess()
+            let near (a:float32) (b:float) (allowed:float) = abs(float a-b)<=allowed
+            check (near reading.threads (float current.Threads.Count) 2.0) (sprintf "Threads read %.0f by their stacks, %d by Process" reading.threads current.Threads.Count)
+            check (near reading.handles (float current.HandleCount) 30.0) (sprintf "Handles read %.0f, %d by Process" reading.handles current.HandleCount)
+            check (near reading.privateMB (float current.PrivateMemorySize64/1048576.0) 4.0) (sprintf "Private memory read %.1f MB, %d bytes by Process" reading.privateMB current.PrivateMemorySize64)
+        // A reading costs about a millisecond, a tenth of what Process's figures did.
+        do
+            let clock = ResourceMonitor.CpuClock()
+            ResourceMonitor.readWith clock (1,1) |> ignore
+            let watch = Diagnostics.Stopwatch.StartNew()
+            for _ in 1..20 do ResourceMonitor.readWith clock (1,1) |> ignore
+            check (watch.Elapsed.TotalMilliseconds/20.0 < 5.0) (sprintf "A resource reading took %.1f ms" (watch.Elapsed.TotalMilliseconds/20.0))
         // Event hooks are counted while they last, those heard from everywhere apart.
         let os = OS()
         let hooks,desktop = ResourceCounters.hookCount(),ResourceCounters.globalHookCount()
