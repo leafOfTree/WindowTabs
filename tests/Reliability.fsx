@@ -823,7 +823,7 @@ let main() =
         let history = ResourceHistory(5,2)
         let start = DateTime(2026,11,9,10,0,0,DateTimeKind.Utc)
         let reading seconds cpu memory =
-            { time=start.AddSeconds(float seconds); cpu=cpu; privateMB=memory; workingSetMB=memory; managedMB=1.0f; picturesKB=0.0f
+            { time=start.AddSeconds(float seconds); cpu=cpu; privateMB=memory; physicalMB=memory; managedMB=1.0f; picturesKB=0.0f
               threads=1.0f; handles=1.0f; gdi=1.0f; user=1.0f; hooks=1.0f; desktopHooks=0.0f; groups=1.0f; tabs=1.0f
               memory=MemoryParts.none }
         check (history.latest.IsNone && history.minutes.Length=0) "An empty resource history had readings"
@@ -834,6 +834,18 @@ let main() =
         for seconds in [60;80;120;180] do history.add(reading seconds 0.0f 5.0f)
         check (history.recent.Length=5 && history.recent.[0].time=start.AddSeconds(40.0)) "The recent readings outgrew their capacity"
         check (history.minutes |> Array.map(fun s -> s.time.Minute)=[|1;2;3|]) (sprintf "The minutes kept were %A" (history.minutes |> Array.map(fun s -> s.time)))
+        // Nothing is recorded until asked for; on, a reading comes at once, and off again the
+        // history forgets what it held.
+        do
+            check (not (ResourceMonitor.isRecording()) && ResourceMonitor.history.latest.IsNone) "Resources were recorded before the charts were switched on"
+            ResourceMonitor.record true (fun () -> 2,3)
+            let waited = Diagnostics.Stopwatch.StartNew()
+            while ResourceMonitor.history.latest.IsNone && waited.ElapsedMilliseconds<5000L do Threading.Thread.Sleep(10)
+            check (ResourceMonitor.isRecording() && ResourceMonitor.history.latest |> Option.exists(fun s -> s.groups=2.0f && s.tabs=3.0f))
+                  "Switching the charts on did not take a reading at once"
+            ResourceMonitor.record false (fun () -> 0,0)
+            check (not (ResourceMonitor.isRecording()) && ResourceMonitor.history.latest.IsNone && ResourceMonitor.history.minutes.Length=0)
+                  "Switching the charts off kept recording or kept the history"
         // A reading finds each part of this process's memory, and together they are no more than
         // its private bytes, the native heaps being the rest.
         let reading = ResourceMonitor.read(1,1)
@@ -851,6 +863,14 @@ let main() =
             check (near reading.threads (float current.Threads.Count) 2.0) (sprintf "Threads read %.0f by their stacks, %d by Process" reading.threads current.Threads.Count)
             check (near reading.handles (float current.HandleCount) 30.0) (sprintf "Handles read %.0f, %d by Process" reading.handles current.HandleCount)
             check (near reading.privateMB (float current.PrivateMemorySize64/1048576.0) 4.0) (sprintf "Private memory read %.1f MB, %d bytes by Process" reading.privateMB current.PrivateMemorySize64)
+            // Physical memory is Task Manager's Memory column, the private working set: some of
+            // the working set, without the libraries shared with other processes that made the
+            // whole of it larger than private memory.
+            let figures = ProcessFigures.Read()
+            check (figures.PrivateWorkingSet>0L && figures.PrivateWorkingSet<figures.WorkingSet)
+                  (sprintf "The private working set read %d of a working set of %d" figures.PrivateWorkingSet figures.WorkingSet)
+            check (reading.physicalMB>1.0f && float reading.physicalMB<float current.WorkingSet64/1048576.0 && reading.physicalMB<=reading.privateMB*1.05f)
+                  (sprintf "Physical memory read %.1f MB, with %.1f MB private and a working set of %d bytes" reading.physicalMB reading.privateMB current.WorkingSet64)
         // A reading costs about a millisecond, a tenth of what Process's figures did.
         do
             let clock = ResourceMonitor.CpuClock()

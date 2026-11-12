@@ -173,7 +173,7 @@ let main() =
                         let gap = abs(hueDegrees color-hueDegrees preview)
                         check (min gap (360.0-gap)<6.0 && shown>=min 0.06 (chroma*2.0))
                               (sprintf "The dot of %A is %A: %.0f° off its hue, chroma %.3f from %.3f" color preview (min gap (360.0-gap)) shown chroma)
-        let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate";"tabHoverPreview";"pauseInFullScreen"]
+        let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate";"tabHoverPreview";"pauseInFullScreen";"recordResources"]
         let checkMinimalDefaults() =
             for key in optionalKeys do check (api.getValue(key)=box false) (sprintf "%s must be opt-in" key)
             check (api.getValue("autoHideMode")=box "Maximized") "Auto-hide lost its existing maximized-window default"
@@ -537,7 +537,7 @@ let main() =
                 let f = float32 i
                 ResourceMonitor.history.add
                     { time=now.AddSeconds(float(i-359)*10.0); cpu=(if i%40=0 then 3.0f else 0.2f)
-                      privateMB=70.0f+f*0.05f; workingSetMB=110.0f+f*0.05f; managedMB=18.0f+float32(i%30)*0.3f; picturesKB=600.0f+f
+                      privateMB=70.0f+f*0.05f; physicalMB=110.0f+f*0.05f; managedMB=18.0f+float32(i%30)*0.3f; picturesKB=600.0f+f
                       threads=27.0f; handles=800.0f; gdi=120.0f; user=340.0f; hooks=160.0f; desktopHooks=8.0f; groups=6.0f; tabs=14.0f
                       memory={ heapMB=30.0f; codeMB=3.0f; libraryDataMB=17.0f; stacksMB=4.0f } }
         let support = DiagnosticsView() :> ISettingsView
@@ -566,32 +566,83 @@ let main() =
                 check painted (sprintf "The %s page failed to paint in the %s theme" (tr page) mode)
                 if page=Strings.Pages.diagnostics then
                     image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-support-"+mode+".png"),ImageFormat.Png)
-                    // The resources at a glance first, with the values now; the charts folded under it.
+                    // The resources at a glance first, with the values now; the charts off under it.
                     let overview = controls form |> Seq.tryPick(function :? ResourceOverview as overview -> Some overview | _ -> None)
                     let latestPrivate = tr Strings.Diagnostics.privateMemory + sprintf " %.1f MB" (70.0f+359.0f*0.05f)
-                    // It shows the history's latest reading, as the charts and the report do.
-                    let showsLatest (overview:ResourceOverview) =
+                    // It reads for itself once shown, with nothing recorded in the background: its
+                    // groups and tabs are this desktop's none, not the history's 6 and 14.
+                    let showsLive (overview:ResourceOverview) =
                         let text = overview.AccessibleDescription
                         overview.Visible && overview.Height>=Dpi.scale 200 &&
-                        text.StartsWith(tr Strings.Diagnostics.privateMemory) && text.Contains(latestPrivate)
-                    check (overview |> Option.exists showsLatest)
-                          (sprintf "The Support page's overview does not show the latest reading: %A" (overview |> Option.map(fun overview -> overview.AccessibleDescription)))
+                        text.StartsWith(tr Strings.Diagnostics.privateMemory) &&
+                        text.EndsWith(sprintf "%s 0; %s 0" (tr Strings.Diagnostics.groups) (tr Strings.Diagnostics.tabs))
+                    let waited = Diagnostics.Stopwatch.StartNew()
+                    while not (overview |> Option.exists showsLive) && waited.ElapsedMilliseconds<5000L do
+                        Application.DoEvents()
+                        Threading.Thread.Sleep(10)
+                    check (overview |> Option.exists showsLive)
+                          (sprintf "The Support page's overview does not show a reading of its own: %A" (overview |> Option.map(fun overview -> overview.AccessibleDescription)))
+                    // What each item is fits its foot on one line, in every language, as narrow as
+                    // the foot gets one line.
+                    if mode="light" then
+                        let width = overview.Value.OneLineFootWidth
+                        let font = SettingsUi.font (SettingsUi.uiFamily()) 9.5f FontStyle.Regular
+                        let meanings =
+                            typeof<LocalizedText>.Assembly.GetType("Bemo.Strings+Diagnostics").GetProperties()
+                            |> Array.filter(fun property -> property.Name.EndsWith("Meaning") && property.PropertyType=typeof<LocalizedText>)
+                        check (meanings.Length>=15) (sprintf "Found only %d meanings" meanings.Length)
+                        let tooLong =
+                            [ for property in meanings do
+                                for text in Localization.all (property.GetValue(null) :?> LocalizedText) do
+                                    let size = TextRenderer.MeasureText(text,font,Size(width,Int32.MaxValue),TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak)
+                                    if size.Height>font.Height then yield sprintf "%s (%d lines): %s" property.Name (size.Height/font.Height) text ]
+                        check tooLong.IsEmpty (sprintf "Item meanings wrap past one line at %d px:\n%s" width (String.concat "\n" tooLong))
+                    check (not (ResourceMonitor.isRecording())) "Resources were recorded in the background before the charts were switched on"
                     let charts = controls form |> Seq.pick(function :? ResourceCharts as charts -> Some charts | _ -> None)
                     let report = controls form |> Seq.pick(function :? SettingsTextView as view -> Some view | _ -> None)
                     let page = controls form |> Seq.pick(function :? SettingsListPage as page when page.Visible -> Some page | _ -> None)
-                    // Each section folds; at first only the resources are open.
+                    // The charts stay off, and the report folded, until asked for.
                     check (not charts.Visible && not report.Visible && not page.ListShown) "The charts or the report were open before they were asked for"
                     let folder caption = controls form |> Seq.pick(function :? SettingsExpanderButton as button when button.AccessibleName=tr caption -> Some button | _ -> None)
+                    // Their switch is the setting, so the palette turns them on too.
+                    let recording = controls form |> Seq.pick(function :? SettingsToggle as toggle when toggle.Name="record-resources" -> Some toggle | _ -> None)
+                    // It stands in the charts' heading, there while they are folded too.
                     let expander = folder Strings.Diagnostics.charts
+                    check (recording.Visible && not recording.Checked && obj.ReferenceEquals(recording.Parent.Parent,expander.Parent.Parent))
+                          "The charts' switch is not in their heading, or on before it was asked for"
+                    // The report is written when it is opened, not with the page.
+                    if mode="light" then check (report.TextBox.Text="") "The folded report was written as the page opened"
+                    // The charts fold as the other sections do: opened and still off, no chart shows.
                     expander.PerformClick()
+                    Application.DoEvents()
+                    check (expander.Open && not charts.Visible) "Opening the charts showed them while switched off"
+                    expander.PerformClick()
+                    Application.DoEvents()
+                    // Switched on while folded, they open.
+                    api.setValue("recordResources",box true)
                     (folder Strings.Diagnostics.reportTitle).PerformClick()
                     Application.DoEvents()
+                    check recording.Checked "The charts' switch did not follow its setting"
+                    check (report.TextBox.Text.Contains("\"version\"")) "Opening the report did not write it"
+                    // Inset under the resources, as a part of them.
+                    let leftIn (control:Control) = page.PointToClient(control.PointToScreen(Point.Empty)).X
+                    check (leftIn charts>=leftIn overview.Value+Dpi.scale 12 && leftIn expander.Parent>=leftIn (folder Strings.Diagnostics.resourcesTitle).Parent+Dpi.scale 12)
+                          (sprintf "The charts are not inset under the resources: charts at %d, overview at %d" (leftIn charts) (leftIn overview.Value))
                     check (charts.Visible && charts.Height>=Dpi.scale 96 && charts.Width>Dpi.scale 180 && charts.AccessibleDescription.Contains(latestPrivate))
-                          "Opening the charts did not show a chart for each, with the values now"
+                          "Switching the charts on did not show a chart for each, with the values now"
+                    // Each chart's range is short, its unit given once, and none where it did not move.
+                    for metric,low,high,expected in [PrivateMemory,70.0f,88.0f,"70.0–88.0 MB";Cpu,0.2f,3.0f,"0.2–3.0%"
+                                                     TabPictures,600.0f,959.0f,"600–959 KB";Handles,800.0f,812.0f,"800–812";Handles,800.0f,800.0f,""] do
+                        check (ResourceFormat.range metric low high=expected) (sprintf "The %A range read %s" metric (ResourceFormat.range metric low high))
                     // In the report's order, by what they tell.
                     check (charts.Order=ResourceSample.metrics) (sprintf "The charts are in the order %A" charts.Order)
-                    // The pointer picks the reading under it, none where there is none: over a day,
-                    // the hour of readings fills only the right end of each chart.
+                    // They cover all that was recorded, here an hour less a reading, with no range to
+                    // choose: the first reading at the left end of each line, the latest at its right.
+                    let recorded = ResourceMonitor.history.recent
+                    // Under the switch, since when: they always run to now, so no end is given.
+                    let since = tr (Strings.Diagnostics.chartsSince (recorded.[0].time.ToLocalTime().ToString("HH:mm")))
+                    check (controls form |> Seq.exists(fun c -> c :? Label && c.Visible && c.Text=since)) (sprintf "The charts do not say %s" since)
+                    check (abs((charts.Span-TimeSpan.FromSeconds(3590.0)).TotalSeconds)<1.0) (sprintf "An hour of readings is charted over %A" charts.Span)
                     // Drawn to a bitmap: off screen, as this window is, Windows paints nothing.
                     let pointAtChart (x:int) (y:int) =
                         WinUserApi.SendMessage(charts.Handle,0x0200,0,(y <<< 16) ||| x) |> ignore
@@ -599,14 +650,15 @@ let main() =
                         charts.DrawToBitmap(drawn,Rectangle(Point.Empty,drawn.Size))
                     let line = charts.ChartBounds.Head
                     let middle = line.Top+line.Height/2
-                    charts.Day <- true
-                    pointAtChart (line.Left+Dpi.scale 4) middle
-                    check charts.Picked.IsNone (sprintf "Left of the first reading, the chart picked %A" charts.Picked)
-                    pointAtChart (line.Right-Dpi.scale 2) middle
-                    check charts.Picked.IsSome (sprintf "At the latest reading, the chart picked none: line %A, minutes %A to %A" line
-                                                    (ResourceMonitor.history.minutes |> Array.tryHead |> Option.map(fun s -> s.time))
-                                                    (ResourceMonitor.history.latest |> Option.map(fun s -> s.time)))
-                    charts.Day <- false
+                    pointAtChart line.Left middle
+                    check (charts.Picked=Some recorded.[0].time) (sprintf "At the left end, the chart picked %A, not the first reading" charts.Picked)
+                    pointAtChart (line.Right-1) middle
+                    // Readings can be closer than a pixel there, by how wide the chart is at this
+                    // scale: any within two pixels' time of the latest is it, to the eye.
+                    let latest = recorded.[recorded.Length-1].time
+                    let twoPixels = TimeSpan.FromSeconds(charts.Span.TotalSeconds/float line.Width*2.0)
+                    check (charts.Picked |> Option.exists(fun time -> time>=latest-twoPixels))
+                          (sprintf "At the right end, the chart picked %A, not near the latest reading %A (two pixels are %A)" charts.Picked latest twoPixels)
                     WinUserApi.SendMessage(charts.Handle,0x02A3,0,0) |> ignore
                     check (report.Visible && page.ListShown) "Opening the report did not show it"
                     // Taller than the window, the page scrolls, and at its end the report shows whole.
@@ -632,22 +684,30 @@ let main() =
                     // The pointer over private memory's total shades it with room on every side.
                     let pointAt (x:int) (y:int) = WinUserApi.SendMessage(overview.Value.Handle,0x0200,0,(y <<< 16) ||| x) |> ignore
                     pointAt (Dpi.scale 30) (Dpi.scale 20)
-                    for name,part in ["overview",(overview.Value :> Control);"charts",(charts :> Control)] do
+                    for name,part in ["overview",(overview.Value :> Control);"charts",(charts :> Control);"charts-section",charts.Parent.Parent] do
                         use picture = new Bitmap(part.Width,part.Height)
                         part.DrawToBitmap(picture,Rectangle(Point.Empty,picture.Size))
                         picture.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "settings-support-%s-%s.png" name mode),ImageFormat.Png)
-                    // Folding the resources takes their open charts with them; opened again, both return.
+                    // Folding the resources takes their charts with them; opened again, both return.
                     let resources = folder Strings.Diagnostics.resourcesTitle
                     resources.PerformClick()
                     Application.DoEvents()
                     check (not overview.Value.Visible && not charts.Visible) "Folding the resources left their overview or charts shown"
                     resources.PerformClick()
                     Application.DoEvents()
-                    check (overview.Value.Visible && charts.Visible) "Opening the resources again did not bring back their open charts"
+                    check (overview.Value.Visible && charts.Visible) "Opening the resources again did not bring back their charts"
+                    // Folded, the charts go and keep recording; switched off, they stay away when opened.
+                    expander.PerformClick()
+                    Application.DoEvents()
+                    check (not charts.Visible && recording.Visible && recording.Checked) "Folding the charts left them shown, hid their switch or switched them off"
+                    api.setValue("recordResources",box false)
+                    expander.PerformClick()
+                    Application.DoEvents()
+                    check (expander.Open && not charts.Visible) "Switching the charts off left them shown"
                     expander.PerformClick()
                     (folder Strings.Diagnostics.reportTitle).PerformClick()
                     Application.DoEvents()
-                    check (not charts.Visible && not report.Visible && page.ScrollOffset<=page.ScrollMaximum) "Folding the charts or the report left them shown"
+                    check (not expander.Open && not report.Visible && page.ScrollOffset<=page.ScrollMaximum) "Folding the charts or the report left them shown"
         // Text in Windows 11's face where it is installed, sections headed in Semibold, not Bold.
         let variable = FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text")
         check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))

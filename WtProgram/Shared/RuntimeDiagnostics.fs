@@ -49,7 +49,7 @@ module RuntimeMetrics =
 
 /// What the Support page charts, in its order.
 type ResourceMetric =
-    | Cpu | PrivateMemory | WorkingSet | ManagedHeap | TabPictures | Threads | Handles
+    | Cpu | PrivateMemory | PhysicalMemory | ManagedHeap | TabPictures | Threads | Handles
     | GdiObjects | UserObjects | EventHooks | DesktopHooks | Groups | Tabs
 
 /// What private memory holds besides the native heaps, in megabytes: the .NET heap as committed,
@@ -58,23 +58,24 @@ type ResourceMetric =
 type MemoryParts = { heapMB: float32; codeMB: float32; libraryDataMB: float32; stacksMB: float32 }
     with static member none = { heapMB=0.0f; codeMB=0.0f; libraryDataMB=0.0f; stacksMB=0.0f }
 
-/// One reading of the process. CPU is a share of all processors since the reading before, as
+/// One reading of the process. Physical memory is the private working set, Task Manager's Memory
+/// column, or the whole working set where Windows does not tell that. CPU is a share of all processors since the reading before, as
 /// Task Manager shows it; memory in megabytes, tab pictures in kilobytes.
 type ResourceSample = {
     time: DateTime
-    cpu: float32; privateMB: float32; workingSetMB: float32; managedMB: float32; picturesKB: float32
+    cpu: float32; privateMB: float32; physicalMB: float32; managedMB: float32; picturesKB: float32
     threads: float32; handles: float32; gdi: float32; user: float32
     hooks: float32; desktopHooks: float32; groups: float32; tabs: float32
     memory: MemoryParts }
     with
     member s.value metric =
         match metric with
-        | Cpu -> s.cpu | PrivateMemory -> s.privateMB | WorkingSet -> s.workingSetMB | ManagedHeap -> s.managedMB
+        | Cpu -> s.cpu | PrivateMemory -> s.privateMB | PhysicalMemory -> s.physicalMB | ManagedHeap -> s.managedMB
         | TabPictures -> s.picturesKB | Threads -> s.threads | Handles -> s.handles | GdiObjects -> s.gdi
         | UserObjects -> s.user | EventHooks -> s.hooks | DesktopHooks -> s.desktopHooks | Groups -> s.groups | Tabs -> s.tabs
     /// In the order the Support page shows them: CPU and memory, system objects, window events,
     /// then groups and tabs.
-    static member metrics = [Cpu;PrivateMemory;WorkingSet;ManagedHeap;TabPictures;Handles;GdiObjects;UserObjects;Threads;EventHooks;DesktopHooks;Groups;Tabs]
+    static member metrics = [Cpu;PrivateMemory;PhysicalMemory;ManagedHeap;TabPictures;Handles;GdiObjects;UserObjects;Threads;EventHooks;DesktopHooks;Groups;Tabs]
 
 /// The last hour of readings as taken, and a day of them a minute at a time: the minute's
 /// average CPU and its highest of everything else, so a short peak still shows.
@@ -89,7 +90,7 @@ type ResourceHistory(recentCapacity:int, minuteCapacity:int) =
         let peak (read:ResourceSample -> float32) = samples |> Seq.map read |> Seq.max
         { time=minuteOf samples.[0].time
           cpu=(samples |> Seq.sumBy(fun s -> s.cpu))/float32 samples.Count
-          privateMB=peak(fun s -> s.privateMB); workingSetMB=peak(fun s -> s.workingSetMB); managedMB=peak(fun s -> s.managedMB)
+          privateMB=peak(fun s -> s.privateMB); physicalMB=peak(fun s -> s.physicalMB); managedMB=peak(fun s -> s.managedMB)
           picturesKB=peak(fun s -> s.picturesKB); threads=peak(fun s -> s.threads); handles=peak(fun s -> s.handles)
           gdi=peak(fun s -> s.gdi); user=peak(fun s -> s.user); hooks=peak(fun s -> s.hooks)
           desktopHooks=peak(fun s -> s.desktopHooks); groups=peak(fun s -> s.groups); tabs=peak(fun s -> s.tabs)
@@ -108,12 +109,17 @@ type ResourceHistory(recentCapacity:int, minuteCapacity:int) =
     /// A minute at a time, the minute under way last.
     member _.minutes = lock gate (fun () -> Array.append (minuteQueue.ToArray()) (if current.Count>0 then [|summarize current|] else [||]))
     member _.latest = lock gate (fun () -> if recentQueue.Count=0 then None else Some(Seq.last recentQueue))
+    member _.clear() = lock gate (fun () -> recentQueue.Clear(); minuteQueue.Clear(); current.Clear())
 
-/// Reads the process every ten seconds while WindowTabs runs; kept in memory only, a day at most.
+/// Reads the process: for the Support page's overview as often as it asks while it shows, and,
+/// only while the charts are switched on, every ten seconds into a history kept in memory, a day
+/// at most.
 module ResourceMonitor =
     [<DllImport("user32.dll")>]
     extern uint32 private GetGuiResources(IntPtr current, uint32 flags)
     let intervalMs = 10000
+    /// How often the overview reads while it can be seen.
+    let liveIntervalMs = 1000
     let history = ResourceHistory(3600/(intervalMs/1000),24*60)
     [<DllImport("kernel32.dll")>]
     extern IntPtr private GetCurrentProcess()
@@ -142,7 +148,7 @@ module ResourceMonitor =
         let mb (bytes:int64) = float32(float bytes/1048576.0)
         let self = GetCurrentProcess()
         { time=now; cpu=clock.share now figures.CpuTicks figures.StartTimeUtc
-          privateMB=mb figures.PrivateBytes; workingSetMB=mb figures.WorkingSet; managedMB=mb (GC.GetTotalMemory(false))
+          privateMB=mb figures.PrivateBytes; physicalMB=mb (if figures.PrivateWorkingSet>0L then figures.PrivateWorkingSet else figures.WorkingSet); managedMB=mb (GC.GetTotalMemory(false))
           picturesKB=float32(float (ResourceCounters.captureByteCount())/1024.0)
           threads=(match parts with Some parts -> float32 parts.Threads | None -> 0.0f); handles=float32 figures.Handles
           gdi=float32(GetGuiResources(self,0u)); user=float32(GetGuiResources(self,1u))
@@ -153,20 +159,36 @@ module ResourceMonitor =
                   | None -> MemoryParts.none) }
     /// A reading for the history.
     let read counts = readWith historyClock counts
-    /// Samples now and every interval after until disposed. Groups and tabs are counted on the
-    /// calling thread, which owns them; the rest is read on the pool, out of the way of the main
-    /// thread, the keyboard and mouse hooks' own.
-    let start (counts:unit -> int * int) =
-        let timer = new Windows.Forms.Timer(Interval=intervalMs)
-        let sample() =
-            let counted = try counts() with _ -> 0,0
-            Threading.ThreadPool.QueueUserWorkItem(fun _ ->
-                try history.add(read counted)
-                with error -> Trace.TraceWarning("Resource sample failed: {0}",error.Message)) |> ignore
-        timer.Tick.Add(fun _ -> sample())
-        sample()
-        timer.Start()
-        timer :> IDisposable
+    let private recordingGate = obj()
+    /// The timer of the history being recorded, if one is.
+    let mutable private recording : Windows.Forms.Timer option = None
+    let isRecording() = recording.IsSome
+    /// Starts the history, sampling now and every interval after, or stops it and forgets what it
+    /// held: what is left would show as a gap once it starts again. Called on the main thread,
+    /// which counts the groups and tabs it owns; the rest is read on the pool, out of the way of
+    /// the main thread, the keyboard and mouse hooks' own.
+    let record (on:bool) (counts:unit -> int * int) =
+        match on,recording with
+        | true,None ->
+            let timer = new Windows.Forms.Timer(Interval=intervalMs)
+            let sample() =
+                let counted = try counts() with _ -> 0,0
+                Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+                    try
+                        let reading = read counted
+                        // A reading under way as the history stops is not kept.
+                        lock recordingGate (fun () -> if recording=Some timer then history.add reading)
+                    with error -> Trace.TraceWarning("Resource sample failed: {0}",error.Message)) |> ignore
+            timer.Tick.Add(fun _ -> sample())
+            recording <- Some timer
+            sample()
+            timer.Start()
+        | false,Some timer ->
+            timer.Dispose()
+            lock recordingGate (fun () ->
+                recording <- None
+                history.clear())
+        | _ -> ()
     /// Each metric now, at its lowest and highest over the day kept, and an hour before, for the
     /// troubleshooting report.
     let summary() =
@@ -436,6 +458,7 @@ module RuntimeDiagnostics =
                                         JProperty("desktopHooks",ResourceCounters.globalHookCount()),
                                         JProperty("tabPicturesKB",Math.Round(float (ResourceCounters.captureByteCount())/1024.0,1)))
         // How they moved over the day kept: a leak climbs, a busy moment peaks and falls back.
+        // Empty unless the charts are switched on.
         result.["resourceHistory"] <- ResourceMonitor.summary()
         result.["scans"] <- JObject(JProperty("count",scans),JProperty("lastMs",Math.Round(last,1)),JProperty("maxMs",Math.Round(maximum,1)))
         result

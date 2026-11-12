@@ -833,28 +833,40 @@ globally. `Reliability` checks a real conhost window's hooks and that its move i
 ### Watching resources
 
 Support in Settings shows what WindowTabs uses: an overview of the figures now, each
-explained while pointed at, and below it, folded until opened, a chart for each over the
-last hour or 24 hours. The overview splits private memory by a scan of the process's own
+explained while pointed at, and below it, off until switched on (`recordResources`, also in
+the palette), a chart for each over all that was recorded, 24 hours at most: reading by
+reading while the hour kept that way reaches back to the first, a minute at a time after.
+Nothing is read in the
+background unless the charts are on: the overview takes its own reading every second, and
+only while it can be seen. The overview splits private memory by a scan of the process's own
 address space (`ProcessMemoryMap`): the .NET heap as committed (the reservation holding a
 pinned object), split into its objects, the tab pictures among them, and its free space;
 private executable pages as compiled code; writable image pages as library data; and the
 allocations with a guard page as thread stacks. Private bytes are those and the private
 pages besides, so the rest, shown as Other, is the native heaps and .NET's type data. The
-scan takes about a millisecond on the pool with each reading. Readings are taken every 10
-seconds (`ResourceMonitor`) and kept in memory only: the last hour as read, and 24 hours a
-minute at a time, each minute's average CPU and the highest of everything else, so a short
-peak still shows. CPU is a share of all processors, as Task Manager shows it.
+heap's free space is listed next to its objects, which it trades places with as they are
+made and collected. Physical memory is the private working set, the figure in Task Manager's
+Memory column (`ProcessVmCounters`; the whole working set where Windows does not tell it):
+the part of private memory in RAM now, smaller as Windows moves idle pages out. The
+scan takes about a millisecond on the pool with each reading. While the charts are on,
+readings are taken every 10 seconds (`ResourceMonitor`) and kept in memory only: the last
+hour as read, and 24 hours a minute at a time, each minute's average CPU and the highest of
+everything else, so a short peak still shows; switched off, the history is dropped. CPU is
+a share of all processors since the reading before, as Task Manager shows it.
 
 What it costs, measured with 441 processes running: a reading takes 0.42 ms (median). Its
 figures are asked of Windows about this process alone (`ProcessFigures`), where .NET's
 `Process` listed every process on the machine for them, 4.25 ms in the same run; threads are
 counted by their stacks in the address-space scan, two to a thread under WOW64, and matched
-`Process` in that run. The history's readings are taken on the thread pool; only groups and
-tabs are counted on the main thread, which also runs the keyboard and mouse hooks. A day of
-history is under 100 KB. The overview and the charts show the same readings, redrawn every
-10 seconds only while they can be seen, the charts also as the pointer moves over one;
-drawing all 13 over a full day took 1.3 ms. Reading more often was left alone: the hour's
-chart already has more readings than pixels, and leaks build over minutes.
+`Process` in that run. Readings are taken on the thread pool, the overview's as the
+history's; only groups and tabs are counted on the main thread, which also runs the keyboard
+and mouse hooks. A day of history is under 100 KB. The charts are redrawn as each reading
+comes, only while they can be seen, and as the pointer moves over one; drawing all 13 over a
+full day took 1.3 ms. The page itself is laid out once when built and once per fold, not as
+each part is added or shown (building it fell from 333 ms to 80 ms), and the troubleshooting
+report, which lists every process, is written when it is opened, not with the page. The
+history is not read more often: the hour's chart already has more
+readings than pixels, and leaks build over minutes.
 
 Besides the
 process's own counters it shows the bytes held by saved tab pictures and the live event
