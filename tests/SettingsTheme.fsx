@@ -604,6 +604,9 @@ let main() =
                     check (reportCard.Location=inContent && obj.ReferenceEquals(reportCard.Parent.Parent,page) && reportCard.Parent.Top = -page.ScrollOffset)
                           "Scrolling moved the page's parts one by one"
                     page.ScrollTo(0)
+                    // The pointer over private memory's total shades it with room on every side.
+                    let pointAt (x:int) (y:int) = WinUserApi.SendMessage(overview.Value.Handle,0x0200,0,(y <<< 16) ||| x) |> ignore
+                    pointAt (Dpi.scale 30) (Dpi.scale 20)
                     for name,part in ["overview",(overview.Value :> Control);"charts",(charts :> Control)] do
                         use picture = new Bitmap(part.Width,part.Height)
                         part.DrawToBitmap(picture,Rectangle(Point.Empty,picture.Size))

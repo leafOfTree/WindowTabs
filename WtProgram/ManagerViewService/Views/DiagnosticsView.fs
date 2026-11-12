@@ -107,10 +107,13 @@ type ResourceOverview() as this =
     let memoryHeight = headerHeight+barHeight+10+partCount*rowHeight
     /// Room for what an item is: two lines where the page is narrow, so the longest still fits.
     let footHeight width = if twoColumns width then rowHeight else 2*rowHeight
+    /// Room round the content, so a pointed-at item's shading has some on every side.
+    let pad = 8
     let heightFor width =
+        let inner = width-Dpi.scale(2*pad)
         let figuresHeight = figures.Length*rowHeight
-        let body = if twoColumns width then max memoryHeight figuresHeight else memoryHeight+16+figuresHeight
-        Dpi.scale(body+12+footHeight width)
+        let body = if twoColumns inner then max memoryHeight figuresHeight else memoryHeight+16+figuresHeight
+        Dpi.scale(body+12+footHeight inner+2*pad)
     /// The colour of each part, told apart in either theme; in high contrast, Windows' own.
     let colors (p:SettingsPalette) =
         let dark = ThemeService.currentIsDark()
@@ -187,25 +190,33 @@ type ResourceOverview() as this =
         let rowFont = SettingsUi.rowFont()
         let captionFont = SettingsUi.font (SettingsUi.uiFamily()) 9.5f FontStyle.Regular
         let totalFont = SettingsUi.font (SettingsUi.uiSemiboldFamily()) 16.0f FontStyle.Regular
-        let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.VerticalCenter
-        let width = this.ClientSize.Width
+        // Everything below is drawn inside the padding, moved there once.
+        let inset = Dpi.scale pad
+        g.TranslateTransform(float32 inset,float32 inset)
+        let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.VerticalCenter |||
+                    TextFormatFlags.PreserveGraphicsTranslateTransform
+        let width = this.ClientSize.Width-2*inset
+        let height = this.ClientSize.Height-2*inset
         let two = twoColumns width
         let memoryWidth = if two then (width-Dpi.scale columnGap)/2 else width
         let text (s:string) font color (bounds:Rectangle) right =
             TextRenderer.DrawText(g,s,font,bounds,color,flags ||| (if right then TextFormatFlags.Right else TextFormatFlags.Left))
         let found = ResizeArray<Rectangle * LocalizedText>()
-        /// A row the pointer can ask about; the one it is over is shaded, as a list's row is.
+        /// A row the pointer can ask about; the one it is over is shaded, as a list's row is, out
+        /// into the padding on each side.
         let item (bounds:Rectangle) meaning =
+            let shaded = Rectangle.Inflate(bounds,inset,Dpi.scale 2)
             if hovered=Some found.Count then
                 use shade = new SolidBrush(p.hover)
-                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X-float32(Dpi.scale 6),float32 bounds.Y,float32 bounds.Width+float32(Dpi.scale 12),float32 bounds.Height)) (float32(Dpi.scale 4))
+                use shape = SettingsShapes.rounded (RectangleF.op_Implicit shaded) (float32(Dpi.scale 4))
                 g.FillPath(shade,shape)
-            found.Add(bounds,meaning)
+            found.Add(Rectangle(shaded.X+inset,shaded.Y+inset,shaded.Width,shaded.Height),meaning)
         match ResourceMonitor.history.latest with
         | None -> text (tr Strings.Diagnostics.collecting) rowFont p.description (Rectangle(0,0,width,Dpi.scale rowHeight)) false
         | Some s ->
             // Private memory: its total, the bar of its parts and a line for each.
-            let header = Rectangle(0,0,memoryWidth,Dpi.scale(headerHeight+barHeight))
+            // To a little below the bar, so its shading has room under the bar too.
+            let header = Rectangle(0,0,memoryWidth,Dpi.scale(headerHeight+barHeight+4))
             item header Strings.Diagnostics.privateMemoryMeaning
             text (tr Strings.Diagnostics.privateMemory) captionFont p.description (Rectangle(0,0,memoryWidth,captionFont.Height)) false
             text (ResourceFormat.value PrivateMemory s.privateMB) totalFont p.text (Rectangle(0,captionFont.Height+Dpi.scale 2,memoryWidth,totalFont.Height)) false
@@ -252,11 +263,12 @@ type ResourceOverview() as this =
                 text (tr caption) rowFont p.text (Rectangle(row.X,row.Y,row.Width-Dpi.scale 100,row.Height)) false
                 text (ResourceFormat.value metric (s.value metric)) rowFont p.text (Rectangle(row.Right-Dpi.scale 100,row.Y,Dpi.scale 100,row.Height)) true)
             // At the foot, what the item pointed at is, or how to find out.
-            let foot = Rectangle(0,this.ClientSize.Height-Dpi.scale(footHeight width),width,Dpi.scale(footHeight width))
+            let foot = Rectangle(0,height-Dpi.scale(footHeight width),width,Dpi.scale(footHeight width))
             g.DrawLine(separator,0,foot.Top-Dpi.scale 6,width,foot.Top-Dpi.scale 6)
             let meaning = hovered |> Option.bind(fun index -> if index<found.Count then Some(snd found.[index]) else None)
             TextRenderer.DrawText(g,tr (defaultArg meaning Strings.Diagnostics.pointForMeaning),captionFont,foot,p.description,
-                                  TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+                                  TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis |||
+                                  TextFormatFlags.PreserveGraphicsTranslateTransform)
         regions <- List.ofSeq found
 
 /// The Support page's resources: a tile for each, with its value now, its lowest and highest over

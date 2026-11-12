@@ -776,7 +776,8 @@ let main() =
     // A console window's events are heard from its conhost, not from every app on the desktop,
     // and still reach its group: a move of the window is heard.
     do
-        let title = "WindowTabs console probe " + string(Guid.NewGuid())
+        let token = string(Guid.NewGuid())
+        let title = "WindowTabs console probe " + token
         // conhost has no 32-bit copy: a 32-bit host reaches the 64-bit one through Sysnative.
         let system =
             if Environment.Is64BitOperatingSystem && not Environment.Is64BitProcess then
@@ -790,9 +791,17 @@ let main() =
                 while not(ready()) && watch.ElapsedMilliseconds < 10000L do
                     System.Windows.Forms.Application.DoEvents()
                     Thread.Sleep(20)
+            // By the title's own token: an elevated console, as on a build server, puts
+            // "Administrator: " before the title it is given.
+            let consoles() = OS().windowsInZorder.list |> List.filter(fun window -> window.className="ConsoleWindowClass")
             let mutable hwnd = IntPtr.Zero
-            pumpUntil(fun () -> hwnd <- WinUserApi.FindWindow("ConsoleWindowClass",title); hwnd<>IntPtr.Zero)
-            check (hwnd<>IntPtr.Zero) "The console fixture did not open a window"
+            pumpUntil(fun () ->
+                hwnd <- consoles() |> List.tryFind(fun window -> window.text.Contains(token)) |> Option.map(fun window -> window.hwnd) |> Option.defaultValue IntPtr.Zero
+                hwnd<>IntPtr.Zero)
+            check (hwnd<>IntPtr.Zero)
+                  (sprintf "The console fixture did not open a window (conhost %s; consoles: %A)"
+                       (if host.HasExited then sprintf "exited with %d" host.ExitCode else "running")
+                       (consoles() |> List.map(fun window -> window.text)))
             let window = OS().windowFromHwnd(hwnd)
             check window.isConsoleWindow "The console fixture's window was not taken for a console"
             // Windows answers which conhost only to a 64-bit caller, as WindowTabs is on 64-bit
