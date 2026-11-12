@@ -97,10 +97,10 @@ type ResourceOverview() as this =
     let figures =
         [Cpu,Strings.Diagnostics.cpu,Strings.Diagnostics.cpuMeaning
          WorkingSet,Strings.Diagnostics.workingSet,Strings.Diagnostics.workingSetMeaning
-         Threads,Strings.Diagnostics.threads,Strings.Diagnostics.threadsMeaning
          Handles,Strings.Diagnostics.handles,Strings.Diagnostics.handlesMeaning
          GdiObjects,Strings.Diagnostics.gdiObjects,Strings.Diagnostics.gdiObjectsMeaning
          UserObjects,Strings.Diagnostics.userObjects,Strings.Diagnostics.userObjectsMeaning
+         Threads,Strings.Diagnostics.threads,Strings.Diagnostics.threadsMeaning
          EventHooks,Strings.Diagnostics.eventHooks,Strings.Diagnostics.eventHooksMeaning
          DesktopHooks,Strings.Diagnostics.desktopHooks,Strings.Diagnostics.desktopHooksMeaning
          Groups,Strings.Diagnostics.groups,Strings.Diagnostics.groupsMeaning
@@ -300,28 +300,48 @@ type ResourceOverview() as this =
 /// the range shown and a line across that range. Pointing at a line shows that moment instead.
 type ResourceCharts() as this =
     inherit Control()
-    let tiles =
-        [Cpu,Strings.Diagnostics.cpu; PrivateMemory,Strings.Diagnostics.privateMemory; WorkingSet,Strings.Diagnostics.workingSet
-         ManagedHeap,Strings.Diagnostics.managedHeap; TabPictures,Strings.Diagnostics.tabPictures; Threads,Strings.Diagnostics.threads
-         Handles,Strings.Diagnostics.handles; GdiObjects,Strings.Diagnostics.gdiObjects; UserObjects,Strings.Diagnostics.userObjects
-         EventHooks,Strings.Diagnostics.eventHooks; DesktopHooks,Strings.Diagnostics.desktopHooks
-         Groups,Strings.Diagnostics.groups; Tabs,Strings.Diagnostics.tabs]
+    /// By what they tell, most telling first, each group from a row of its own under its name:
+    /// what a report is about, then what WindowTabs holds of Windows', then what it listens to,
+    /// then how many groups and tabs all that is for.
+    let groups =
+        [Strings.Diagnostics.chartsCpuMemory,
+            [Cpu,Strings.Diagnostics.cpu; PrivateMemory,Strings.Diagnostics.privateMemory; WorkingSet,Strings.Diagnostics.workingSet
+             ManagedHeap,Strings.Diagnostics.managedHeap; TabPictures,Strings.Diagnostics.tabPictures]
+         Strings.Diagnostics.chartsSystemObjects,
+            [Handles,Strings.Diagnostics.handles; GdiObjects,Strings.Diagnostics.gdiObjects
+             UserObjects,Strings.Diagnostics.userObjects; Threads,Strings.Diagnostics.threads]
+         Strings.Diagnostics.chartsWindowEvents,
+            [EventHooks,Strings.Diagnostics.eventHooks; DesktopHooks,Strings.Diagnostics.desktopHooks]
+         Strings.Diagnostics.chartsGroupsTabs,
+            [Groups,Strings.Diagnostics.groups; Tabs,Strings.Diagnostics.tabs]]
+    let tiles = groups |> List.collect snd
     let mutable day = false
     let mutable pointer : Point option = None
+    let mutable picked : DateTime option = None
     let timer = new Timer(Interval=ResourceMonitor.intervalMs)
     let samples() = if day then ResourceMonitor.history.minutes else ResourceMonitor.history.recent
     let span() = if day then TimeSpan.FromHours(24.0) else TimeSpan.FromHours(1.0)
     let format = ResourceFormat.value
     // Sizes in logical pixels, scaled where they are used.
-    let tileWidth,tileHeight,gap = 180,96,16
+    let tileWidth,tileHeight,gap,headingHeight = 180,96,16,28
     let columns width = max 1 ((width+Dpi.scale gap)/(Dpi.scale tileWidth+Dpi.scale gap))
-    let heightFor width =
-        let rows = (tiles.Length+columns width-1)/columns width
-        rows*Dpi.scale tileHeight + (rows-1)*Dpi.scale gap + Dpi.scale 8
-    let tileBounds index =
-        let count = columns this.ClientSize.Width
-        let width = (this.ClientSize.Width-(count-1)*Dpi.scale gap)/count
-        Rectangle((index%count)*(width+Dpi.scale gap),(index/count)*(Dpi.scale tileHeight+Dpi.scale gap),width,Dpi.scale tileHeight)
+    /// Where each group's name and each tile go at a width, and the height they take.
+    let layout width =
+        let count = columns width
+        let tile = (width-(count-1)*Dpi.scale gap)/count
+        let headings = ResizeArray<LocalizedText * Rectangle>()
+        let placed = ResizeArray<ResourceMetric * LocalizedText * Rectangle>()
+        let mutable y = 0
+        groups |> List.iteri(fun index (title,items) ->
+            if index>0 then y <- y+Dpi.scale gap
+            headings.Add(title,Rectangle(0,y,width,Dpi.scale headingHeight))
+            y <- y+Dpi.scale headingHeight
+            items |> List.iteri(fun i (metric,caption) ->
+                placed.Add(metric,caption,Rectangle((i%count)*(tile+Dpi.scale gap),y+(i/count)*(Dpi.scale tileHeight+Dpi.scale gap),tile,Dpi.scale tileHeight)))
+            let rows = (items.Length+count-1)/count
+            y <- y+rows*Dpi.scale tileHeight+(rows-1)*Dpi.scale gap)
+        List.ofSeq headings,List.ofSeq placed,y+Dpi.scale 8
+    let heightFor width = let _,_,height = layout width in height
     let chartBounds (tile:Rectangle) =
         Rectangle(tile.X,tile.Bottom-Dpi.scale 40,tile.Width,Dpi.scale 36)
     /// A screen reader reads the values now, as the tiles show them.
@@ -342,6 +362,12 @@ type ResourceCharts() as this =
     member _.Day
         with get() = day
         and set value = day <- value; this.Invalidate()
+    /// The charts in their order, for a test.
+    member _.Order = tiles |> List.map fst
+    /// When the reading the pointer picked was taken, as last drawn; None where it is over none.
+    member _.Picked = picked
+    /// Where each chart's line is drawn, in their order, for a test.
+    member this.ChartBounds = let _,placed,_ = layout this.ClientSize.Width in placed |> List.map(fun (_,_,tile) -> chartBounds tile)
 
     override this.OnHandleCreated(e) =
         base.OnHandleCreated(e)
@@ -371,22 +397,29 @@ type ResourceCharts() as this =
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let captionFont = SettingsUi.font (SettingsUi.uiFamily()) 9.5f FontStyle.Regular
         let valueFont = SettingsUi.font (SettingsUi.uiSemiboldFamily()) 14.0f FontStyle.Regular
+        let headingFont = SettingsUi.subsectionFont()
         let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis
         let all = samples()
         let now = match ResourceMonitor.history.latest with Some latest -> latest.time | None -> DateTime.UtcNow
         let start = now-span()
         let shown = all |> Array.filter(fun s -> s.time>=start)
-        tiles |> List.iteri(fun index (metric,caption) ->
-            let tile = tileBounds index
+        let headings,placed,_ = layout this.ClientSize.Width
+        picked <- None
+        for title,bounds in headings do
+            TextRenderer.DrawText(g,tr title,headingFont,bounds,p.text,flags ||| TextFormatFlags.VerticalCenter)
+        for metric,caption,tile in placed do
             let chart = chartBounds tile
             let values = shown |> Array.map(fun s -> s.value metric)
             let xOf (time:DateTime) = float32 chart.Left + float32((time-start).TotalMilliseconds/(span()).TotalMilliseconds)*float32 chart.Width
-            // The sample under the pointer, when it is over this tile.
+            // The reading under the pointer: only where there is one, not the nearest from
+            // anywhere, so left of the first reading, or across a gap, nothing is picked.
             let hovered =
                 match pointer with
                 | Some point when tile.Contains(point) && shown.Length>0 ->
-                    Some(shown |> Array.minBy(fun s -> abs(xOf s.time-float32 point.X)))
+                    let nearest = shown |> Array.minBy(fun s -> abs(xOf s.time-float32 point.X))
+                    if abs(xOf nearest.time-float32 point.X) <= float32(Dpi.scale 6) then Some nearest else None
                 | _ -> None
+            hovered |> Option.iter(fun s -> picked <- Some s.time)
             let captionHeight = captionFont.Height
             let rangeText,valueText =
                 match hovered,ResourceMonitor.history.latest with
@@ -436,7 +469,7 @@ type ResourceCharts() as this =
                     g.DrawLine(marker,x,float32 chart.Top,x,float32 chart.Bottom)
                     use dot = new SolidBrush(line)
                     let r = float32(Dpi.scale 3)
-                    g.FillEllipse(dot,x-r,yOf(s.value metric)-r,2.0f*r,2.0f*r)))
+                    g.FillEllipse(dot,x-r,yOf(s.value metric)-r,2.0f*r,2.0f*r))
 
 type DiagnosticsView() =
     let view = new SettingsTextView()

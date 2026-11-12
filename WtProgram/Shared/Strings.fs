@@ -1171,6 +1171,10 @@ module Strings =
                               ja="10 秒ごとに読み取り、メモリ内に 24 時間保持します。"
                               ar="تُقرأ كل 10 ثوانٍ ويُحتفظ بها لمدة 24 ساعة في الذاكرة فقط." }
         let charts = { en="Charts"; zh="详细图表"; ja="詳細グラフ"; ar="المخططات" }
+        let chartsCpuMemory = { en="CPU and memory"; zh="CPU 和内存"; ja="CPU とメモリ"; ar="المعالج والذاكرة" }
+        let chartsSystemObjects = { en="System objects"; zh="系统对象"; ja="システム オブジェクト"; ar="كائنات النظام" }
+        let chartsWindowEvents = { en="Window events"; zh="窗口事件"; ja="ウィンドウ イベント"; ar="أحداث النوافذ" }
+        let chartsGroupsTabs = { en="Groups and tabs"; zh="组和标签页"; ja="グループとタブ"; ar="المجموعات وعلامات التبويب" }
         /// What each figure is, shown while it is pointed at.
         let pointForMeaning = { en="Point at an item to see what it is."; zh="指向一项可查看它的含义。"; ja="項目をポイントすると意味を表示します。"; ar="أشر إلى عنصر لمعرفة ما هو." }
         let privateMemoryMeaning = { en="Memory WindowTabs alone uses, whether in RAM or paged out. A leak shows here."

@@ -72,7 +72,9 @@ type ResourceSample = {
         | Cpu -> s.cpu | PrivateMemory -> s.privateMB | WorkingSet -> s.workingSetMB | ManagedHeap -> s.managedMB
         | TabPictures -> s.picturesKB | Threads -> s.threads | Handles -> s.handles | GdiObjects -> s.gdi
         | UserObjects -> s.user | EventHooks -> s.hooks | DesktopHooks -> s.desktopHooks | Groups -> s.groups | Tabs -> s.tabs
-    static member metrics = [Cpu;PrivateMemory;WorkingSet;ManagedHeap;TabPictures;Threads;Handles;GdiObjects;UserObjects;EventHooks;DesktopHooks;Groups;Tabs]
+    /// In the order the Support page shows them: CPU and memory, system objects, window events,
+    /// then groups and tabs.
+    static member metrics = [Cpu;PrivateMemory;WorkingSet;ManagedHeap;TabPictures;Handles;GdiObjects;UserObjects;Threads;EventHooks;DesktopHooks;Groups;Tabs]
 
 /// The last hour of readings as taken, and a day of them a minute at a time: the minute's
 /// average CPU and its highest of everything else, so a short peak still shows.

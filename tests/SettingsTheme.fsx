@@ -588,6 +588,26 @@ let main() =
                     Application.DoEvents()
                     check (charts.Visible && charts.Height>=Dpi.scale 96 && charts.Width>Dpi.scale 180 && charts.AccessibleDescription.Contains(latestPrivate))
                           "Opening the charts did not show a chart for each, with the values now"
+                    // In the report's order, by what they tell.
+                    check (charts.Order=ResourceSample.metrics) (sprintf "The charts are in the order %A" charts.Order)
+                    // The pointer picks the reading under it, none where there is none: over a day,
+                    // the hour of readings fills only the right end of each chart.
+                    // Drawn to a bitmap: off screen, as this window is, Windows paints nothing.
+                    let pointAtChart (x:int) (y:int) =
+                        WinUserApi.SendMessage(charts.Handle,0x0200,0,(y <<< 16) ||| x) |> ignore
+                        use drawn = new Bitmap(charts.Width,charts.Height)
+                        charts.DrawToBitmap(drawn,Rectangle(Point.Empty,drawn.Size))
+                    let line = charts.ChartBounds.Head
+                    let middle = line.Top+line.Height/2
+                    charts.Day <- true
+                    pointAtChart (line.Left+Dpi.scale 4) middle
+                    check charts.Picked.IsNone (sprintf "Left of the first reading, the chart picked %A" charts.Picked)
+                    pointAtChart (line.Right-Dpi.scale 2) middle
+                    check charts.Picked.IsSome (sprintf "At the latest reading, the chart picked none: line %A, minutes %A to %A" line
+                                                    (ResourceMonitor.history.minutes |> Array.tryHead |> Option.map(fun s -> s.time))
+                                                    (ResourceMonitor.history.latest |> Option.map(fun s -> s.time)))
+                    charts.Day <- false
+                    WinUserApi.SendMessage(charts.Handle,0x02A3,0,0) |> ignore
                     check (report.Visible && page.ListShown) "Opening the report did not show it"
                     // Taller than the window, the page scrolls, and at its end the report shows whole.
                     // Its scroll bar is the settings pages' own, over the margin, not Windows' grey one.
