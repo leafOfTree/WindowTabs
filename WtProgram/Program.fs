@@ -204,8 +204,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                         for hwnd in List.ofSeq awaitingDesktop.Keys do refreshQueue.RequestWindow hwnd))
 
     do
+        // A new window waiting only for its desktop is grouped as soon as Windows tells it, not a
+        // refresh later: it stood at its own size the longer before taking its group's.
         lifetime.Own(VirtualDesktop.groupingReady.Subscribe(fun hwnd ->
-            invoker.asyncInvoke(fun () -> refreshQueue.RequestWindow hwnd))) |> ignore
+            invoker.asyncInvoke(fun () ->
+                if awaitingDesktop.ContainsKey hwnd then this.updateChangedWindows [|hwnd|]
+                else refreshQueue.RequestWindow hwnd))) |> ignore
         Desktop(this :> IDesktopNotification, Services.settings, invoker :> IDispatcher).ignore
         lifetime.Own({new IDisposable with
             member _.Dispose() = taskSwitchCell.value.iter(fun switcher -> (switcher :> IDisposable).Dispose())}) |> ignore

@@ -34,11 +34,14 @@ let main() =
     let pickFrom groups (hwnd:int) =AutoGroup.pick id (fun _ -> false) pathOf deskOf (List2(groups)) (IntPtr(hwnd))
     let picked expected result = match result with Some g -> obj.ReferenceEquals(g, expected) | None -> false
     // A group made by hand that holds an Explorer window, in front, is passed over for the
-    // automatic one; with no automatic group the window starts its own.
+    // automatic one; with no automatic group the window joins it, as an app's image viewer
+    // joins the group the app was dragged into. One on another desktop is not joined.
     let handMade = List2([IntPtr(1);IntPtr(2)])
-    let handPick groups = AutoGroup.pick id (fun g -> obj.ReferenceEquals(g,handMade)) pathOf deskOf (List2(groups)) (IntPtr(3))
-    check (picked explorerGroup (handPick [handMade; explorerGroup]) && handPick [handMade] = None)
-          "Auto-grouping put a new window into a group made by hand"
+    let handPick groups (hwnd:int) =AutoGroup.pick id (fun g -> obj.ReferenceEquals(g,handMade)) pathOf deskOf (List2(groups)) (IntPtr(hwnd))
+    check (picked explorerGroup (handPick [handMade; explorerGroup] 3))
+          "Auto-grouping put a new window into a group made by hand ahead of its app's own group"
+    check (picked handMade (handPick [handMade] 3) && handPick [handMade] 4 = None)
+          "Auto-grouping left a new window out of the group made by hand that holds its app"
     check (pickFrom [chromeGroup; explorerGroup] 4 = None) "Auto-grouping joined a window to a group on another virtual desktop"
     check (picked explorerGroup (pickFrom [chromeGroup; explorerGroup] 3)) "Auto-grouping missed a group on the same virtual desktop"
     let installedPath hwnd = if hwnd=IntPtr(1) then @"C:\Windows\explorer.exe" else @"D:\Updated\EXPLORER.exe"

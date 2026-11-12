@@ -2597,7 +2597,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if prevTop.value.IsNone then
                 prevTop.set(Some(hwnd))
                 this.saveTopWindowPlacement()
-            let registerEvent evt = 
+            // Placed before its tab is read and drawn, some 30 to 50 ms: a window opening at its own
+            // size stood that much longer before it took the group's. A split places its panes once
+            // the tab is in, below.
+            if not this.isSplit then this.adjustWindowPlacement(hwnd)
+            let registerEvent evt =
                 let handler = fun() -> this.main(hwnd, evt)
                 window.setWinEventHook evt handler
             let hooks = 

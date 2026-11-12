@@ -413,6 +413,25 @@ let main() =
         check (completed.Count=3) "A disposed placement subscription received completion"
         queue.release(other,first)
     finally resume.Set()
+    // A window joining a maximized group opens at its own size. It is maximized where it is, never
+    // first shown at the group's restore frame, and that frame follows once it is maximized.
+    do
+        use follower = new Form(Text="Joining follower",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
+                                Location=Point(80,80),Size=Size(300,200))
+        let sizes = ResizeArray<Size>()
+        follower.SizeChanged.Add(fun _ -> if follower.WindowState=FormWindowState.Normal then sizes.Add follower.Size)
+        follower.Show()
+        let window = OS().windowFromHwnd(follower.Handle)
+        let restoreFrame = Rect(Pt(40,40),Sz(700,500))
+        let maximized = { window.placement with showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED; rcNormalPosition=restoreFrame }
+        let owner = obj()
+        sizes.Clear()
+        FollowerPlacement.queue.claim(owner,follower.Handle)
+        FollowerPlacement.queue.submit(owner,follower.Handle,FollowerPlacement.request follower.Handle window.bounds maximized)
+        pumpUntil(fun () -> FollowerPlacement.queue.isIdle(owner) && window.placement.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED)
+        FollowerPlacement.queue.release(owner,follower.Handle)
+        check (sizes.Count=0) "A window joining a maximized group was first shown at the group's restore frame"
+        check (window.placement.rcNormalPosition=restoreFrame) "A window maximized in place did not take the group's restore frame"
     let original = Environment.CurrentDirectory
     let isolated = Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-operations-"+Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory(isolated) |> ignore
