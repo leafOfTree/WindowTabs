@@ -51,6 +51,8 @@ type TreeListItem(text:string) =
     member val Text = text with get,set
     /// Drawn but not owned by the list.
     member val Icon : Image = null with get,set
+    /// Further icons after Icon, side by side, such as the other apps of a group. Not owned either.
+    member val MoreIcons : Image list = [] with get,set
     /// Drawn when Icon is null.
     member val Glyph = NoGlyph with get,set
     /// Draws a divider above the row, to set it apart from the rows before.
@@ -131,6 +133,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let actionInvoked = Event<TreeListItem * int>()
     let chipInvoked = Event<TreeListItem * int>()
     let mutable rows : (TreeListItem * int)[] = [||]
+    /// The most icons a row shown has, which the names of all rows start after.
+    let mutable iconSlots = 1
     let mutable offset = 0
     let mutable selected : TreeListItem = null
     let mutable hovered : TreeListItem = null
@@ -261,6 +265,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             if item.Expanded then for child in item.Children do add (level+1) child
         for root in roots do add 0 root
         rows <- visible.ToArray()
+        iconSlots <- rows |> Array.fold(fun most (item,_) -> if isNull item.Icon then most else max most (1+item.MoreIcons.Length)) 1
         if not (isNull selected) && not (rows |> Array.exists(fun (item,_) -> Object.ReferenceEquals(item,selected))) then
             selected <- null
             selectionChanged.Trigger(EventArgs.Empty)
@@ -385,6 +390,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let size = Dpi.scale 16
         Rectangle(column.X+(column.Width-size)/2,rowTop+(this.rowHeight-size)/2,size,size)
 
+    member private this.iconGap = Dpi.scale 4
     member private this.textLeft(level:int) =
         let expander = if this.ShowExpanders then Dpi.scale 8+level*Dpi.scale 20+Dpi.scale 20 else Dpi.scale 10
         expander
@@ -398,7 +404,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let size = Dpi.scale this.IconSize
         let left = cell.X+this.textLeft level
         let iconBox = Rectangle(left,top+(this.rowHeight-size)/2,size,size)
-        let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph || item.Swatch.IsSome then left+size+Dpi.scale 8 else left
+        // Names line up after the most icons a row shown has.
+        let icons = iconSlots*size+(iconSlots-1)*this.iconGap
+        let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph || item.Swatch.IsSome then left+icons+Dpi.scale 8 else left
         iconBox,Rectangle(x,top,max 1 (cell.Right-Dpi.scale (this.CellGap/2)-x),this.rowHeight)
 
     /// Where a row's name ends and its chips go: the name keeps at most a quarter of the cell, and
@@ -893,6 +901,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     if not hidesIcon && not (isNull item.Icon) then
                         g.InterpolationMode <- InterpolationMode.HighQualityBicubic
                         g.DrawImage(item.Icon,iconBox)
+                        item.MoreIcons |> List.iteri(fun index icon ->
+                            g.DrawImage(icon,Rectangle(iconBox.X+(index+1)*(iconBox.Width+this.iconGap),iconBox.Y,iconBox.Width,iconBox.Height)))
                     elif not hidesIcon && item.Glyph<>NoGlyph then
                         SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
                     elif not hidesIcon && item.Swatch.IsSome then

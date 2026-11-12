@@ -150,7 +150,7 @@ module CommandPalette =
                   | _,"settings-location" -> guarded SettingsFile.showInFolder; Done
                   | _,"settings-backup" ->
                       Choose [ for caption,action in [Strings.General.export,SettingsFile.export;Strings.General.import,SettingsFile.import] ->
-                                 { label=tr caption; detail=""; swatch=None; run=(fun () -> guarded (fun () -> action null); Done); preview=None; undo=None; concealed=true } ]
+                                 { label=tr caption; detail=""; swatch=None; windows=[]; run=(fun () -> guarded (fun () -> action null); Done); preview=None; undo=None; concealed=true } ]
                   | _,"settings-reset" -> guarded (fun () -> SettingsFile.reset null); Done
                   | _ -> fresh (SettingRows.run item))
           // A key set here is shown from then on: the row's right end, kept, is worked out again.

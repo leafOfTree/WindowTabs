@@ -628,6 +628,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// The row chosen at each level a command's choices or value were opened from, chosen again
     /// on the way back rather than the first.
     let mutable backRows : IntPtr option list = []
+    /// Every row a command's choices have had while the box was up, their icons let go with it.
+    let choiceItems = ResizeArray<TreeListItem>()
     /// A setting's values listed: each shown as the choice moves onto it, and whether one has been,
     /// so leaving without choosing puts the ticked value back.
     let mutable previewOptions : CommandChoice list = []
@@ -753,6 +755,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 let dispose() =
                     form.Dispose()
                     ImgHelper.disposeItems (Array.map fst items)
+                    ImgHelper.disposeItems choiceItems
                 if form.IsHandleCreated then form.BeginInvoke(Action dispose) |> ignore else dispose()
             // Out of sight but still in front while its command ran: put away only once the command
             // has taken the foreground, or a moment on if it took none. Put away in front, it gave
@@ -774,8 +777,19 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         let rows =
             options |> List.mapi(fun index option ->
                 let entry = { TabSearch.create (IntPtr(index+1)) option.label option.label option.detail with recency=index }
-                TreeListItem(option.label,Values=[|"";option.detail|],Swatch=option.swatch),entry)
+                let item = TreeListItem(option.label,Values=[|"";option.detail|],Swatch=option.swatch)
+                match option.windows |> List.choose(fun hwnd -> ImgHelper.knownWindowIcon (OS().windowFromHwnd hwnd)) with
+                | first::rest ->
+                    item.Icon <- first
+                    item.MoreIcons <- rest
+                | [] -> if not option.windows.IsEmpty then item.Glyph <- WindowGlyph
+                item,entry)
             |> Array.ofList
+        choiceItems.AddRange(Array.map fst rows)
+        // An icon changed since shows the next time.
+        match options |> List.collect(fun option -> option.windows) with
+        | [] -> ()
+        | windows -> ImgHelper.refreshWindowIcons windows
         let chosen (entry:TabSearchEntry) = options.[int entry.hwnd-1]
         rows,chosen
     let push (caption:string) (options:CommandChoice list) =
@@ -1223,6 +1237,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.FooterNote = footerNote |> Option.map fst
     /// What each shown row has beside its name, and at its right end.
     member _.RowNotes = list.Roots |> Seq.map(fun item -> item.Suffix,item.value 1) |> List.ofSeq
+    /// How many icons each shown row has before its name, a window's glyph in place of none counted.
+    member _.RowIcons = list.Roots |> Seq.map(fun item -> if not (isNull item.Icon) then 1+item.MoreIcons.Length elif item.Glyph=WindowGlyph then 1 else 0) |> List.ofSeq
+    /// Where each shown row's name starts.
+    member _.RowNameLefts = list.Roots |> Seq.map list.NameLeft |> List.ofSeq
     member _.Selected =
         scoped() |> Array.tryFind(fun (item,_) -> obj.ReferenceEquals(item,list.SelectedItem)) |> Option.map snd
     /// The row chosen among the scope's own rows, under any choices a command left: what the box

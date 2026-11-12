@@ -73,6 +73,7 @@ module ImgHelper =
         for item in items do
             disposeItems item.Children
             if not (isNull item.Icon) then item.Icon.Dispose()
+            for icon in item.MoreIcons do icon.Dispose()
 
 module ApplicationNames =
     /// ApplicationFrameHost.exe hosts every Store (UWP) app, so it stands for them all, under a

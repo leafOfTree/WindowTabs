@@ -299,8 +299,18 @@ let main() =
         attempt "move-tab-to-group" (fun () ->
             let bravo = hwndOf "Bravo"
             let options = choicesOf "move-tab-to-group" bravo
-            match options |> List.tryFind(fun option -> option.label="Delta") with
+            // Each group by an icon for each of its apps and the title of its window in front, then
+            // its other tabs, so groups whose front windows share a title can still be told apart.
+            // The helper windows are all one app: one icon each.
+            for option in options do
+                note (option.windows.Length=1) (sprintf "Move tab to group… shows %s with %d icons for one app" option.label option.windows.Length)
+            note ((Strings.TabSearch.windows 1).en="1 window") "One window is counted as \"1 windows\""
+            match options |> List.tryFind(fun option -> option.label.Contains "Delta") with
             | Some delta ->
+                let front = delta.windows |> List.tryHead |> Option.map(fun hwnd -> windows |> List.find(fun (_,h) -> h=hwnd) |> fst)
+                note (front.IsSome && delta.label.StartsWith front.Value && delta.label.Contains "Echo")
+                     (sprintf "Move tab to group… names the group of Delta and Echo %A, its front window %A" delta.label front)
+                note (delta.detail=tr (Strings.TabSearch.windows 2)) (sprintf "Move tab to group… counts the group of two as %A" delta.detail)
                 delta.run() |> ignore
                 let holds (info:GroupInfo) = onGroup info (fun group -> group.lorder.list |> List.contains bravo)
                 try pumpUntil "Moving a tab to another group" (fun () -> holds groupB && not (holds groupA))
@@ -308,6 +318,42 @@ let main() =
                                          (tabTitles (hwndOf "Alpha")) (onGroup groupB (fun group -> group.lorder.list))
                                          ((groupA :> IGroup).windows.list) ((groupB :> IGroup).windows.list))
             | None -> issues.Add(sprintf "Move tab to group… did not offer the other group, only %A" (options |> List.map(fun option -> option.label))))
+        // The groups to move a tab to, each with its apps' icons, in a light and a dark theme,
+        // pictures kept with the logs. The helper windows are one app, so a row for a group of
+        // three apps stands beside them, with three of them given other programs' icons.
+        let otherApps = ["Split one","explorer.exe";"Close one",@"System32\notepad.exe";"All one",@"System32\cmd.exe"]
+        let iconsSet = ref false
+        helper.asyncInvoke(fun () ->
+            for title,program in otherApps do
+                let path = Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,program)
+                Application.OpenForms |> Seq.cast<Form> |> Seq.tryFind(fun form -> form.Text=title)
+                |> Option.iter(fun form -> try form.Icon <- Icon.ExtractAssociatedIcon path with _ -> ())
+            iconsSet.Value <- true)
+        pumpUntil "Other programs' icons on the helper windows" (fun () -> iconsSet.Value)
+        let mixed = { label=otherApps |> List.map fst |> String.concat " · "; detail=tr (Strings.TabSearch.windows 3); swatch=None
+                      windows=otherApps |> List.map(fst >> hwndOf); run=(fun () -> Done); preview=None; undo=None; concealed=false }
+        let themeBefore = api.getValue "tabThemeMode"
+        for mode in ["light";"dark"] do
+            api.setValue("tabThemeMode",box mode)
+            let groupsPalette = TabSearchForm([],[],settings=api,pages=[CommandPalette.actionsPage active],scope=ActionScope,windows=false)
+            groupsPalette.Show()
+            groupsPalette.ShowChoices(tr Strings.Commands.moveTabToGroup.caption,mixed::choicesOf "move-tab-to-group" active)
+            pump 150
+            let icons = groupsPalette.RowIcons
+            note (icons.Length>1 && List.head icons=3 && List.forall (fun count -> count>=1) icons)
+                 (sprintf "Move tab to group… rows show %A icons in the %s theme, not three for three apps and one for each other" icons mode)
+            // Every row's name starts after the most icons a row has, so the names stay lined up.
+            note (groupsPalette.RowNameLefts |> List.distinct |> List.length=1) (sprintf "Move tab to group… names start at %A" groupsPalette.RowNameLefts)
+            // The one opened last, should one before it still be on its way out.
+            Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun form -> form.Visible && form.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? SettingsSearchBox))
+            |> Seq.tryLast
+            |> Option.iter(fun form ->
+                use image = new Bitmap(form.Width,form.Height)
+                form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "command-palette-groups-%s.png" mode)))
+            groupsPalette.Close()
+            pump 100
+        api.setValue("tabThemeMode",themeBefore)
         attempt "group-icons-only" (fun () ->
             runDone "group-icons-only" active
             note (onGroupOf active (fun group -> group.isIconOnly)) "Show icons only did not take the titles away"
