@@ -49,7 +49,7 @@ module RuntimeMetrics =
 
 /// What the Support page charts, in its order.
 type ResourceMetric =
-    | Cpu | PrivateMemory | WorkingSet | ManagedHeap | TabPictures | Threads | Handles
+    | Cpu | PrivateMemory | PhysicalMemory | ManagedHeap | TabPictures | Threads | Handles
     | GdiObjects | UserObjects | EventHooks | DesktopHooks | Groups | Tabs
 
 /// What private memory holds besides the native heaps, in megabytes: the .NET heap as committed,
@@ -58,23 +58,24 @@ type ResourceMetric =
 type MemoryParts = { heapMB: float32; codeMB: float32; libraryDataMB: float32; stacksMB: float32 }
     with static member none = { heapMB=0.0f; codeMB=0.0f; libraryDataMB=0.0f; stacksMB=0.0f }
 
-/// One reading of the process. CPU is a share of all processors since the reading before, as
+/// One reading of the process. Physical memory is the private working set, Task Manager's Memory
+/// column, or the whole working set where Windows does not tell that. CPU is a share of all processors since the reading before, as
 /// Task Manager shows it; memory in megabytes, tab pictures in kilobytes.
 type ResourceSample = {
     time: DateTime
-    cpu: float32; privateMB: float32; workingSetMB: float32; managedMB: float32; picturesKB: float32
+    cpu: float32; privateMB: float32; physicalMB: float32; managedMB: float32; picturesKB: float32
     threads: float32; handles: float32; gdi: float32; user: float32
     hooks: float32; desktopHooks: float32; groups: float32; tabs: float32
     memory: MemoryParts }
     with
     member s.value metric =
         match metric with
-        | Cpu -> s.cpu | PrivateMemory -> s.privateMB | WorkingSet -> s.workingSetMB | ManagedHeap -> s.managedMB
+        | Cpu -> s.cpu | PrivateMemory -> s.privateMB | PhysicalMemory -> s.physicalMB | ManagedHeap -> s.managedMB
         | TabPictures -> s.picturesKB | Threads -> s.threads | Handles -> s.handles | GdiObjects -> s.gdi
         | UserObjects -> s.user | EventHooks -> s.hooks | DesktopHooks -> s.desktopHooks | Groups -> s.groups | Tabs -> s.tabs
     /// In the order the Support page shows them: CPU and memory, system objects, window events,
     /// then groups and tabs.
-    static member metrics = [Cpu;PrivateMemory;WorkingSet;ManagedHeap;TabPictures;Handles;GdiObjects;UserObjects;Threads;EventHooks;DesktopHooks;Groups;Tabs]
+    static member metrics = [Cpu;PrivateMemory;PhysicalMemory;ManagedHeap;TabPictures;Handles;GdiObjects;UserObjects;Threads;EventHooks;DesktopHooks;Groups;Tabs]
 
 /// The last hour of readings as taken, and a day of them a minute at a time: the minute's
 /// average CPU and its highest of everything else, so a short peak still shows.
@@ -89,7 +90,7 @@ type ResourceHistory(recentCapacity:int, minuteCapacity:int) =
         let peak (read:ResourceSample -> float32) = samples |> Seq.map read |> Seq.max
         { time=minuteOf samples.[0].time
           cpu=(samples |> Seq.sumBy(fun s -> s.cpu))/float32 samples.Count
-          privateMB=peak(fun s -> s.privateMB); workingSetMB=peak(fun s -> s.workingSetMB); managedMB=peak(fun s -> s.managedMB)
+          privateMB=peak(fun s -> s.privateMB); physicalMB=peak(fun s -> s.physicalMB); managedMB=peak(fun s -> s.managedMB)
           picturesKB=peak(fun s -> s.picturesKB); threads=peak(fun s -> s.threads); handles=peak(fun s -> s.handles)
           gdi=peak(fun s -> s.gdi); user=peak(fun s -> s.user); hooks=peak(fun s -> s.hooks)
           desktopHooks=peak(fun s -> s.desktopHooks); groups=peak(fun s -> s.groups); tabs=peak(fun s -> s.tabs)
@@ -147,7 +148,7 @@ module ResourceMonitor =
         let mb (bytes:int64) = float32(float bytes/1048576.0)
         let self = GetCurrentProcess()
         { time=now; cpu=clock.share now figures.CpuTicks figures.StartTimeUtc
-          privateMB=mb figures.PrivateBytes; workingSetMB=mb figures.WorkingSet; managedMB=mb (GC.GetTotalMemory(false))
+          privateMB=mb figures.PrivateBytes; physicalMB=mb (if figures.PrivateWorkingSet>0L then figures.PrivateWorkingSet else figures.WorkingSet); managedMB=mb (GC.GetTotalMemory(false))
           picturesKB=float32(float (ResourceCounters.captureByteCount())/1024.0)
           threads=(match parts with Some parts -> float32 parts.Threads | None -> 0.0f); handles=float32 figures.Handles
           gdi=float32(GetGuiResources(self,0u)); user=float32(GetGuiResources(self,1u))

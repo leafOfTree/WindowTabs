@@ -1227,10 +1227,10 @@ module Strings =
                            zh="最近 10 秒占全部处理器的比例，与任务管理器的算法相同。"
                            ja="直近 10 秒間の全プロセッサに対する割合。タスク マネージャーと同じ計算です。"
                            ar="الحصة من جميع المعالجات خلال آخر 10 ثوانٍ، كما يعرضها مدير المهام." }
-        let workingSetMeaning = { en="Physical memory in use now, including system libraries shared with other apps, so it can exceed private memory."
-                                  zh="当前实际占用的物理内存，包括与其他程序共享的系统库，所以可能比专用内存大。"
-                                  ja="現在使っている物理メモリ。ほかのアプリと共有するシステム ライブラリを含むため、プライベート メモリより大きくなることがあります。"
-                                  ar="الذاكرة الفعلية المستخدمة الآن، بما فيها مكتبات النظام المشتركة مع تطبيقات أخرى، لذا قد تتجاوز الذاكرة الخاصة." }
+        let physicalMemoryMeaning = { en="The part of private memory in RAM now, as Task Manager's Memory column shows it. Windows moves idle pages out, so it falls."
+                                      zh="专用内存中当前留在物理内存里的部分，与任务管理器的“内存”列一致。Windows 会移出闲置的页，所以它会变小。"
+                                      ja="プライベート メモリのうち、いま物理メモリにある分。タスク マネージャーの「メモリ」列と同じです。使われないページは Windows が外へ移すので減ります。"
+                                      ar="الجزء من الذاكرة الخاصة الموجود في الذاكرة الفعلية الآن، كما يعرضه عمود «الذاكرة» في مدير المهام. ينقل Windows الصفحات الخاملة خارجها فينخفض." }
         let threadsMeaning = { en="Each group runs on a thread of its own, and the app on a few more."
                                zh="每个组在自己的线程上运行，程序本身另有几个线程。"
                                ja="各グループは専用のスレッドで動き、アプリ自体にもいくつかあります。"
@@ -1269,7 +1269,7 @@ module Strings =
         let collecting = { en="Collecting…"; zh="正在收集…"; ja="収集中…"; ar="جارٍ الجمع…" }
         let cpu = { en="CPU"; zh="CPU"; ja="CPU"; ar="المعالج" }
         let privateMemory = { en="Private memory"; zh="专用内存"; ja="プライベート メモリ"; ar="الذاكرة الخاصة" }
-        let workingSet = { en="Working set"; zh="工作集"; ja="ワーキング セット"; ar="مجموعة العمل" }
+        let physicalMemory = { en="Physical memory"; zh="物理内存"; ja="物理メモリ"; ar="الذاكرة الفعلية" }
         let managedHeap = { en=".NET heap"; zh=".NET 堆"; ja=".NET ヒープ"; ar="كومة .NET" }
         let tabPictures = { en="Tab pictures"; zh="标签页截图"; ja="タブの画像"; ar="صور علامات التبويب" }
         let threads = { en="Threads"; zh="线程"; ja="スレッド"; ar="سلاسل التنفيذ" }

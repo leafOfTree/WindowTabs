@@ -823,7 +823,7 @@ let main() =
         let history = ResourceHistory(5,2)
         let start = DateTime(2026,11,9,10,0,0,DateTimeKind.Utc)
         let reading seconds cpu memory =
-            { time=start.AddSeconds(float seconds); cpu=cpu; privateMB=memory; workingSetMB=memory; managedMB=1.0f; picturesKB=0.0f
+            { time=start.AddSeconds(float seconds); cpu=cpu; privateMB=memory; physicalMB=memory; managedMB=1.0f; picturesKB=0.0f
               threads=1.0f; handles=1.0f; gdi=1.0f; user=1.0f; hooks=1.0f; desktopHooks=0.0f; groups=1.0f; tabs=1.0f
               memory=MemoryParts.none }
         check (history.latest.IsNone && history.minutes.Length=0) "An empty resource history had readings"
@@ -863,6 +863,14 @@ let main() =
             check (near reading.threads (float current.Threads.Count) 2.0) (sprintf "Threads read %.0f by their stacks, %d by Process" reading.threads current.Threads.Count)
             check (near reading.handles (float current.HandleCount) 30.0) (sprintf "Handles read %.0f, %d by Process" reading.handles current.HandleCount)
             check (near reading.privateMB (float current.PrivateMemorySize64/1048576.0) 4.0) (sprintf "Private memory read %.1f MB, %d bytes by Process" reading.privateMB current.PrivateMemorySize64)
+            // Physical memory is Task Manager's Memory column, the private working set: some of
+            // the working set, without the libraries shared with other processes that made the
+            // whole of it larger than private memory.
+            let figures = ProcessFigures.Read()
+            check (figures.PrivateWorkingSet>0L && figures.PrivateWorkingSet<figures.WorkingSet)
+                  (sprintf "The private working set read %d of a working set of %d" figures.PrivateWorkingSet figures.WorkingSet)
+            check (reading.physicalMB>1.0f && float reading.physicalMB<float current.WorkingSet64/1048576.0 && reading.physicalMB<=reading.privateMB*1.05f)
+                  (sprintf "Physical memory read %.1f MB, with %.1f MB private and a working set of %d bytes" reading.physicalMB reading.privateMB current.WorkingSet64)
         // A reading costs about a millisecond, a tenth of what Process's figures did.
         do
             let clock = ResourceMonitor.CpuClock()

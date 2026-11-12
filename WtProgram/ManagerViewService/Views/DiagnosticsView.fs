@@ -79,7 +79,7 @@ module ResourceFormat =
     let value metric (value:float32) =
         match metric with
         | Cpu -> sprintf "%.1f%%" value
-        | PrivateMemory | WorkingSet | ManagedHeap -> sprintf "%.1f MB" value
+        | PrivateMemory | PhysicalMemory | ManagedHeap -> sprintf "%.1f MB" value
         | TabPictures -> if value>=1024.0f then sprintf "%.1f MB" (value/1024.0f) else sprintf "%.0f KB" value
         | _ -> sprintf "%.0f" value
 
@@ -96,7 +96,7 @@ type ResourceOverview() as this =
     let current() = latest
     let figures =
         [Cpu,Strings.Diagnostics.cpu,Strings.Diagnostics.cpuMeaning
-         WorkingSet,Strings.Diagnostics.workingSet,Strings.Diagnostics.workingSetMeaning
+         PhysicalMemory,Strings.Diagnostics.physicalMemory,Strings.Diagnostics.physicalMemoryMeaning
          Handles,Strings.Diagnostics.handles,Strings.Diagnostics.handlesMeaning
          GdiObjects,Strings.Diagnostics.gdiObjects,Strings.Diagnostics.gdiObjectsMeaning
          UserObjects,Strings.Diagnostics.userObjects,Strings.Diagnostics.userObjectsMeaning
@@ -124,13 +124,13 @@ type ResourceOverview() as this =
         let dark = ThemeService.currentIsDark()
         let pick (light:int) (darkColor:int) = Color.FromRGB(if dark then darkColor else light)
         if SystemInformation.HighContrast then
-            [SystemColors.Highlight;SystemColors.HotTrack;SystemColors.InactiveCaption;SystemColors.ActiveCaption
+            [SystemColors.Highlight;SystemColors.InactiveCaption;SystemColors.HotTrack;SystemColors.ActiveCaption
              SystemColors.ControlDark;SystemColors.WindowText;SystemColors.GrayText]
         else
             // The objects' own colour, lighter: room on the same heap.
             let mix (a:byte) (b:byte) = (int a*3+int b*2)/5
             let faded = Color.FromArgb(mix p.accent.R p.surface.R,mix p.accent.G p.surface.G,mix p.accent.B p.surface.B)
-            [p.accent;pick 0xD9622B 0xF0955F;faded;pick 0x1E9E8F 0x3FBFAE;pick 0xC29A1F 0xE0BE4A;pick 0xC2577E 0xDB7A9E;pick 0xA0A0A0 0x8A8A8A]
+            [p.accent;faded;pick 0xD9622B 0xF0955F;pick 0x1E9E8F 0x3FBFAE;pick 0xC29A1F 0xE0BE4A;pick 0xC2577E 0xDB7A9E;pick 0xA0A0A0 0x8A8A8A]
     /// Private memory's parts in megabytes, in the bar's order. Tab pictures are kept on the .NET
     /// heap, so they come out of its objects; what no part accounts for is the native heaps.
     let parts (s:ResourceSample) =
@@ -140,8 +140,9 @@ type ResourceOverview() as this =
         let free = max 0.0f (heap-s.managedMB)
         let measured = heap+s.memory.codeMB+s.memory.libraryDataMB+s.memory.stacksMB
         [Strings.Diagnostics.dotNetObjects,Strings.Diagnostics.dotNetObjectsMeaning,objects
-         Strings.Diagnostics.tabPictures,Strings.Diagnostics.tabPicturesMeaning,pictures
+         // Next to the objects it trades places with as they are made and collected.
          Strings.Diagnostics.heapFree,Strings.Diagnostics.heapFreeMeaning,free
+         Strings.Diagnostics.tabPictures,Strings.Diagnostics.tabPicturesMeaning,pictures
          Strings.Diagnostics.compiledCode,Strings.Diagnostics.compiledCodeMeaning,s.memory.codeMB
          Strings.Diagnostics.libraryData,Strings.Diagnostics.libraryDataMeaning,s.memory.libraryDataMB
          Strings.Diagnostics.threadStacks,Strings.Diagnostics.threadStacksMeaning,s.memory.stacksMB
@@ -317,7 +318,7 @@ type ResourceCharts() as this =
     /// then how many groups and tabs all that is for.
     let groups =
         [Strings.Diagnostics.chartsCpuMemory,
-            [Cpu,Strings.Diagnostics.cpu; PrivateMemory,Strings.Diagnostics.privateMemory; WorkingSet,Strings.Diagnostics.workingSet
+            [Cpu,Strings.Diagnostics.cpu; PrivateMemory,Strings.Diagnostics.privateMemory; PhysicalMemory,Strings.Diagnostics.physicalMemory
              ManagedHeap,Strings.Diagnostics.managedHeap; TabPictures,Strings.Diagnostics.tabPictures]
          Strings.Diagnostics.chartsSystemObjects,
             [Handles,Strings.Diagnostics.handles; GdiObjects,Strings.Diagnostics.gdiObjects

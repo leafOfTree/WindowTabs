@@ -844,6 +844,10 @@ pinned object), split into its objects, the tab pictures among them, and its fre
 private executable pages as compiled code; writable image pages as library data; and the
 allocations with a guard page as thread stacks. Private bytes are those and the private
 pages besides, so the rest, shown as Other, is the native heaps and .NET's type data. The
+heap's free space is listed next to its objects, which it trades places with as they are
+made and collected. Physical memory is the private working set, the figure in Task Manager's
+Memory column (`ProcessVmCounters`; the whole working set where Windows does not tell it):
+the part of private memory in RAM now, smaller as Windows moves idle pages out. The
 scan takes about a millisecond on the pool with each reading. While the charts are on,
 readings are taken every 10 seconds (`ResourceMonitor`) and kept in memory only: the last
 hour as read, and 24 hours a minute at a time, each minute's average CPU and the highest of

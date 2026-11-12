@@ -537,7 +537,7 @@ let main() =
                 let f = float32 i
                 ResourceMonitor.history.add
                     { time=now.AddSeconds(float(i-359)*10.0); cpu=(if i%40=0 then 3.0f else 0.2f)
-                      privateMB=70.0f+f*0.05f; workingSetMB=110.0f+f*0.05f; managedMB=18.0f+float32(i%30)*0.3f; picturesKB=600.0f+f
+                      privateMB=70.0f+f*0.05f; physicalMB=110.0f+f*0.05f; managedMB=18.0f+float32(i%30)*0.3f; picturesKB=600.0f+f
                       threads=27.0f; handles=800.0f; gdi=120.0f; user=340.0f; hooks=160.0f; desktopHooks=8.0f; groups=6.0f; tabs=14.0f
                       memory={ heapMB=30.0f; codeMB=3.0f; libraryDataMB=17.0f; stacksMB=4.0f } }
         let support = DiagnosticsView() :> ISettingsView
