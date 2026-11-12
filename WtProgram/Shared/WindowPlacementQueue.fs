@@ -206,6 +206,13 @@ module FollowerPlacement =
                     elif actual<>wp || window.bounds<>target() then
                         move()
                         place wp
+                elif wp.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED && actual.showCmd=ShowWindowCommands.SW_SHOWNORMAL &&
+                     Screen.FromHandle(hwnd).DeviceName=Screen.FromRectangle(bounds.Rectangle).DeviceName then
+                    // A window joining a maximized group: given the group's restore frame with the
+                    // maximize, it was first shown that large, then maximized. Maximized where it is,
+                    // it changes once; the restore frame then follows without moving it.
+                    place {wp with rcNormalPosition=actual.rcNormalPosition}
+                    place wp
                 elif actual<>wp then place wp
                 if valid() && window.needsMinimizeAnchor then positioned <- true
                 window.prepareMinimizeAnchor(valid)
