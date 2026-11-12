@@ -54,6 +54,25 @@ module PaletteEditing =
             | Some index ->
                 let edits = if values next=values (original dark index) then withoutEdit dark index s.presetEdits else withEdit dark index next s.presetEdits
                 {(setActive dark next s) with presetEdits=edits} |> setPreset dark ThemePresets.keys.[index]
+    /// A preset chosen, as the user left it.
+    let choosePreset dark index (s:AppearancePreferences) = s |> setActive dark (presetPalette dark s index) |> setPreset dark ThemePresets.keys.[index]
+    /// The user's own colours chosen.
+    let chooseCustom dark (s:AppearancePreferences) = s |> setActive dark (customForProfile dark s) |> setPreset dark ThemePresets.customKey
+    /// The chosen preset's own colours again; from Custom, the Default preset.
+    let resetColors dark (s:AppearancePreferences) =
+        let index = selection dark s |> Option.defaultValue 0
+        {(setActive dark (original dark index) s) with presetEdits=withoutEdit dark index s.presetEdits} |> setPreset dark ThemePresets.keys.[index]
+    /// Whether a reset would change anything: a preset with edits, or Custom.
+    let canReset dark (s:AppearancePreferences) =
+        match selection dark s with
+        | Some index -> values (activePalette dark s)<>values (original dark index)
+        | None -> true
+    /// The active and inactive tab colours traded, for a front tab lighter than the rest or back.
+    let swapActiveInactive (palette:TabPalette) = {palette with tabActiveBgColor=palette.tabNormalBgColor; tabNormalBgColor=palette.tabActiveBgColor}
+    /// What each entry of the preset list is called: a preset with changed colours says so.
+    let presetLabel dark (s:AppearancePreferences) index =
+        let name = tr ThemePresets.names.[index]
+        if s.presetEdits.ContainsKey(editKey dark index) then tr (Strings.Appearance.editedPreset name) else name
     /// The colours a setting names, read and written on a palette. The separator follows the text
     /// and inactive tab colours, so it has no setting of its own.
     let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [

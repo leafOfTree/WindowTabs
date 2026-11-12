@@ -572,12 +572,9 @@ type TabSprite<'id> = {
             let below = if this.direction=TabUp && not this.inColumn then 1 else 0
             let height = this.size.height - below
             let iconRoom = (height - TabMetrics.iconSide this.appearance.tabHeight)/2
-            // In a row the shape keeps 4 pixels of bar above and below whatever the tab's height, so
-            // it reads as floating on the bar; on a short tab the icon may reach past it. A column's
-            // rows stand apart already and keep the shape round the icon.
-            let inset =
-                if this.inColumn then max 1 (min ((sideGap+1)/3) (min iconRoom (height/4)))
-                else max 1 (min (Dpi.scale 4) (height/4))
+            // A wider gap above and below shrinks the shape round an icon and title of the same size,
+            // which then look cramped in it.
+            let inset = max 1 (min ((sideGap+1)/3) (min iconRoom (height/4)))
             let side = float32 sideGap
             // Pixel k spans k-0.5 to k+0.5 here: the shape runs half a pixel up and left to sit in
             // the middle with crisp edges.

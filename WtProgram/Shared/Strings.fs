@@ -220,14 +220,14 @@ module Strings =
                                  keywords={ en="peek"; zh="短暂显示"; ja="一時表示"; ar="معاينة" } }
         let tabPosition = { caption={ en="Position tabs"; zh="放置标签"; ja="タブを配置"; ar="موضع علامات التبويب" }
                             description=none
-                            keywords={ en="vertical horizontal sidebar left right"; zh="垂直 横向 侧栏 左 右"; ja="縦 横 サイドバー 左 右"; ar="رأسي أفقي شريط جانبي يسار يمين" } }
+                            keywords={ en="move vertical horizontal sidebar left right"; zh="移动 垂直 横向 侧栏 左 右"; ja="移動 縦 横 サイドバー 左 右"; ar="نقل رأسي أفقي شريط جانبي يسار يمين" } }
         let tabColumnWidthHint = { en="For left/right tabs. Drag a column edge to resize one group, down to an icon rail."; zh="用于左／右标签。拖动侧栏边缘可单独调整分组宽度，最窄可只显示图标。"; ja="左・右のタブ用です。列の端をドラッグしてグループの幅を変更できます。最小幅ではアイコンのみを表示します。"; ar="لعلامات التبويب على اليسار أو اليمين. اسحب حافة العمود لتغيير عرض مجموعة واحدة، حتى لا يبقى منها إلا شريط أيقونات." }
         let tabColumnWidth = { caption={ en="Vertical tab width"; zh="垂直标签宽度"; ja="縦タブ幅"; ar="عرض علامات التبويب الرأسية" }
                                description=none
                                keywords={ en="vertical sidebar width size"; zh="垂直 侧栏 宽度 大小"; ja="縦 サイドバー 幅 サイズ"; ar="رأسي شريط جانبي عرض حجم" } }
         let tabAlignment = { caption={ en="Align tabs"; zh="对齐标签"; ja="タブを揃える"; ar="محاذاة علامات التبويب" }
                              description={ en="Or hold the right button on a tab and drag the tabs where you like."; zh="也可按住右键拖动标签，放到任意位置。"; ja="タブを右ボタンで押しながらドラッグして好きな位置に置くこともできます。"; ar="أو اضغط بالزر الأيمن على علامة تبويب واسحب علامات التبويب حيث تشاء." }
-                             keywords={ en="alignment position"; zh="对齐 位置"; ja="配置 位置"; ar="محاذاة موضع" } }
+                             keywords={ en="move alignment position"; zh="移动 对齐 位置"; ja="移動 配置 位置"; ar="نقل محاذاة موضع" } }
         let combineTaskbarIcons = { caption={ en="Combine taskbar icons per group"; zh="合并每个分组的任务栏图标"; ja="グループのタスクバーアイコンをまとめる"; ar="دمج أيقونات شريط المهام لكل مجموعة" }
                                     description=none
                                     keywords={ en="merge"; zh="合并"; ja="結合"; ar="دمج" } }
@@ -372,7 +372,10 @@ module Strings =
         let tabColorStyle = { caption={ en="Show colors as"; zh="着色方式"; ja="色の付け方"; ar="طريقة عرض الألوان" }
                               description=none
                               keywords={ en="stripe fill"; zh="色条 填充"; ja="ライン 塗りつぶし"; ar="شريط تعبئة" } }
-        let stripe = { en="Stripe"; zh="色条"; ja="色のライン"; ar="شريط" }
+        let tabColorPreset = { caption={ en="Tab color preset"; zh="标签配色预设"; ja="タブの配色プリセット"; ar="مجموعة ألوان علامات التبويب" }
+                               description=none
+                               keywords={ en="tab colors colour theme palette scheme"; zh="标签配色 颜色 主题 调色板 配色方案"; ja="タブの色 配色 テーマ パレット"; ar="ألوان علامات التبويب سمة لوحة" } }
+        let stripe ={ en="Stripe"; zh="色条"; ja="色のライン"; ar="شريط" }
         let fill = { en="Fill"; zh="填充"; ja="塗りつぶし"; ar="تعبئة" }
         let numberShortcutMenuHint = { en="Enable or disable it for one app from the tab menu."; zh="可在标签右键菜单中为单个应用启用或禁用数字快捷键。"; ja="タブメニューでアプリごとに番号ショートカットを有効・無効にできます。"; ar="يمكن تمكينه أو تعطيله لتطبيق واحد من قائمة علامة التبويب." }
         let tabShortcutsHint = { en="Tab keys work only on windows with tabs; turn them off for one app from the tab menu."; zh="标签快捷键只在有标签的窗口上生效，可在标签右键菜单中为单个应用关闭。"; ja="タブのキーはタブのあるウィンドウでのみ働き、タブメニューでアプリごとにオフにできます。"; ar="تعمل مفاتيح علامات التبويب فقط في النوافذ التي بها علامات تبويب، ويمكن إيقافها لتطبيق واحد من قائمة علامة التبويب." }
@@ -697,6 +700,12 @@ module Strings =
                          description={ en="A color of the palette for the tab in front, or none."; zh="为当前标签选一种调色板颜色，或清除。"; ja="前面のタブにパレットの色を付けるか、解除します。"; ar="لون من اللوحة لعلامة التبويب الأمامية، أو لا شيء." }
                          keywords={ en="colour"; zh="颜色 着色"; ja="色 カラー"; ar="لون" } }
         let private colorWords = { en="colour color"; zh="颜色 着色"; ja="色 カラー"; ar="لون" }
+        let swapTabColors = { caption={ en="Swap active and inactive tab colors"; zh="互换激活与非激活标签颜色"; ja="アクティブと非アクティブのタブの色を入れ替え"; ar="تبديل ألوان علامات التبويب النشطة وغير النشطة" }
+                              description={ en="For a front tab lighter than the rest, or the other way round."; zh="让前台标签比其他标签更亮，或反过来。"; ja="前面のタブをほかより明るく、またはその逆にします。"; ar="لعلامة تبويب أمامية أفتح من البقية، أو العكس." }
+                              keywords=colorWords }
+        let resetTabColors = { caption={ en="Reset tab colors"; zh="重置标签配色"; ja="タブの配色をリセット"; ar="إعادة تعيين ألوان علامات التبويب" }
+                               description={ en="The chosen preset's own colors again."; zh="恢复所选预设本来的颜色。"; ja="選んだプリセット本来の色に戻します。"; ar="ألوان المجموعة المختارة الأصلية من جديد." }
+                               keywords=colorWords }
         let customTabColor = { caption={ en="Custom tab color…"; zh="自定义标签颜色…"; ja="タブの色をカスタム…"; ar="لون مخصص لعلامة التبويب…" }
                                description={ en="A color of your own for the tab in front."; zh="为当前标签选择自定义颜色。"; ja="前面のタブに好きな色を付けます。"; ar="لون من اختيارك لعلامة التبويب الأمامية." }
                                keywords=colorWords }
@@ -761,8 +770,8 @@ module Strings =
         let private forThisGroup (setting:LocalizedText) (more:string) =
             { en=setting.en+" for this group"+more; zh=setting.zh+"（此分组）"+more; ja=setting.ja+"（このグループ）"+more; ar=setting.ar+" لهذه المجموعة"+more }
         let iconsOnly = { caption=forThisGroup TabMenu.showIconsOnly ""; description={ en="Again, and the titles come back."; zh="再次执行则恢复标题。"; ja="もう一度実行するとタイトルが戻ります。"; ar="مرة أخرى، وتعود العناوين." }; keywords={ en="titles compact"; zh="标题 紧凑"; ja="タイトル コンパクト"; ar="عناوين مضغوط" } }
-        let groupTabPosition = { caption=forThisGroup Settings.tabPosition.caption "…"; description=groupNote; keywords={ en="top left right side"; zh="顶部 左侧 右侧"; ja="上 左 右"; ar="أعلى يسار يمين" } }
-        let groupTabAlignment = { caption=forThisGroup Settings.tabAlignment.caption "…"; description=groupNote; keywords={ en="alignment center"; zh="对齐 居中"; ja="配置 中央"; ar="محاذاة وسط" } }
+        let groupTabPosition = { caption=forThisGroup Settings.tabPosition.caption "…"; description=groupNote; keywords={ en="move top left right side"; zh="移动 顶部 左侧 右侧"; ja="移動 上 左 右"; ar="نقل أعلى يسار يمين" } }
+        let groupTabAlignment = { caption=forThisGroup Settings.tabAlignment.caption "…"; description=groupNote; keywords={ en="move alignment center"; zh="移动 对齐 居中"; ja="移動 配置 中央"; ar="نقل محاذاة وسط" } }
         let groupAutoHide = { caption=forThisGroup Settings.autoHide.caption "…"; description=groupNote; keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
         let combineGroupIcons = { caption=forThisGroup TabMenu.combineTaskbarIcons ""; description=groupNote; keywords={ en="merge taskbar"; zh="合并 任务栏"; ja="結合 タスクバー"; ar="دمج شريط المهام" } }
         let tabsForApp = { caption={ en="Use tabs for this app"; zh="此应用使用标签"; ja="このアプリでタブを使う"; ar="استخدام علامات التبويب لهذا التطبيق" }
