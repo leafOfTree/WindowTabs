@@ -153,7 +153,7 @@ let main() =
     check (dropRect (Pt(second.left+5,frame.y+300)) (Some half)=Some(Rect(second.location,Sz((second.width-gap)/2,second.height)))) "A pane's preview is not its own half"
     check (drop (Pt(cRect.x+cRect.width/2,cRect.bottom-50)) (Some nested)=Some([Second;Second],Stacked,Second)) "A nested pane did not split at its own edge"
 
-    // Where a window carried by its own title bar goes: the tabs' bar across the group's width
+    // Where a window carried by its own title bar goes: the visible tabs' bar
     // with the title bar under it, and the gaps among the tabs. Never a split: at an edge, a
     // window lined up beside another is only moved.
     let metrics = TitleBarDrop.metrics id 24
@@ -164,15 +164,21 @@ let main() =
     let screen = Rect(Pt(0,0),Sz(1920,1080))
     let aimAt (hit:TitleBarTarget option) pt = TitleBarDrop.aim metrics hit screen pt pt
     // The gap follows the window's own tab, carried on it, not the pointer on its title bar.
-    check (TitleBarDrop.aim metrics (Some target) screen (Pt(150,frame.y+20)) (Pt(1000,30))=OnBar(strip,2))
+    check (TitleBarDrop.aim metrics (Some target) screen (Pt(150,frame.y+20)) (Pt(740,30))=OnBar(strip,2))
         "The gap followed the pointer, not the window's tab it carries"
-    check (TitleBarDrop.onBar metrics target (Pt(150,30))) "The bar did not reach across the group's width, past its tabs"
-    check (TitleBarDrop.onBar metrics target (Pt(150,frame.y+28))) "The title bar under the tabs was not taken with them"
-    check (not(TitleBarDrop.onBar metrics target (Pt(150,frame.y+40)))) "The bar reached below the title bar"
+    check (TitleBarDrop.aim metrics (Some target) screen (Pt(500,30)) (Pt(1000,30))=OffTarget)
+        "The pointer offered a merge while the carried tab was far away"
+    check (not(TitleBarDrop.onBar metrics target (Pt(150,30)))) "The bar reached far beyond the visible tabs"
+    check (aimAt (Some target) (Pt(150,frame.y+20))=OffTarget) "A distant title bar point offered a merge"
+    check (not(TitleBarDrop.onBar metrics target (Pt(390,30)))) "The merge margin exceeded its bounded reach"
+    check ((TitleBarDrop.metrics ((*) 2) 24).margin=96) "The title bar merge reach did not scale with DPI"
+    check (TitleBarDrop.onBar metrics target (Pt(410,30))) "The small margin beside the tabs was lost"
+    check (TitleBarDrop.onBar metrics target (Pt(500,frame.y+28))) "The title bar under the tabs was not taken with them"
+    check (not(TitleBarDrop.onBar metrics target (Pt(500,max (frame.y+40) 100)))) "The bar reached below the title bar"
     check (TitleBarDrop.insertion target (Pt(500,30))=0 && TitleBarDrop.insertion target (Pt(650,30))=1 && TitleBarDrop.insertion target (Pt(1000,30))=2)
         "The gap aimed at was not the one nearest the pointer"
     check (TitleBarDrop.insertion { target with pinned=1 } (Pt(500,30))=1) "A window carried by its title bar went ahead of a pinned tab"
-    check (aimAt (Some target) (Pt(150,frame.y+20))=OnBar(strip,0)) "Over the target's title bar the window did not join its tabs"
+    check (aimAt (Some target) (Pt(500,frame.y+20))=OnBar(strip,0)) "Over the target's title bar the window did not join its tabs"
     check (aimAt (Some target) (Pt(4,frame.y+20))=OffTarget) "In the band along the screen's edge the drop was not left to the system"
     check (aimAt (Some target) (Pt(frame.x+20,frame.y+300))=OffTarget && aimAt (Some target) (Pt(frame.x+500,frame.bottom-5))=OffTarget)
         "A window carried to another one's edge was aimed at a split"

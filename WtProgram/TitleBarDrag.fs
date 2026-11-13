@@ -133,7 +133,9 @@ type TitleBarDrag(hwnd:IntPtr, strips:ITitleBarDropTarget list, ownStrip:IntPtr,
         | Some middle -> (Win32Helper.GetVisibleWindowRectangle hwnd).Rect.location.add(middle)
         | None -> pt
 
-    let aimAt (pt:Pt) = TitleBarDrop.aim (metricsAt pt) (hitAt pt) (monitorAt pt) pt (tabAt pt)
+    let aimAt (pt:Pt) =
+        let tab = tabAt pt
+        TitleBarDrop.aim (metricsAt tab) (hitAt tab) (monitorAt pt) pt tab
 
     let mutable self : TitleBarDrag option = None
 
