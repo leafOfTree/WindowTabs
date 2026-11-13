@@ -673,7 +673,7 @@ type AppGroupingRulesView() as this =
                 // An app with a rule here for some of its windows can be added for all of them too.
                 let members = rules |> List.filter(fun rule -> rule.groupId=id && not (AppGroupingRules.isConditioned rule)) |> List.map(fun rule -> rule.processPath)
                 pickingFor <- Some id
-                addMenu.Open(tree.RectangleToScreen(box),members)
+                addMenu.OpenFresh(tree.RectangleToScreen(box),members)
             | _ -> ())
         addMenu.Picked.Add(fun path -> pickingFor |> Option.iter(fun id -> addToGroup(id,path)))
         // A chip is a menu of which of its app's windows the group takes: all, or those a field
