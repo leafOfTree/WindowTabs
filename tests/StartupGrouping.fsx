@@ -308,6 +308,8 @@ let main() =
         use watch = api.notifyValue "rememberedGroups" (fun _ -> announced.Value <- announced.Value+1)
         let lateHandle = late.Handle
         late.Close()
+        // The hidden desktop has no shell to deliver the close notification.
+        program.receive(Program.ProgramInput.ShellEvent(lateHandle,ShellEvent.HSHELL_WINDOWDESTROYED))
         pumpUntil "Closing a window of a group made by hand did not tell App rules" (fun () ->
             announced.Value>0 &&
             (program :> IProgram).handMadeGroups() |> List.exists(fun (id,_,members) ->

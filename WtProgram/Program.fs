@@ -633,6 +633,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member private this.noteClosed(hwnd:IntPtr) =
         match recordedAs.TryGetValue hwnd with
         | true,m when not sessionEnding && not inShutdown.value && (RememberedGroups.find remembered m).IsSome ->
+            // App rules needs the closed state before the grace period expires, even if no group event follows.
+            rememberSoon.Request()
             closedByHand.Add((m,DateTime.UtcNow))
             forgetSoon.Request()
         | _ -> ()
