@@ -5,6 +5,8 @@ WindowTabs adds browser-style tabs to desktop windows. It is an F# WinForms app 
 
 ## Build and test
 
+- After each code change, build and restart WindowTabs so the user can try the updated app.
+
 ```powershell
 dotnet build WindowTabs.sln                 # Debug: WtProgram\bin\Debug\WindowTabs.exe
 dotnet build WindowTabs.sln -c Release      # single static-linked exe, as CI ships it
