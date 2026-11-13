@@ -164,8 +164,10 @@ let main() =
     let screen = Rect(Pt(0,0),Sz(1920,1080))
     let aimAt (hit:TitleBarTarget option) pt = TitleBarDrop.aim metrics hit screen pt pt
     // The gap follows the window's own tab, carried on it, not the pointer on its title bar.
-    check (TitleBarDrop.aim metrics (Some target) screen (Pt(500,frame.y+20)) (Pt(1000,30))=OnBar(strip,2))
+    check (TitleBarDrop.aim metrics (Some target) screen (Pt(150,frame.y+20)) (Pt(740,30))=OnBar(strip,2))
         "The gap followed the pointer, not the window's tab it carries"
+    check (TitleBarDrop.aim metrics (Some target) screen (Pt(500,30)) (Pt(1000,30))=OffTarget)
+        "The pointer offered a merge while the carried tab was far away"
     check (not(TitleBarDrop.onBar metrics target (Pt(150,30)))) "The bar reached far beyond the visible tabs"
     check (aimAt (Some target) (Pt(150,frame.y+20))=OffTarget) "A distant title bar point offered a merge"
     check (not(TitleBarDrop.onBar metrics target (Pt(390,30)))) "The merge margin exceeded its bounded reach"

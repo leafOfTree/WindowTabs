@@ -95,13 +95,10 @@ module TitleBarDrop =
         pt.x<monitor.left+bandWidth || pt.x>=monitor.right-bandWidth ||
         pt.y<monitor.top+bandWidth || pt.y>=monitor.bottom-bandWidth
 
-    /// What a release at `pt` would do. `hit`: the group whose window or tabs are first under
-    /// the pointer, past the window carried; None over anything else. `tab`: where the window's
-    /// own tab is, carried along with it: the gap nearest it, so the tab goes in where it is seen,
-    /// not where the pointer holds the title bar, often far to one side of it.
+    /// The carried tab selects the target and insertion gap. The pointer reserves screen edges for snapping.
     let aim (m:TitleBarMetrics) (hit:TitleBarTarget option) (monitor:Rect) (pt:Pt) (tab:Pt) =
         if inBand m.band monitor pt then OffTarget
         else
             match hit with
-            | Some t when onBar m t pt -> OnBar(t.strip,insertion t tab)
+            | Some t when onBar m t tab -> OnBar(t.strip,insertion t tab)
             | _ -> OffTarget
