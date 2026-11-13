@@ -57,15 +57,16 @@ type TitleBarMetrics = {
 /// the groups as read, so tests check them without moving a window.
 module TitleBarDrop =
     /// Logical pixels.
+    let reach = 48
     let caption = 32
     let band = 8
 
     let isVertical dock = dock=TabDockLeft || dock=TabDockRight
 
     let metrics (scale:int -> int) margin =
-        { margin=scale margin; caption=scale caption; band=scale band }
+        { margin=scale (max margin reach); caption=scale caption; band=scale band }
 
-    /// The tabs' bar, across the group's width (down its height for tabs at a side), with the
+    /// The visible tabs with a small margin, with the
     /// title bar under it: a user laying one title bar over another has the pointer there.
     let bars (m:TitleBarMetrics) (t:TitleBarTarget) =
         match t.tabs with
@@ -76,9 +77,8 @@ module TitleBarDrop =
             let right = tabs |> List.map(fun r -> r.right) |> List.max
             let bottom = tabs |> List.map(fun r -> r.bottom) |> List.max
             let ltrb l t r b = Rect(Pt(l,t),Sz(max 0 (r-l),max 0 (b-t)))
-            let captionBand = ltrb t.frame.left t.frame.top t.frame.right (t.frame.top+min m.caption t.frame.height)
-            if isVertical t.dock then [ltrb (left-m.margin) t.frame.top (right+m.margin) t.frame.bottom; captionBand]
-            else [ltrb (min left t.frame.left) (top-m.margin) (max right t.frame.right) (bottom+m.margin); captionBand]
+            let captionBand = ltrb (left-m.margin) t.frame.top (right+m.margin) (t.frame.top+min m.caption t.frame.height)
+            [ltrb (left-m.margin) (top-m.margin) (right+m.margin) (bottom+m.margin); captionBand]
 
     let onBar m t (pt:Pt) = bars m t |> List.exists(fun r -> r.containsPoint pt)
 
