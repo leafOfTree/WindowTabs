@@ -661,7 +661,7 @@ type DiagnosticsView() =
         /// A heading that folds what follows it: its name and a chevron, either clicked, and a
         /// control at its right end shown only while open, then one shown folded too. `set` folds
         /// or opens it.
-        let folding (caption:string) (font:Font) (top:int) (right:Control option) (pinned:Control option) (changed:bool -> unit) =
+        let folding (caption:string) (font:Font) (top:int) (help:LocalizedText option) (pinned:Control option) (changed:bool -> unit) =
             let expander = new SettingsExpanderButton(AccessibleName=caption,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 4,0,0,0))
             let label = new Label(Text=caption,AutoSize=true,Font=font,Anchor=AnchorStyles.Left,Margin=Padding.Empty,Cursor=Cursors.Hand)
             let heading = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=3,RowCount=1,
@@ -673,7 +673,8 @@ type DiagnosticsView() =
             titled.Controls.Add(label)
             titled.Controls.Add(expander)
             heading.Controls.Add(titled,0,0)
-            let ends = Option.toList right @ Option.toList pinned
+            let notes = help |> Option.map(fun text -> new Label(Text=tr text,AutoSize=true,Tag="muted") :> Control)
+            let ends = Option.toList notes @ Option.toList pinned
             if not ends.IsEmpty then
                 let side = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
                                                Margin=Padding.Empty,Anchor=AnchorStyles.Right)
@@ -690,7 +691,6 @@ type DiagnosticsView() =
                 table.SuspendLayout()
                 try
                     expander.Open <- opened
-                    right |> Option.iter(fun control -> control.Visible <- opened)
                     changed opened
                 finally table.ResumeLayout(true)
             expander.Click.Add(fun _ -> set (not expander.Open))
@@ -705,12 +705,10 @@ type DiagnosticsView() =
         let chartsOpen = ref false
         /// The charts' own parts, which show only while both sections are open.
         let showChartParts : (unit -> unit) ref = ref ignore
-        let showResources = folding (tr Strings.Diagnostics.resourcesTitle) (SettingsUi.sectionFont()) 24 None None (fun opened ->
+        let showResources = folding (tr Strings.Diagnostics.resourcesTitle) (SettingsUi.sectionFont()) 24 (Some Strings.Diagnostics.resourcesHelp) None (fun opened ->
             resourcesOpen.Value <- opened
             for part in resourceParts do part.Visible <- opened
             showChartParts.Value())
-        let note = new Label(Text=tr Strings.Diagnostics.resourcesHelp,AutoSize=true,Tag="muted",Margin=Padding(0,0,0,Dpi.scale 12))
-        SettingsUi.add table note
         let overview = new SettingsCard()
         SettingsUi.add table overview
         SettingsUi.add overview (new ResourceOverview())
@@ -730,16 +728,15 @@ type DiagnosticsView() =
                                               Margin=Padding(0,0,0,Dpi.scale 12))
         chartsNote.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         chartsNote.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
-        chartsNote.Controls.Add(new Label(Text=tr definition.text.description,AutoSize=true,Tag="muted",Anchor=AnchorStyles.Left,Margin=Padding.Empty),0,0)
         range.Anchor <- AnchorStyles.Right
         range.Margin <- Padding(Dpi.scale 12,0,0,0)
         chartsNote.Controls.Add(range,1,0)
         let showCharts() =
-            chartsNote.Visible <- resourcesOpen.Value && chartsOpen.Value
+            chartsNote.Visible <- resourcesOpen.Value && chartsOpen.Value && recording.Checked
             chartsCard.Visible <- resourcesOpen.Value && chartsOpen.Value && recording.Checked
             range.Visible <- recording.Checked
         showChartParts.Value <- showCharts
-        let foldCharts = folding (tr Strings.Diagnostics.charts) (SettingsUi.subsectionFont()) 12 None (Some(recording :> Control)) (fun opened ->
+        let foldCharts = folding (tr Strings.Diagnostics.charts) (SettingsUi.subsectionFont()) 12 (Some Strings.Diagnostics.chartsHelp) (Some(recording :> Control)) (fun opened ->
             chartsOpen.Value <- opened
             showCharts())
         let chartsHeading = table.Controls.[table.Controls.Count-1]
@@ -751,7 +748,7 @@ type DiagnosticsView() =
             part.Margin <- Padding(Dpi.scale 20,part.Margin.Top,part.Margin.Right,part.Margin.Bottom)
         // Switched on, they open; switched off, only their note is left.
         recording.CheckedChanged.Add(fun _ -> foldCharts (chartsOpen.Value || recording.Checked))
-        resourceParts.AddRange([note :> Control;overview;chartsHeading])
+        resourceParts.AddRange([overview;chartsHeading])
         // Open at first where they are on.
         foldCharts recording.Checked
         showResources true

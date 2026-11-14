@@ -112,12 +112,12 @@ type ResourceHistory(recentCapacity:int, minuteCapacity:int) =
     member _.clear() = lock gate (fun () -> recentQueue.Clear(); minuteQueue.Clear(); current.Clear())
 
 /// Reads the process: for the Support page's overview as often as it asks while it shows, and,
-/// only while the charts are switched on, every ten seconds into a history kept in memory, a day
+/// only while the charts are switched on, every five seconds into a history kept in memory, a day
 /// at most.
 module ResourceMonitor =
     [<DllImport("user32.dll")>]
     extern uint32 private GetGuiResources(IntPtr current, uint32 flags)
-    let intervalMs = 10000
+    let intervalMs = 5000
     /// How often the overview reads while it can be seen.
     let liveIntervalMs = 1000
     let history = ResourceHistory(3600/(intervalMs/1000),24*60)
