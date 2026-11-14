@@ -65,6 +65,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   and reset all read from there.
   Shortcuts use the hotkey-control encoding: virtual key in the low byte, `HOTKEYF_*`
   flags (Shift 1, Ctrl 2, Alt 4, Ext 8) in the high byte.
+- **Command palette.** Users must be able to find and change every user-facing setting
+  directly in the command palette, including per-app and per-group options from context
+  menus. Match searches against the setting name and all choice labels. Use the same
+  state and update logic as the original control so the value, scope and availability agree.
 - **DPI.** Write sizes in logical pixels and scale at the point of use with
   `Dpi.scale`. Never persist a scaled value or rescale an already-scaled appearance.
 - **Theme.** Settings-style UI takes colours from `SettingsColors.current()` and
