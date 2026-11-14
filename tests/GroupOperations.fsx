@@ -606,10 +606,13 @@ let main() =
                         check (onGroup(fun group -> group.bounds.value.IsSome)) "A window moved by its title bar hid its tabs"
                         check (onGroup(fun group -> group.isMoving.value)) "A window moved by its title bar was not marked moving, so its auto-hidden tabs stayed shrunk"
                         let before = onGroup(fun group -> group.placementBounds)
+                        let previewChanges = ref 0
+                        use previewWatch = onGroup(fun group -> group.previewBoundsChanged.Subscribe(fun () -> previewChanges.Value <- previewChanges.Value+1))
                         onHelper(fun () -> let window = OS().windowFromHwnd(source) in window.move(window.bounds.move(30,20)))
                         let moved = OS().windowFromHwnd(source).visibleBounds
                         event WinEvent.EVENT_OBJECT_LOCATIONCHANGE
                         pumpUntil(fun () -> onGroup(fun group -> group.bounds.value=Some moved))
+                        check (previewChanges.Value=0) "Moving the tab strip refreshed the taskbar previews during a title bar drag"
                         check (onGroup(fun group -> group.bounds.value=Some moved && group.placementBounds=before))
                             "The tabs of a window being moved did not follow it, or the group's frame moved before the move ended"
                         // A resize hides them as before: drawn again at every width, they held up each step.
@@ -619,6 +622,7 @@ let main() =
                         check (onGroup(fun group -> group.bounds.value.IsNone)) "The tabs of a window being resized stayed on it"
                         event WinEvent.EVENT_SYSTEM_MOVESIZEEND
                         waitOperation()
+                        check (previewChanges.Value>0) "The taskbar missed the settled frame after a title bar drag"
                         check (not(onGroup(fun group -> group.isMoving.value))) "A window let go stayed marked moving"
                         onHelper(fun () -> OS().windowFromHwnd(source).move(Rect(Pt(60,60),Sz(900,600))))
                         event WinEvent.EVENT_OBJECT_LOCATIONCHANGE

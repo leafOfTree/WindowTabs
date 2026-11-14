@@ -678,6 +678,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// The window in front is being moved by its title bar, its tabs on it.
     let isMovingExport = Cell.export <| fun() -> moveFrameCell.value.IsSome
 
+    // Taskbar pictures depend on settled geometry. Only the strip follows each drag step.
+    let previewBoundsExport = Cell.export <| fun() ->
+        if isVisibleCell.value then placement.value |> Option.map(fun (_,_,visible) -> visible) else None
+
     let isMaximizedExport = Cell.export <| fun() ->
         zorderCell.value.tryHead.exists(fun hwnd -> this.os.windowFromHwnd(hwnd).isMaximized)
  
@@ -815,6 +819,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         isDraggingExport.init()
         zorderExport.init()
         boundsExport.init()
+        previewBoundsExport.init()
         isForegroundExport.init()
 
         this.ts.setTabAppearance(this.tabAppearance)
@@ -3221,6 +3226,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member x.exited = exitedEvent.Publish
     member this.bounds = boundsExport :> ICellOutput<_>
+    member this.previewBoundsChanged = previewBoundsExport.changed
     member this.isForeground = isForegroundExport :> ICellOutput<_>
     member this.zorder = zorderExport :> ICellOutput<_>
     member this.added = addedEvent.Publish
