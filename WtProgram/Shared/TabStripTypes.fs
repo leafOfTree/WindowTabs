@@ -9,6 +9,7 @@ and TabInfo = {
     iconSmall: Icon
     iconBig: Icon
     preview: unit -> Img
+    cachedPreview: (unit -> unit) -> Img
     isRenamed: bool
     /// The splits above this tab's pane, root first, with the side taken at each: the button on
     /// the seam between two pane tabs shows the split that parts them; the text itself stays clean.
@@ -123,6 +124,8 @@ type GroupTabLayout = {
     normalAlignment: TabAlignment
     insideAlignment: TabAlignment
     iconOnly: bool
+    transparentMode: bool
+    keepWindowSizes: bool
     /// Where a row of tabs was dragged to, as a share of the width left beside it, in place of
     /// its alignment; none for a column.
     position: float option }

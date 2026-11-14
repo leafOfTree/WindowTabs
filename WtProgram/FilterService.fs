@@ -31,15 +31,10 @@ type FilterService() as this =
         blackListedExeNames.contains(window.pid.exeName)
 
     member this.isAppWindowStyle (window:Window) = 
-        let style = IntPtr( 
-            WindowsStyles.WS_OVERLAPPEDWINDOW &&&
-            ~~~WindowsStyles.WS_CAPTION &&&
-            ~~~WindowsStyles.WS_THICKFRAME &&&
-            ~~~WindowsStyles.WS_SYSMENU
-        )
-        Win32Helper.IntPtrAnd(window.styleEx, IntPtr(WindowsExtendedStyles.WS_EX_TOOLWINDOW)) = IntPtr.Zero &&
-        Win32Helper.IntPtrAnd(window.style, style) = style
-    
+        // Independent settings windows can minimize without offering maximize.
+        window.hasStyle WindowsStyles.WS_MINIMIZEBOX &&
+        not (window.hasStyle WindowsStyles.WS_CHILD || window.hasStyleEx WindowsExtendedStyles.WS_EX_TOOLWINDOW)
+
     member this.isAppWindow (window:Window) =
         let tests = List2([
             fun() -> window.pid.canQueryProcess
@@ -69,7 +64,7 @@ type FilterService() as this =
     member this.screenRegion = os.screenRegion
 
     member this.isOnScreenOrMinimized(window:Window) =
-        if window.isMinimized then true
+        if window.isMinimized || IndependentWindowParking.parked window.hwnd then true
         else
             use region = this.screenRegion
             region.containsRect(window.bounds)

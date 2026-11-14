@@ -146,6 +146,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     let mutable dragParked = false
     let mutable dragSource : IntPtr option = None
     let mutable dragStartIndex : int option = None
+    let mutable dragStartFrame : (IntPtr * OSWindowPlacement * Pt) option = None
 
     do this.init()
 
@@ -286,7 +287,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let placement,span = this.placementAndSpan
             // A column dragged along the side needs its room to know where it is let go.
             span |> Option.iter(fun span -> this.ts.columnSpan <- span)
-            this.ts.setPlacement(placement)
+            this.ts.setPlacement(placement, ?owner=(group.zorder.value.tryHead |> Option.map Tab))
             this.ts.visible <- not shownElsewhere
         // An empty pane keeps clear of tabs shown inside the title bars, wherever they now are.
         group.refreshSplitChrome()
@@ -299,8 +300,11 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// Where the strip goes and, for a column, the room it has along the side. A column being
     /// dragged sits where the pointer holds it; otherwise where it was dragged to, else aligned.
     member private this.placementAndSpan =
+        this.placementFor(group.bounds.value.def(Rect()),group.isMaximized.value)
+
+    member private this.placementFor(frame:Rect,maximized:bool) =
         let decorator =  {
-            windowBounds = group.bounds.value.def(Rect())
+            windowBounds = frame
             monitorBounds = Mon.all.map(fun m -> m.workRect)
             decoratorHeight = group.tabAppearance.tabHeight
             decoratorHeightOffset = group.tabAppearance.tabHeightOffset
@@ -311,12 +315,22 @@ type TabStripDecorator(group:WindowGroup) as this =
             let width = Dpi.scale (if this.ts.isIconOnly then 48 else this.ts.columnWidth)
             let position = match this.ts.columnSlide with Some fraction -> Some fraction | None -> this.ts.position
             let placed = decorator.sidePlacement(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
-                                                 alignment=this.ts.getAlignment TabUp,maximized=group.isMaximized.value,?position=position)
+                                                 alignment=this.ts.getAlignment TabUp,maximized=maximized,?position=position)
             let span = decorator.sideSpan(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
-                                          alignment=this.ts.getAlignment TabUp,maximized=group.isMaximized.value,?position=position)
+                                          alignment=this.ts.getAlignment TabUp,maximized=maximized,?position=position)
             placed,Some span
         else
-            { showInside=decorator.shouldShowInside; bounds=decorator.bounds },None
+            decorator.topPlacement(this.ts.rowContentWidth),None
+
+    member private this.tabLanding(drag:TabDragInfo, pointer:Pt, window:Window) =
+        let frame = Rect(group.layoutFrame.location,window.visibleBounds.size)
+        if this.ts.isVertical then frame.location
+        else
+            let placement,_ = this.placementFor(frame,false)
+            let offset = this.ts.dropOffset(drag,placement)
+            let x = pointer.x - (placement.bounds.x-frame.x) - offset.x
+            let area = Screen.FromPoint(pointer.Point).WorkingArea
+            Pt(between (area.Left,max area.Left (area.Right-frame.width)) x,frame.y)
 
     member this.beginRename(hwnd) =
         let tab = Tab(hwnd)
@@ -481,6 +495,20 @@ type TabStripDecorator(group:WindowGroup) as this =
         let pid = window.pid
         let exeName = pid.exeName
         let processPath = pid.processPath
+
+        let windowBehaviorMenu =
+            let item label enabled click =
+                CmiRegular({ text=tr label; image=None; click=click
+                             flags=if group.layout=GroupLayout.Single then checkedFlag enabled else grayed true })
+            CmiPopUp({
+                text=tr Strings.TabMenu.windowBehavior
+                image=None
+                items=List2([
+                    item Strings.TabMenu.keepWindowSizes group.keepWindowSizes (fun () -> group.keepWindowSizes <- not group.keepWindowSizes)
+                    item Strings.TabMenu.transparentMode group.transparentMode (fun () -> group.transparentMode <- not group.transparentMode)
+                    CmiNote(tr Strings.TabMenu.transparentModeNote)
+                ])
+            })
 
         let positionItem =
             let item (text,dock) = CmiRegular({
@@ -796,6 +824,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(alignmentItem)
             Some(autoHideItem)
             Some(iconOnlyItem)
+            Some(CmiSeparator)
+            Some(windowBehaviorMenu)
             Some(CmiSeparator)
             Some(sortTabsItem)
             Some(combineIconsInTaskbar)
@@ -1186,6 +1216,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                         dragInfoCell.set(None)       
                         let (Tab(hwnd)) = tab
                         let window = os.windowFromHwnd(hwnd)
+                        if dragStartFrame.IsNone && group.keepWindowSizes && group.layout=GroupLayout.Single && not (group.isHeldByDrag hwnd) then
+                            dragStartFrame <- Some(hwnd,window.placement,IndependentWindowParking.locationBeforeDrag window)
                         group.releaseDrag(hwnd,false)
                         // The tab behind shows where it is, in the group's place in the order: chosen,
                         // it brought the group up over the one the tab was carried to.
@@ -1215,6 +1247,13 @@ type TabStripDecorator(group:WindowGroup) as this =
                 this.ts.carriedIn <- None
                 group.releaseDrag(hwnd,true)
                 if WinUserApi.IsWindow hwnd then
+                    // Dragging out temporarily moves even an independent window to a screen corner.
+                    match dragStartFrame with
+                    | Some(source,placement,point) when source=hwnd ->
+                        let window = os.windowFromHwnd hwnd
+                        window.setPlacement placement
+                        IndependentWindowParking.restoreAt hwnd point
+                    | _ -> ()
                     if not(group.windows.contains hwnd) then group.addWindow(hwnd,false)
                     dragStartIndex |> Option.iter(fun index -> this.ts.moveTab(drag.tab,index))
                     group.tabActivate(drag.tab,false)
@@ -1226,6 +1265,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 group.transitionsPaused <- false
                 dragSource <- None
                 dragStartIndex <- None
+                dragStartFrame <- None
                 this.ts.dragScrollPoint <- None
                 this.ts.carriedIn <- None
                 isDraggingCell.value <- false
@@ -1238,7 +1278,10 @@ type TabStripDecorator(group:WindowGroup) as this =
                 | None -> ()
                 if joinedByDrag && dragInfoCell.value.IsSome then group.joinedByHand()
                 // Let go in this strip: the window it carried in comes into place, in front.
-                dragInfoCell.value |> Option.iter(fun drag -> let (Tab hwnd) = drag.tab in group.releaseDrag(hwnd,true))
+                dragInfoCell.value |> Option.iter(fun drag ->
+                    let (Tab hwnd) = drag.tab
+                    let pointer = os.windowFromHwnd(this.ts.hwnd).ptToScreen(dragPtCell.value)
+                    group.releaseDrag(hwnd,true,landing=(fun window -> this.tabLanding(drag,pointer,window))))
                 joinedByDrag <- false
                 dragInfoCell.set(None)
                 this.updateTsSlide()

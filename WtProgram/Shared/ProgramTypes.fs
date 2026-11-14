@@ -92,7 +92,7 @@ type SettingsRec = {
     tabHoverPreview: bool
     /// While a full-screen app is in front, shortcuts let go of their keys and notices wait.
     pauseInFullScreen: bool
-    /// The Support page's charts: a reading every ten seconds in the background, kept in memory.
+    /// The Support page's charts: a reading every five seconds in the background, kept in memory.
     recordResources: bool
     /// "Icons" (large icons in a row) or "List" (window titles in a column).
     switcherStyle: string

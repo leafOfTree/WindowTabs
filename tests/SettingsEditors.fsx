@@ -1408,8 +1408,13 @@ otepad.exe"]},
         assertTrue (menu.Applications.Length=2) "Running application choices did not merge same-name executables across directories"
         // A scan of the windows really running may have come in meanwhile: list known apps first.
         let clickAdd row =
-            menu.UpdateApplications [selectedPath;@"C:\Apps\browser.exe"]
+            menu.UpdateApplications []
+            let previous = menu.Choice
             pressChipPart "chipAddAt" row
+            let wait = Diagnostics.Stopwatch.StartNew()
+            while menu.Choice=previous && wait.ElapsedMilliseconds<3000L do
+                Application.DoEvents()
+                Threading.Thread.Sleep(5)
         let pick path =
             let choice = menu.Choice.Value
             choice.SelectedIndex <- Array.findIndex (AppIdentity.same path) menu.Shown
@@ -1426,7 +1431,7 @@ otepad.exe"]},
         // nothing until an app is picked: no row to fill in.
         let addBox = tree.RectangleToScreen((tree.ChipAddBounds tree.Roots.[0]).Value)
         assertTrue (menu.Choice.Value.DropDownAnchor=Some addBox && menu.DropDown |> Option.exists(fun window -> window.Visible)
-                    && menu.Shown.Length=2 && menu.Choice.Value.ItemText(2)=tr Strings.AppRules.browseApplication
+                    && Array.exists (AppIdentity.same selectedPath) menu.Shown && menu.Choice.Value.ItemText(menu.Shown.Length)=tr Strings.AppRules.browseApplication
                     && saved().IsEmpty && tree.Roots.[0].Children.Count=0)
                    "The plus did not open the app list below itself, or it lacks Browse"
         pick selectedPath

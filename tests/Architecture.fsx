@@ -307,7 +307,7 @@ let main() =
         check (onGroup(fun group -> group.ts.position).IsNone) "An alignment chosen did not put the dragged row back"
         do
             use carrier = new Form(ShowInTaskbar=false)
-            let layout = {dock=TabDockTop;columnWidth=220;normalAlignment=TabLeft;insideAlignment=TabCenter;iconOnly=false;position=Some 0.37}
+            let layout = {dock=TabDockTop;columnWidth=220;normalAlignment=TabLeft;insideAlignment=TabCenter;transparentMode=true;keepWindowSizes=true;iconOnly=false;position=Some 0.37}
             WindowTabLayout.save carrier.Handle layout
             let read = WindowTabLayout.read carrier.Handle
             check (read |> Option.exists(fun kept -> {kept with position=None}={layout with position=None} && kept.position |> Option.exists(fun fraction -> abs(fraction-0.37)<0.003)))

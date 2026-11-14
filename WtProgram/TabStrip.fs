@@ -29,6 +29,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let dimmedCell = Bemo.Cell<bool>(Cell, false, (=))
     // Position is presentation state, not an input to pixel rendering.
     let mutable location = Pt.empty
+    let mutable destination = Pt.empty
+    let mutable shortcutTarget : (Tab * Pt) option = None
+    let mutable entryOffset = Pt.empty
+    let entryClock = Diagnostics.Stopwatch()
+    let entryTimer = new Timer(Interval=15)
     let mutable renderedFrames = 0L
     let mutable renderedOffset = 0
     let mutable relocating = false
@@ -170,6 +175,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         showInsideExport.init()
 
         revealTimer.Tick.Add(fun _ -> this.stepReveal())
+        entryTimer.Tick.Add(fun _ ->
+            let t = min 1.0 (entryClock.Elapsed.TotalMilliseconds / 100.0)
+            let remaining = 1.0 - TabReveal.ease t
+            let point = destination.add(entryOffset.mulf(remaining,remaining))
+            if t>=1.0 then entryTimer.Stop()
+            if location<>point then
+                location <- point
+                if this.visible then this.move())
         rowDragTimer.Tick.Add(fun _ ->
             match rowPress with
             | None -> rowDragTimer.Stop()
@@ -282,10 +295,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                         if bar.y<bottom && bar.y+bar.height>top then Some(float(bar.x-location.x),float(bar.x+bar.width-location.x))
                         else None)
             appearance =
-                if this.isIconOnly then
-                    { this.appearance with tabMaxWidth = Dpi.scale 50 }
-                else
-                    this.appearance
+                if this.isIconOnly then { this.appearance with tabMaxWidth = this.iconTabWidth }
+                else this.appearance
         }
     member private this.ts : TabStripSprite<Tab> = this.tsBase this.direction
         
@@ -652,7 +663,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         slide.iter <| fun slide ->
             this.slide <- Some(slide)
         Cell.endUpdate()
-        if this.isVertical && this.tabs.count<>previousCount then dockChangedEvent.Trigger()
+        if this.tabs.count<>previousCount then dockChangedEvent.Trigger()
     
     member this.addTab tab = this.addTabSlide tab None
 
@@ -665,7 +676,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         tabBgColor.map(fun m -> m.remove tab)
         this.ensureSelectedVisible()
         Cell.endUpdate()
-        if this.isVertical then dockChangedEvent.Trigger()
+        dockChangedEvent.Trigger()
 
     member this.tabs : Set2<Tab> = Set2(lorderCell.value)
 
@@ -704,7 +715,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 iconOnlyCell.set(value)
                 if this.isVertical && not value && columnWidthValue=fst SettingsCatalog.columnWidthRange then this.columnWidth <- SettingsCatalog.columnWidthDefault
                 else
-                    if this.isVertical then dockChangedEvent.Trigger()
+                    dockChangedEvent.Trigger()
                     layoutChangedEvent.Trigger(true)
 
     member this.dock
@@ -785,6 +796,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             this.updateDragScroll()
 
     member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
+    member private this.iconTabWidth = Dpi.scale 50
+    member this.rowContentWidth =
+        let count = this.lorder.count
+        let width = if this.isIconOnly then this.iconTabWidth else this.appearance.tabMaxWidth
+        count*width - max 0 (count-1)*this.appearance.tabOverlap
     member this.columnContentHeight = this.lorder.count*this.ts.rowStep+Dpi.scale 4
     member private this.renderedShift = if this.isVertical then Pt(renderedOffset,0) else Pt(0,renderedOffset)
 
@@ -1019,6 +1035,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             isPinned = false
             iconSmall = System.Drawing.SystemIcons.Application
             iconBig = System.Drawing.SystemIcons.Application
+            cachedPreview = fun _ -> Img(Sz(1,1))
             preview = fun() -> Img(Sz(1,1))
         })
 
@@ -1028,6 +1045,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member internal this.hasTabInfo(tab) = tabInfoCell.value.contains(tab)
             
     member this.tabLocation = this.ts.tabLocation
+
+    /// The grabbed point after the row fits the incoming window and the drag slide ends.
+    member this.dropOffset(drag:TabDragInfo, placement:TabStripPlacment) =
+        let direction = if placement.showInside then TabDown else TabUp
+        let row = { this.tsBase direction with size=placement.bounds.size; slide=None
+                                               centerShift=if placement.showInside then float(this.appearance.tabIndentFlipped-this.appearance.tabIndentNormal)/2.0 else 0.0 }
+        let tab = row.tabBounds drag.tab
+        tab.Location.Pt.add(drag.offsetIn tab.Size.Sz)
     
     /// The window capture is full size; release it here rather than waiting for the GC. The
     /// window is drawn at `DragImage.windowScale` of the size it lands at on the desktop, the tab
@@ -1216,11 +1241,42 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         with get() = appBarsCell.value
         and set(value) = appBarsCell.set(value)
 
-    member this.setPlacement(placement) =
-        let moved = location <> placement.bounds.location
+    member this.cancelShortcutMove() =
+        shortcutTarget <- None
+        entryTimer.Stop()
+        if location<>destination then
+            location <- destination
+            if this.visible then this.move()
+
+    member this.prepareShortcutMove(tab) =
+        let origin = location
+        this.cancelShortcutMove()
+        if this.visible && TabReveal.enabled() then
+            shortcutTarget <- Some(tab,origin)
+            entryClock.Restart()
+
+    member this.setPlacement(placement, ?owner:Tab) =
+        let previous = location
+        let target = placement.bounds.location
+        if destination<>target then
+            entryTimer.Stop()
+            destination <- target
+            location <- target
+            match shortcutTarget with
+            | Some(tab,origin) when Some tab=owner && entryClock.ElapsedMilliseconds<400L ->
+                shortcutTarget <- None
+                let delta = origin.sub target
+                let distance = delta.distance Pt.empty
+                if distance>=float (Dpi.scale 24) then
+                    let scale = float (Dpi.scale 8)/distance
+                    entryOffset <- delta.mulf(scale,scale)
+                    location <- target.add entryOffset
+                    entryClock.Restart()
+                    entryTimer.Start()
+            | _ -> ()
+        let moved = location<>previous
         let heightChanged = this.size.height<>placement.bounds.height
         let previousRender = renderedFrames
-        location <- placement.bounds.location
         this.withUpdate(fun () ->
             showInsideCell.set(placement.showInside)
             sizeCell.set(placement.bounds.size)
@@ -1239,6 +1295,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         and set(value) =
             // Windows may hide an owned popup independently of our desired state.
             // Keep the equal-value fast path, but restore externally hidden strips.
+            if not value then this.cancelShortcutMove()
             if value && visibleCell.value && not this.window.isVisible then this.update()
             else visibleCell.set(value)
             
@@ -1270,6 +1327,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member _.destroying = destroyingEvent.Publish
     member this.destroy() = 
         dragScrollTimer.Dispose()
+        entryTimer.Dispose()
         destroyingEvent.Trigger()
         revealTimer.Dispose()
         rowDragTimer.Dispose()

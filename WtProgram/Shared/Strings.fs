@@ -53,6 +53,10 @@ module Strings =
 
     /// Tab context menu.
     module TabMenu =
+        let windowBehavior = { en="Window behavior"; zh="窗口行为"; ja="ウィンドウの動作"; ar="سلوك النوافذ" }
+        let keepWindowSizes = { en="Keep each window’s size and position"; zh="保留各窗口的大小和位置"; ja="各ウィンドウのサイズと位置を保持"; ar="الاحتفاظ بحجم كل نافذة وموضعها" }
+        let transparentMode = { en="Keep inactive windows off-screen"; zh="将同组后台窗口移出屏幕"; ja="グループ内の非アクティブなウィンドウを画面外に置く"; ar="إبقاء النوافذ غير النشطة في المجموعة خارج الشاشة" }
+        let transparentModeNote = { en="Useful for transparent windows."; zh="适合透明窗口。"; ja="半透明のウィンドウに便利です。"; ar="مفيد للنوافذ الشفافة." }
         /// Under the alignments: the tabs can also be dragged along their edge with the right button.
         let dragToPlace = { en="Hold the right button on a tab, then drag anywhere"; zh="在标签上按住右键，拖动到任意位置"; ja="タブを右ボタンで押したまま、好きな位置へドラッグ"; ar="اضغط بالزر الأيمن على علامة تبويب، ثم اسحب إلى أي مكان" }
         /// In place of the hint once the row has been dragged, marked as the alignments are.
@@ -459,7 +463,7 @@ module Strings =
                             description={ en="Troubleshooting report and where to get help."; zh="故障排查报告与获取帮助的途径。"; ja="トラブルシューティング用のレポートとヘルプの入手先。"; ar="تقرير استكشاف الأخطاء وإصلاحها ومكان الحصول على المساعدة." }
                             keywords={ en="about version log"; zh="关于 版本 日志"; ja="バージョン ログ"; ar="حول الإصدار السجل" } }
         let recordResources = { caption={ en="Record resource charts"; zh="记录资源图表"; ja="リソースのグラフを記録"; ar="تسجيل مخططات الموارد" }
-                                description={ en="Reads every 10 seconds in the background and keeps 24 hours, in memory only."; zh="在后台每 10 秒读取一次，仅在内存中保留 24 小时。"; ja="バックグラウンドで 10 秒ごとに読み取り、メモリ内にのみ 24 時間保持します。"; ar="يقرأ كل 10 ثوانٍ في الخلفية ويحتفظ بـ 24 ساعة في الذاكرة فقط." }
+                                description={ en="Reads every 5 seconds in the background and keeps 24 hours, in memory only."; zh="在后台每 5 秒读取一次，仅在内存中保留 24 小时。"; ja="バックグラウンドで 5 秒ごとに読み取り、メモリ内にのみ 24 時間保持します。"; ar="يقرأ كل 5 ثوانٍ في الخلفية ويحتفظ بـ 24 ساعة في الذاكرة فقط." }
                                 keywords={ en="cpu memory history usage monitor leak"; zh="CPU 内存 历史 占用 监控 泄漏"; ja="CPU メモリ 履歴 使用量 監視 リーク"; ar="المعالج الذاكرة السجل الاستخدام مراقبة تسرب" } }
         let settingsLocation = { caption={ en="Location"; zh="位置"; ja="場所"; ar="الموقع" }
                                  description=none
@@ -1191,10 +1195,8 @@ module Strings =
         let releasesHint = { en="Check Releases ↗"; zh="查看发布版本 ↗"; ja="リリースを確認 ↗"; ar="التحقق من الإصدارات ↗" }
         let openCrashLog = { en="Crash log"; zh="崩溃日志"; ja="クラッシュログ"; ar="سجل الأعطال" }
         let resourcesTitle = { en="Resources"; zh="资源占用"; ja="リソース"; ar="الموارد" }
-        let resourcesHelp = { en="As they are now, read every second only while shown here."
-                              zh="当前的实时数值，仅在此处显示时每秒读取一次。"
-                              ja="現在の値です。ここに表示している間だけ 1 秒ごとに読み取ります。"
-                              ar="كما هي الآن، وتُقرأ كل ثانية ما دامت معروضة هنا فقط." }
+        let resourcesHelp = { en="See how much CPU and memory WindowTabs is using."; zh="查看 WindowTabs 当前占用的 CPU 和内存。"; ja="WindowTabs の現在の CPU とメモリの使用量を確認できます。"; ar="اطّلع على استخدام WindowTabs الحالي للمعالج والذاكرة." }
+        let chartsHelp = { en="Turn on recording to see how usage changes over time."; zh="开启记录，查看资源占用随时间的变化。"; ja="記録をオンにすると、使用量の推移を確認できます。"; ar="فعّل التسجيل لمتابعة تغيّر الاستخدام بمرور الوقت." }
         /// When the charts start; they always run to now.
         let chartsSince (time:string) = { en=sprintf "Since %s" time; zh=sprintf "自 %s 起" time; ja=sprintf "%s から" time; ar=sprintf "منذ %s" time }
         let charts = { en="Charts"; zh="详细图表"; ja="詳細グラフ"; ar="المخططات" }
@@ -1236,10 +1238,10 @@ module Strings =
                                    zh=".NET 类型数据，以及 Windows 各库自留的内存，如绘图和外壳组件。"
                                    ja=".NET の型データと、描画やシェルなど Windows のライブラリが確保するメモリ。"
                                    ar="بيانات الأنواع في .NET وذاكرة مكتبات Windows، مثل مكونات الرسم والواجهة." }
-        let cpuMeaning = { en="Share of all processors over the last 10 seconds, as Task Manager shows it."
-                           zh="最近 10 秒占全部处理器的比例，与任务管理器的算法相同。"
-                           ja="直近 10 秒間の全プロセッサに対する割合。タスク マネージャーと同じ計算です。"
-                           ar="الحصة من جميع المعالجات خلال آخر 10 ثوانٍ، كما يعرضها مدير المهام." }
+        let cpuMeaning = { en="Share of all processors over the last 5 seconds, as Task Manager shows it."
+                           zh="最近 5 秒占全部处理器的比例，与任务管理器的算法相同。"
+                           ja="直近 5 秒間の全プロセッサに対する割合。タスク マネージャーと同じ計算です。"
+                           ar="الحصة من جميع المعالجات خلال آخر 5 ثوانٍ، كما يعرضها مدير المهام." }
         let physicalMemoryMeaning = { en="Private memory now in RAM, as in Task Manager's Memory column; falls when idle."
                                       zh="专用内存中当前在物理内存里的部分，同任务管理器“内存”列；闲置时会变小。"
                                       ja="物理メモリ上のプライベート メモリ。タスク マネージャーの「メモリ」列と同じで、アイドル時に減ります。"

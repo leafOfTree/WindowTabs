@@ -38,7 +38,8 @@ let run (measure:string -> int -> (int -> unit) -> JObject) iterations =
                     strip.setTabInfo(tab,{
                         text=sprintf "Window %d" id;isRenamed=false;splitTrail=None
                         iconSmall=SystemIcons.Application;iconBig=SystemIcons.Application
-                        preview=fun () -> Img(Sz(1,1)) })
+                        cachedPreview = fun _ -> Img(Sz(1,1))
+                        preview = fun () -> Img(Sz(1,1)) })
                 let size = Dpi.scaleSize(Sz(1050,28))
                 let placement x = {showInside=false;bounds=Rect(Pt(-20000+x,-20000),size)}
                 strip.setPlacement(placement 0)

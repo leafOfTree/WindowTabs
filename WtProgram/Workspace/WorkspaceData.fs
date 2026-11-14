@@ -21,6 +21,11 @@ module WorkspaceData =
         | value when value.Type=JTokenType.String -> value.Value<string>()
         | _ -> invalidArg key ("Invalid text: "+key)
     let tabLayout (obj:JObject) : GroupTabLayout =
+        let flag (key:string) =
+            match obj.[key] with
+            | null -> false
+            | value when value.Type=JTokenType.Boolean -> value.Value<bool>()
+            | _ -> invalidArg key (tr Strings.Workspaces.invalidTabLayout)
         let alignment key =
             match text obj key "Center" with
             | "Left" -> TabLeft | "Center" -> TabCenter | "Right" -> TabRight
@@ -34,11 +39,9 @@ module WorkspaceData =
           columnWidth=number obj "columnWidth" SettingsCatalog.columnWidthDefault |> between SettingsCatalog.columnWidthRange
           normalAlignment=alignment "normalAlignment"; insideAlignment=alignment "insideAlignment"
           // Workspaces saved before the choice was kept show their titles.
-          iconOnly=
-            match obj.["iconsOnly"] with
-            | null -> false
-            | value when value.Type=JTokenType.Boolean -> value.Value<bool>()
-            | _ -> invalidArg "iconsOnly" (tr Strings.Workspaces.invalidTabLayout)
+          iconOnly=flag "iconsOnly"
+          transparentMode=flag "transparentMode" || flag "independentWindows"
+          keepWindowSizes=flag "keepWindowSizes" || flag "independentWindows"
           // Where the row was dragged to, as a share of the width beside it; left out when on an alignment.
           position=
             match obj.["rowPosition"] with
@@ -54,6 +57,8 @@ module WorkspaceData =
                     JProperty("normalAlignment",alignment layout.normalAlignment),JProperty("insideAlignment",alignment layout.insideAlignment),
                     JProperty("iconsOnly",layout.iconOnly))
         layout.position |> Option.iter(fun fraction -> written.["rowPosition"] <- JValue(fraction))
+        if layout.transparentMode then written.["transparentMode"] <- JValue(true)
+        if layout.keepWindowSizes then written.["keepWindowSizes"] <- JValue(true)
         written
 
     /// A rectangle kept inside one of the areas: the one it overlaps most, else the nearest.

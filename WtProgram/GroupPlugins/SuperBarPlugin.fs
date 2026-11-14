@@ -26,6 +26,13 @@ module TaskbarPreviewTrace =
 
 /// Preview producers transfer ownership of their bitmap to this request.
 module TaskbarPreview =
+    let usesOwnFrame parked keepWindowSizes layout inFront =
+        parked || (keepWindowSizes && layout=GroupLayout.Single && not inFront)
+
+    /// Draw a background tab with its own frame at the group's preview origin.
+    let contentBounds independent (anchor:Rect) (actual:Rect) =
+        if independent then Rect(anchor.location,actual.size) else actual
+
     let relativeLocation (previewBounds:Rect) (windowBounds:Rect) =
         windowBounds.location.sub(previewBounds.location).Point
 
@@ -683,6 +690,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
         StartupTrace.measure (if visible then "taskbar.window.show" else "taskbar.window.hide") (fun () ->
             if visible then _taskbar.AddTab(hwnd) else _taskbar.DeleteTab(hwnd)))
 
+    let previewInvoker = InvokerService.invoker
     let mutable taskbarButton = null
     /// Each member's program, looked up once: the icon is rebuilt on every title change.
     let apps = Collections.Generic.Dictionary<IntPtr,string>()
@@ -898,13 +906,28 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                                     let (Tab(hwnd)) = tab
                                     let window = this.os.windowFromHwnd(hwnd)
                                     // A minimized window sits far off screen; it shows where the group's windows are restored to.
-                                    let area = if window.isMinimized then this.wtGroup.previewArea else window.bounds
+                                    let anchor = this.wtGroup.previewArea
+                                    let independent = TaskbarPreview.usesOwnFrame (IndependentWindowParking.parked hwnd)
+                                                          this.wtGroup.keepWindowSizes this.wtGroup.layout (hwnd=top)
+                                    let area =
+                                        if window.isMinimized then anchor
+                                        else TaskbarPreview.contentBounds independent anchor window.bounds
+                                    let previewBounds =
+                                        if not independent then previewBounds
+                                        elif stripShown then this.ts.bounds.union(area)
+                                        else area
                                     let contentLocation = TaskbarPreview.relativeLocation previewBounds area
                                     Some(TaskbarPreview.compose previewBounds.size
                                         contentLocation
                                         (this.ts.bounds.location.sub(previewBounds.location).Point)
                                         // The group stands in its last picture for a tab its app no longer paints.
-                                        (fun () -> this.ts.tabInfo(tab).preview())
+                                        (fun () ->
+                                            let button = taskbarButton
+                                            this.ts.tabInfo(tab).cachedPreview(fun () ->
+                                                previewInvoker.asyncInvoke(fun () ->
+                                                    if button<>null && obj.ReferenceEquals(button,taskbarButton) then
+                                                        button.tryTabWindow(TaskBarButton.key hwnd)
+                                                        |> Option.iter(fun window -> window.dwmInvalidateIconicBitmaps()))))
                                         (fun () -> if stripShown then this.ts.renderTs(Some(tab)) else Img(Sz(1,1))))
                                 with _ -> None
                             activate = fun() ->

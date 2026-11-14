@@ -193,14 +193,16 @@ module TabOrder =
 /// Native window properties survive WindowTabs restarts and expire with their owning HWND.
 module WindowTabLayout =
     let private key = "WindowTabs.TabLayout.v1"
-    let private marker = 0x57000000
+    // The earlier combined choice used 0x5f. Keep both choices when reading it back.
+    let private markers = [|(0x57,false,false); (0x5f,true,true); (0x67,true,false); (0x77,false,true)|]
     let save hwnd (layout:GroupTabLayout) =
         let dock = match layout.dock with TabDockTop -> 0 | TabDockBottom -> 1 | TabDockLeft -> 2 | TabDockRight -> 3
         let alignment = function TabLeft -> 0 | TabCenter -> 1 | TabRight -> 2
         let width = between SettingsCatalog.columnWidthRange layout.columnWidth
         // A dragged row's place in 254 steps above the alignments; 0 for none, as before it was kept.
         let placed = match layout.position with Some fraction -> 1+int(Math.Round(254.0*max 0.0 (min 1.0 fraction))) | None -> 0
-        let value = marker ||| width ||| (dock <<< 9) ||| (alignment layout.normalAlignment <<< 11) ||| (alignment layout.insideAlignment <<< 13) ||| (if layout.iconOnly then 1 <<< 15 else 0) ||| (placed <<< 16)
+        let marker,_,_ = markers |> Array.find(fun (_,hide,keep) -> hide=layout.transparentMode && keep=layout.keepWindowSizes)
+        let value = (marker <<< 24) ||| width ||| (dock <<< 9) ||| (alignment layout.normalAlignment <<< 11) ||| (alignment layout.insideAlignment <<< 13) ||| (if layout.iconOnly then 1 <<< 15 else 0) ||| (placed <<< 16)
         WinUserApi.SetProp(hwnd,key,IntPtr(value)) |> ignore
 
     let read hwnd =
@@ -208,12 +210,14 @@ module WindowTabLayout =
         let width = int(value &&& 511L)
         let normal,inside = int((value >>> 11) &&& 3L),int((value >>> 13) &&& 3L)
         let placed = int((value >>> 16) &&& 255L)
-        if value &&& ~~~0xFFFFFFL <> int64 marker || width<fst SettingsCatalog.columnWidthRange || width>snd SettingsCatalog.columnWidthRange || normal>2 || inside>2 then None
-        else
+        match markers |> Array.tryFind(fun (tag,_,_) -> value >>> 24 = int64 tag) with
+        | Some(_,hide,keep) when width>=fst SettingsCatalog.columnWidthRange && width<=snd SettingsCatalog.columnWidthRange && normal<=2 && inside<=2 ->
             let alignment = function 0 -> TabLeft | 1 -> TabCenter | _ -> TabRight
             let dock = match int((value >>> 9) &&& 3L) with 0 -> TabDockTop | 1 -> TabDockBottom | 2 -> TabDockLeft | _ -> TabDockRight
             Some {dock=dock;columnWidth=width;normalAlignment=alignment normal;insideAlignment=alignment inside;iconOnly=value &&& 32768L <> 0L
+                  transparentMode=hide; keepWindowSizes=keep
                   position=(if placed=0 then None else Some(float(placed-1)/254.0))}
+        | _ -> None
 
 /// A pane window's place in its group's split view, kept on the window itself as the group
 /// token is, so a restarted WindowTabs shows the split again as the windows come back.
@@ -315,6 +319,10 @@ module WindowGroupToken =
     let saveMadeByHand hwnd value = WindowFlag.set madeByHandKey hwnd value
     let madeByHand hwnd = WindowFlag.get madeByHandKey hwnd
 
+    let recoverAfterRestart (window:Window) =
+        if IndependentWindowParking.parked window.hwnd then IndependentWindowParking.restore window.hwnd
+        elif (read window.hwnd).IsSome then IndependentWindowParking.recoverUnmarked window
+
 /// Chromium and Electron windows stop painting while another window covers them, so a tab
 /// behind the active one prints blank, and a minimized one prints only a placeholder. Each
 /// tab's last good capture stands in for it, kept small: thumbnails are a few hundred pixels
@@ -322,12 +330,24 @@ module WindowGroupToken =
 /// strip's preview on hover, printed off its thread, as much as the taskbar's.
 /// Each is kept as a PNG: as pixels, every tab of every group held over a megabyte that nothing
 /// looked at until its preview.
+type private TabCaptureState() =
+    member val saved : byte[] option = None with get,set
+    member val blank = false with get,set
+    member val busy = false with get,set
+    member val publishPending = false with get,set
+    member val completed = -1000L with get,set
+    member val notify : (unit -> unit) option = None with get,set
+
 type TabCaptures() =
     let gate = obj()
-    let captures = Collections.Generic.Dictionary<IntPtr,byte[]>()
-    /// Tabs that printed blank while hidden; printing them again before they come to the front
-    /// would only be slow.
-    let blank = Collections.Generic.HashSet<IntPtr>()
+    let clock = Diagnostics.Stopwatch.StartNew()
+    let entries = Collections.Generic.Dictionary<IntPtr,TabCaptureState>()
+    let mutable disposed = false
+    let current hwnd state =
+        match entries.TryGetValue hwnd with
+        | true,active -> obj.ReferenceEquals(active,state)
+        | _ -> false
+    let bytes (state:TabCaptureState) = state.saved |> Option.map(fun image -> int64 image.Length) |> Option.defaultValue 0L
 
     static member maxSide = 800
 
@@ -352,78 +372,106 @@ type TabCaptures() =
             result.Dispose()
             reraise()
 
-    member this.count = lock gate (fun () -> captures.Count)
-    member private this.keptBytesUnlocked = captures.Values |> Seq.sumBy(fun saved -> int64 saved.Length)
-    /// The bytes the kept captures hold.
-    member this.keptBytes = lock gate (fun () -> this.keptBytesUnlocked)
+    member _.count = lock gate (fun () -> entries.Values |> Seq.filter(fun entry -> entry.saved.IsSome) |> Seq.length)
+    member _.keptBytes = lock gate (fun () -> entries.Values |> Seq.sumBy bytes)
 
-    /// Keeps a copy of a capture that shows the window.
-    member this.remember (hwnd:IntPtr) (image:Bitmap) =
-        if not(TabCaptures.isBlank image) then
-            let ratio = min 1.0 (float TabCaptures.maxSide / float (max image.Width image.Height))
-            let size = Size(max 1 (int(float image.Width * ratio)),max 1 (int(float image.Height * ratio)))
-            let saved =
-                use copy = TabCaptures.scaled image size
-                use stream = new MemoryStream()
-                copy.Save(stream,ImageFormat.Png)
-                stream.ToArray()
-            lock gate (fun () ->
-                blank.Remove hwnd |> ignore
-                let previous = match captures.TryGetValue hwnd with | true,old -> int64 old.Length | _ -> 0L
-                captures.[hwnd] <- saved
-                ResourceCounters.capturesChanged (int64 saved.Length - previous))
-
-    /// The capture to show for a window of the given size: a live one when it shows the window,
-    /// else the last that did. A hidden tab known to print blank is not printed again. The live
-    /// one is printed outside the lock: a slow window held up every other picture of the group.
-    member this.preview (hwnd:IntPtr) (size:Size) (minimized:bool) (inFront:bool) (capture:unit -> Img) : Img =
-        let fromSaved (size:Size) =
-            match captures.TryGetValue hwnd with
-            | true,saved ->
-                use stream = new MemoryStream(saved)
-                use image = Image.FromStream(stream)
-                Some(Img(TabCaptures.scaled image size))
-            | _ -> None
-        let known = lock gate (fun () -> if not minimized && not inFront && blank.Contains hwnd then fromSaved size else None)
-        match known with
-        | Some image -> image
-        | None ->
-            let live = capture()
-            let shows = not minimized && not(TabCaptures.isBlank live.bitmap)
-            if shows then
-                this.remember hwnd live.bitmap
-                live
-            else
-                lock gate (fun () ->
-                    if not minimized then blank.Add hwnd |> ignore
-                    match fromSaved live.bitmap.Size with
-                    | Some image ->
+    /// Bind the preview to this membership, even if the same HWND later rejoins the group.
+    member _.bind hwnd =
+        let state = lock gate (fun () ->
+            match entries.TryGetValue hwnd with
+            | true,state -> state
+            | _ ->
+                let state = TabCaptureState()
+                if not disposed then entries.Add(hwnd,state)
+                state)
+        fun (size:Size) minimized inFront (placeholder:unit -> Img) (capture:unit -> Img) (notify:(unit -> unit) option) ->
+            let render saved =
+                match saved with
+                | None -> placeholder()
+                | Some (data:byte[]) ->
+                    use stream = new MemoryStream(data)
+                    use image = Image.FromStream(stream)
+                    Img(TabCaptures.scaled image size)
+            let start,saved = lock gate (fun () ->
+                let wanted = current hwnd state && not minimized && (inFront || not state.blank)
+                let fresh = notify.IsSome && (state.publishPending || clock.ElapsedMilliseconds-state.completed<500L)
+                if notify.IsSome then state.publishPending <- false
+                if wanted && not fresh && notify.IsSome then state.notify <- notify
+                let start = wanted && not fresh && not state.busy
+                if start then state.busy <- true
+                start,state.saved)
+            let grab() =
+                try
+                    let live = capture()
+                    try
+                        let saved =
+                            if TabCaptures.isBlank live.bitmap then None else
+                            let source = live.bitmap
+                            let ratio = min 1.0 (float TabCaptures.maxSide / float (max source.Width source.Height))
+                            use copy = TabCaptures.scaled source (Size(max 1 (int(float source.Width*ratio)),max 1 (int(float source.Height*ratio))))
+                            use stream = new MemoryStream()
+                            copy.Save(stream,ImageFormat.Png)
+                            Some(stream.ToArray())
+                        let fallback = lock gate (fun () ->
+                            if current hwnd state then
+                                match saved with
+                                | Some data ->
+                                    let previous = bytes state
+                                    state.saved <- Some data
+                                    ResourceCounters.capturesChanged (int64 data.Length-previous)
+                                    state.blank <- false
+                                | None -> state.blank <- not inFront
+                                state.completed <- clock.ElapsedMilliseconds
+                            state.saved)
+                        if saved.IsSome then live else
+                            live.bitmap.Dispose()
+                            render fallback
+                    with _ ->
                         live.bitmap.Dispose()
-                        image
-                    | None -> live)
+                        reraise()
+                finally
+                    let doneNotify = lock gate (fun () ->
+                        state.busy <- false
+                        let callback = if current hwnd state then state.notify else None
+                        state.notify <- None
+                        state.publishPending <- callback.IsSome
+                        callback)
+                    doneNotify |> Option.iter(fun ready -> ready())
+            if not start then render saved
+            elif notify.IsNone then grab()
+            else
+                ThreadHelper.queueBackground(fun () ->
+                    try (grab()).bitmap.Dispose() with _ -> ())
+                render saved
 
-    /// The tab is in front again and paints, so its next capture is worth taking.
-    member this.shown (hwnd:IntPtr) = lock gate (fun () -> blank.Remove hwnd |> ignore)
-
-    member this.forget (hwnd:IntPtr) =
-        lock gate (fun () ->
-            blank.Remove hwnd |> ignore
-            match captures.TryGetValue hwnd with
-            | true,saved ->
-                captures.Remove hwnd |> ignore
-                ResourceCounters.capturesChanged (-(int64 saved.Length))
-            | _ -> ())
-
+    member _.needsFrontCapture hwnd = lock gate (fun () ->
+        match entries.TryGetValue hwnd with true,state -> state.blank | _ -> false)
+    member _.shown hwnd = lock gate (fun () ->
+        match entries.TryGetValue hwnd with
+        | true,state -> state.blank <- false; state.completed <- -1000L; state.publishPending <- false
+        | _ -> ())
+    member _.forget hwnd = lock gate (fun () ->
+        match entries.TryGetValue hwnd with
+        | true,state ->
+            ResourceCounters.capturesChanged (-(bytes state))
+            state.saved <- None
+            state.notify <- None
+            entries.Remove hwnd |> ignore
+        | _ -> ())
     interface IDisposable with
-        member this.Dispose() =
-            lock gate (fun () ->
-                ResourceCounters.capturesChanged (-this.keptBytesUnlocked)
-                captures.Clear()
-                blank.Clear())
+        member _.Dispose() = lock gate (fun () ->
+            disposed <- true
+            for state in entries.Values do
+                ResourceCounters.capturesChanged (-(bytes state))
+                state.saved <- None
+                state.notify <- None
+            entries.Clear())
 
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
     iconOnly: bool
+    transparentMode: bool
+    keepWindowSizes: bool
     dock: TabDock
     columnWidth: int
     alignments: (TabDirection * Bemo.TabAlignment) list
@@ -436,6 +484,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let invoker = InvokerService.invoker
     let _os = OS()
     let mutable hasSavedTabLayout = false
+    let mutable transparentModeChosen = false
+    let mutable keepWindowSizesChosen = false
     let mutable token = WindowGroupToken.fresh()
     let addedEvent = Event<_>()
     let movedEvent = Event<IntPtr*int>()
@@ -830,10 +880,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         Cell.listen <| fun() ->
             this.ts.visible <- isVisibleCell.value
 
-        this.ts.layoutChanged.Add(fun chosen ->
-            if chosen then hasSavedTabLayout <- true
-            if hasSavedTabLayout then
-                this.windows.items.iter(fun hwnd -> if heldByDrag<>Some hwnd then WindowTabLayout.save hwnd this.tabLayout))
+        this.ts.layoutChanged.Add(this.saveTabLayout)
         Services.registerLocal(this)
 
         plugins.iter <| fun p -> p.init()
@@ -936,8 +983,35 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             window.setForeground(false)
         | None -> ()
 
+    member private this.hasFixedWindow =
+        this.windows.items.any(fun hwnd -> IndependentWindowParking.fixedSize(this.os.windowFromHwnd hwnd))
+
+    member private this.parkInactive =
+        groupLayout=GroupLayout.Single && this.windows.count>1 &&
+        (transparentModeChosen || this.hasFixedWindow)
+
+    member private this.keepSizes = groupLayout=GroupLayout.Single && (keepWindowSizesChosen || this.hasFixedWindow)
+
+    /// A hidden follower takes the shared frame when revealed. Maximizing it while parked
+    /// would bring it back onto a monitor behind the translucent window.
+    member private this.revealWindow previous hwnd =
+        if IndependentWindowParking.parked hwnd then
+            if this.parkInactive && this.os.windowFromHwnd(hwnd).isMaximized then
+                previous |> Option.iter(fun old ->
+                    let outgoing = this.os.windowFromHwnd old
+                    if old<>hwnd && this.windows.contains old && outgoing.isMaximized && not (IndependentWindowParking.parked old) then
+                        IndependentWindowParking.park outgoing outgoing.bounds.location)
+            IndependentWindowParking.restore hwnd
+            if transparentModeChosen && not this.keepSizes && this.windows.contains hwnd then
+                placement.value |> Option.iter(fun (bounds,wp,visible) ->
+                    let request = FollowerPlacement.alignFrameRequest hwnd bounds visible wp None
+                    FollowerPlacement.queue.submit(placementOwner,hwnd,request)
+                    reconcilePlacementState <- true)
+        elif this.windows.contains hwnd then IndependentWindowParking.recoverUnmarked (this.os.windowFromHwnd hwnd)
+
     member private this.hideChildWindows() =
-        zorderCell.value.tail.iter(fun hwnd -> FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.hideRequest hwnd))
+        if not this.parkInactive && not this.keepSizes then
+            zorderCell.value.tail.iter(fun hwnd -> FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.hideRequest hwnd))
 
     member private this.inZorder(windows:List2<IntPtr>) =
         // One desktop snapshot keeps the order consistent and avoids enumerating
@@ -967,8 +1041,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         match request with
                         | SetMinimized _ | AlignWindow(_,_,None,_) -> false
                         | _ -> true)))
+            newZorder.tryHead |> Option.iter (this.revealWindow zorderCell.value.tryHead)
             prevTop.set(zorderCell.value.tryHead)
             zorderCell.set(newZorder)
+            if this.parkInactive && not newZorder.isEmpty then this.applyLayout()
 
     /// While the group minimizes or restores, Windows reorders its windows one by one; restored
     /// without activation, a tab owned by the taskbar window even rises above the one in front.
@@ -1011,37 +1087,39 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.getTabInfo(hwnd) =
         let window = this.os.windowFromHwnd(hwnd)
+
         let small,big = StartupTrace.measure "group.icons" (fun () -> iconCache.get(hwnd))
-        let print() =
+        let placeholder (size:Sz) () =
+            try
+                let side = max 32 (min 256 (min size.width size.height / 3))
+                let shellIcon =
+                    try
+                        if window.className="ApplicationFrameWindow" then AppIcons.GetAppIcon(AppIcons.GetHostedAppId(hwnd),side)
+                        else
+                            let path = window.pid.processPath
+                            if AppIcons.HasOwnIcon(path) then AppIcons.GetFileIcon(path,side) else null
+                    with _ -> null
+                use large = if isNull shellIcon then (let _,icon = iconCache.get(hwnd) in icon.ToBitmap()) else shellIcon
+                let img = Img(size)
                 try
-                    if window.isMinimized then
-                        // A minimized window cannot be printed. It stands in as its app's icon, a
-                        // third of the window's shorter side: the taskbar shrinks the whole window
-                        // to a thumbnail, and a 32-pixel icon became a dot.
-                        let size = this.previewArea.size
-                        let side = max 32 (min 256 (min size.width size.height / 3))
-                        let shellIcon =
-                            try
-                                if window.className="ApplicationFrameWindow" then AppIcons.GetAppIcon(AppIcons.GetHostedAppId(hwnd),side)
-                                else
-                                    let path = window.pid.processPath
-                                    if AppIcons.HasOwnIcon(path) then AppIcons.GetFileIcon(path,side) else null
-                            with _ -> null
-                        use large = if isNull shellIcon then (let _,icon = iconCache.get(hwnd) in icon.ToBitmap()) else shellIcon
-                        let img = Img(size)
-                        try
-                            use g = img.graphics
-                            use background = new SolidBrush(if ThemeService.currentIsDark() then Color.FromArgb(56,56,56) else Color.FromArgb(232,232,232))
-                            g.FillRectangle(background, Rect(Pt(), size).Rectangle)
-                            g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
-                            g.DrawImage(large, Rectangle((size.width-side)/2, (size.height-side)/2, side, side))
-                            img
-                        with _ ->
-                            img.bitmap.Dispose()
-                            reraise()
-                    else
-                        StartupTrace.measure "preview.print" (fun () -> Img(Win32Helper.PrintWindow(hwnd)))
-                with ex -> Img(Sz(1, 1))
+                    use g = img.graphics
+                    use background = new SolidBrush(if ThemeService.currentIsDark() then Color.FromArgb(56,56,56) else Color.FromArgb(232,232,232))
+                    g.FillRectangle(background, Rect(Pt(), size).Rectangle)
+                    g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
+                    g.DrawImage(large, Rectangle((size.width-side)/2, (size.height-side)/2, side, side))
+                    img
+                with _ ->
+                    img.bitmap.Dispose()
+                    reraise()
+            with _ -> Img(Sz(1, 1))
+        let print() =
+            try StartupTrace.measure "preview.print" (fun () -> Img(Win32Helper.PrintWindow(hwnd)))
+            with _ -> Img(Sz(1, 1))
+        let capture = captures.bind hwnd
+        let preview notify =
+            let minimized = window.isMinimized
+            let size = if minimized then this.previewArea.size else window.bounds.size
+            capture size.Size minimized (frontWindow=hwnd) (placeholder size) print notify
         {
             text = this.tabName hwnd
             isRenamed = this.isRenamed hwnd
@@ -1050,9 +1128,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             iconSmall = small
             iconBig = big
             // Called off the group's thread too: the tab in front is read from a field, not a cell.
-            preview = fun() ->
-                let bounds = window.bounds
-                captures.preview hwnd (Size(bounds.width,bounds.height)) window.isMinimized (frontWindow=hwnd) print
+            preview = fun() -> preview None
+            cachedPreview = fun ready -> preview (Some ready)
         }
     
     member private this.tintTab dark hwnd =
@@ -1290,16 +1367,20 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 let panes = SplitView.windows s |> List.filter(fun hwnd -> not(isMinimized hwnd))
                 let behind = this.windows.items.list |> List.filter(fun hwnd -> not(List.contains hwnd panes) && not(isMinimized hwnd))
                 let covers = if backdropHandle<>IntPtr.Zero && WinUserApi.IsWindow backdropHandle then backdropHandle::panes else panes
-                let ranks = this.zorderRanks(this.ts.hwnd::behind@covers)
+                let dividers = if dividerShown then splitDividers |> Map.toList |> List.map(snd >> snd) else []
+                let ranks = this.zorderRanks(this.ts.hwnd::behind@covers@dividers)
                 let above a b = match ranks.TryFind a,ranks.TryFind b with Some x,Some y -> x<y | _ -> false
                 // A pane over the tabs, or a tab behind the panes over any of them or the backdrop.
                 let covered = panes |> List.exists(fun hwnd -> above hwnd this.ts.hwnd)
                 let behindAbove = behind |> List.exists(fun hwnd -> covers |> List.exists(fun over -> above hwnd over))
+                // A browser can rise under its owned strip and still cover the unowned seam.
+                let dividerCovered = dividers |> List.exists(fun divider -> panes |> List.exists(fun pane -> above pane divider))
                 if covered || behindAbove then
                     this.withUpdate(fun () ->
                         this.saveZorder()
                         if covered && not this.isEmpty then this.setTsParent(this.topWindow)
                         elif behindAbove && not this.isEmpty then this.keepPanesBelowStrip(this.topWindow))
+                elif dividerCovered then this.updateSplitChrome()
         | _ -> this.watchOrder()
 
     /// What the panes go just below: the divider, which lies over their edges, or else the strip.
@@ -1313,9 +1394,33 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.tabLayout : GroupTabLayout = {
         dock=this.ts.dock; columnWidth=this.ts.columnWidth
         normalAlignment=this.ts.getAlignment TabUp; insideAlignment=this.ts.getAlignment TabDown
-        iconOnly=this.isIconOnly; position=this.ts.position }
+        iconOnly=this.isIconOnly; position=this.ts.position; transparentMode=transparentModeChosen; keepWindowSizes=keepWindowSizesChosen }
+
+    member private this.saveTabLayout chosen =
+        if chosen then hasSavedTabLayout <- true
+        if hasSavedTabLayout then
+            this.windows.items.iter(fun hwnd -> if heldByDrag<>Some hwnd then WindowTabLayout.save hwnd this.tabLayout)
+
+    member private this.setWindowModes(hide,keep) =
+        if (transparentModeChosen,keepWindowSizesChosen)<>(hide,keep) then
+            transparentModeChosen <- hide
+            keepWindowSizesChosen <- keep
+            this.saveTabLayout true
+            if groupLayout=GroupLayout.Single && this.windows.count>1 then
+                if not this.parkInactive then this.windows.items.iter IndependentWindowParking.restore
+                this.applyLayout()
+
+    member this.transparentMode
+        with get() = transparentModeChosen
+        and set(value) = this.setWindowModes(value,keepWindowSizesChosen)
+
+    member this.keepWindowSizes
+        with get() = keepWindowSizesChosen
+        and set(value) =
+            if value<>keepWindowSizesChosen then this.setWindowModes(value || transparentModeChosen,value)
 
     member this.applyTabLayout(layout:GroupTabLayout) =
+        this.setWindowModes(layout.transparentMode,layout.keepWindowSizes)
         this.ts.dock <- layout.dock
         this.ts.columnWidth <- layout.columnWidth
         this.ts.setAlignment(TabUp,layout.normalAlignment)
@@ -1337,6 +1442,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.appPathOf hwnd |> Option.iter AppTabPositions.forget
 
     member this.menuChoices = {
+        transparentMode = transparentModeChosen
+        keepWindowSizes = keepWindowSizesChosen
         iconOnly = this.isIconOnly
         dock = this.ts.dock
         columnWidth = this.ts.columnWidth
@@ -1344,6 +1451,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         autoHideMode = Option.ofObj(this.bb.read<string>("autoHideMode", null)) }
 
     member this.applyMenuChoices(choices:GroupMenuChoices) =
+        this.setWindowModes(choices.transparentMode,choices.keepWindowSizes)
         this.ts.dock <- choices.dock
         this.ts.columnWidth <- choices.columnWidth
         this.isIconOnly <- choices.iconOnly
@@ -1907,6 +2015,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.setLayout(next:GroupLayout, ?focus:IntPtr) =
         let before = groupLayout
         if next<>before then
+            this.windows.items.iter IndependentWindowParking.restore
             groupLayout <- next
             // Out of the split, the images of its start go at once: left until their wait ran
             // out, they stayed over the group, topmost, in the way of what came next. Those
@@ -2264,6 +2373,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // A tab carried in is placed once it is let go.
         if heldByDrag=Some hwnd then ()
         elif this.isSplit then this.applyLayout()
+        elif this.parkInactive && not this.isEmpty && hwnd<>this.topWindow then
+            let front = this.os.windowFromHwnd this.topWindow
+            if not front.isMinimized then
+                FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) -> match request with AlignWindow _ -> true | _ -> false))
+                let follower = this.os.windowFromHwnd hwnd
+                if keepWindowSizesChosen then IndependentWindowParking.parkInPlace follower
+                else
+                    let stripAbove = if this.ts.isVertical then 0 else max 0 (this.tabAppearance.tabHeight - this.tabAppearance.tabHeightOffset)
+                    IndependentWindowParking.returnPoint stripAbove front follower |> Option.iter (IndependentWindowParking.park follower)
+        elif this.keepSizes then
+            FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) -> match request with AlignWindow _ -> true | _ -> false))
         elif placement.value.IsSome && not changingMinimizeState then
             let bounds,wp,visible = placement.value.Value
             let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
@@ -2663,6 +2783,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.removeDraggedWindow(hwnd) = this.removeWindowCore(hwnd,false)
 
     member private this.removeWindowCore(hwnd, chooseNext:bool) = this.withUpdate <| fun() ->
+        IndependentWindowParking.restore hwnd
         inputOwnership.Remove hwnd |> ignore
         if not isDestroyed.value && this.windows.contains(hwnd) then
             this.onRemoved(hwnd)
@@ -2681,6 +2802,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.ts.removeTab(Tab(hwnd))
             tabColors <- tabColors.Remove hwnd
             this.setWindows(this.windows.remove hwnd)
+            if not this.parkInactive then this.windows.items.iter IndependentWindowParking.restore
             hookCleanup.value.find(hwnd).Dispose()
             hookCleanup.map(fun hooks -> hooks.remove(hwnd))
             removedEvent.Trigger(hwnd)
@@ -2780,8 +2902,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.activateIndex(index, force) =
         let nextTab = this.ts.lorder.tryAt(index)
-        nextTab.iter <| fun(nextTab) ->
-            this.tabActivate(nextTab, force)
+        nextTab.iter <| fun(Tab(hwnd)) ->
+            this.activate(hwnd,force,true,shortcut=true)
 
     member this.switchWindow(next,force) = 
         if this.windowCount > 1 then
@@ -2807,7 +2929,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         TabNavigation.lastActive order isOpen previousActiveTab current
 
     member this.switchToLastActive(force) =
-        this.lastUsedTab |> Option.iter(fun target -> this.tabActivate(Tab target, force))
+        this.lastUsedTab |> Option.iter(fun target -> this.activate(target,force,true,shortcut=true))
 
     /// A plugin can retain its native owners until asynchronous shell registration finishes.
     member _.addExitPreparation(action:(unit -> unit) -> unit) = exitPreparations.Add action
@@ -2825,15 +2947,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.captureFront() =
         captureTimer.Stop()
         let front = frontWindow
-        if not isDestroyed.value && this.windows.contains front then
+        if not isDestroyed.value && this.windows.contains front && captures.needsFrontCapture front then
             captures.shown front
             if not (this.os.windowFromHwnd(front).isMinimized) then
-                let image = this.ts.tabInfo(Tab front).preview()
+                let image = this.ts.tabInfo(Tab front).cachedPreview ignore
                 image.bitmap.Dispose()
 
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
+            this.windows.items.iter IndependentWindowParking.restore
             splitSettleTimer.Dispose()
             captureTimer.Dispose()
             hiddenCloseTimer.Dispose()
@@ -2945,12 +3068,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// held any more. Let go in the strip, it is placed and comes to the front as the tab chosen.
     member this.holdForDrag(hwnd:IntPtr) = heldByDrag <- Some hwnd
     member this.isHeldByDrag(hwnd:IntPtr) = heldByDrag=Some hwnd
-    member this.releaseDrag(hwnd:IntPtr, dropped:bool) =
+    member this.releaseDrag(hwnd:IntPtr, dropped:bool, ?landing:(Window -> Pt)) =
         if heldByDrag=Some hwnd then
             heldByDrag <- None
             if dropped && this.windows.contains hwnd && WinUserApi.IsWindow hwnd then
                 if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
-                this.adjustWindowPlacement hwnd
+                let window = this.os.windowFromHwnd hwnd
+                match landing with
+                | Some place when this.keepSizes && placement.value.IsSome && not (window.isMaximized || window.isMinimized) ->
+                    let origin = (place window).add(window.bounds.location.sub(window.visibleBounds.location))
+                    IndependentWindowParking.restoreAt hwnd origin
+                | _ -> this.adjustWindowPlacement hwnd
                 dragReleasedEvent.Trigger hwnd
                 this.tabActivate(Tab hwnd,true)
     member this.dragReleased = dragReleasedEvent.Publish
@@ -2964,8 +3092,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.tabActivate(Tab(hwnd), force) = this.activate(hwnd,force,true)
 
-    member private this.activate(hwnd, force, fade) =
+    member private this.activate(hwnd, force, fade, ?shortcut:bool) =
+        if defaultArg shortcut false && zorderCell.value.tryHead<>Some hwnd then this.ts.prepareShortcutMove(Tab hwnd)
+        else this.ts.cancelShortcutMove()
         let window = this.os.windowFromHwnd(hwnd)
+        // Activating a parked maximized window can bring it back on screen immediately.
+        // Exchange it with the outgoing tab before handing foreground to its application.
+        // A shared-size follower may need a restore or maximize on the placement worker.
+        // Start that work after activation so it cannot put the old tab back in front.
+        let previous = zorderCell.value.tryHead
+        if previous=Some hwnd || window.isMinimized || this.keepSizes ||
+           (window.isMaximized && previous |> Option.exists(fun old -> this.os.windowFromHwnd(old).isMaximized)) then
+            this.revealWindow previous hwnd
         // The cover goes up before the window comes to the front: raised first, a parked pane
         // showed at the group's size over the tab shown for a frame, and a tab clicked over the
         // panes rose pane-sized among them, before the layout followed.
@@ -2974,7 +3112,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if next<>groupLayout then
                 this.beginTransition(groupLayout,next,hwnd,focus=hwnd,durationMs=SplitTransition.ClickMs)
                 coverAhead <- true
-            elif groupLayout=GroupLayout.Single && fade then this.crossFadeTo hwnd
+            elif groupLayout=GroupLayout.Single && fade && not (this.parkInactive || this.keepSizes) then this.crossFadeTo hwnd
         // The strip is owned by the top window and only follows a new top window once the
         // foreground event comes back through the group. Until then the activated window
         // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows
@@ -3010,8 +3148,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.withUpdate(fun () ->
             if this.windows.contains(hwnd) then
                 this.onActivated(hwnd)
-                if inFront then this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd))
+                if inFront then
+                    this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
+                    // A window carried by its title bar may already have focus. No new
+                    // foreground event will correct a strip still sized for the old tab.
+                    if this.keepSizes && this.topWindow=hwnd then this.saveWindowPlacement hwnd)
         if not inFront then
+            this.ts.cancelShortcutMove()
+            if this.parkInactive then
+                zorderCell.value.tryHead |> Option.iter (this.revealWindow (Some hwnd))
+                this.applyLayout()
             // Activation can be refused (foreground lock), and the strip then goes back to the real
             // top window. Windows can also take a moment to raise it, so that is only decided once
             // it has had the time: handed back at once, the strip went under the tab as it rose.

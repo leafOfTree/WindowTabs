@@ -32,6 +32,21 @@ let main() =
     try
         for dpi in [96;144;192] do
             Dpi.set dpi
+            let frame = Rect(Pt(100,100),Dpi.scaleSize(Sz(600,400)))
+            let row = { windowBounds=frame; monitorBounds=List2([Rect(Pt(),Dpi.scaleSize(Sz(1920,1080)))])
+                        decoratorHeight=Dpi.scale 25; decoratorHeightOffset=0
+                        decoratorIndentNormal=Dpi.scale 3; decoratorIndentFlipped=Dpi.scale 80 }
+            let corners = Dpi.scale 8
+            let room = frame.width-2*corners
+            let outside = row.topPlacement(room+1)
+            check (not outside.showInside && outside.bounds.left=frame.left+corners && outside.bounds.right=frame.right-corners)
+                  "A nearly full outside row overhangs the upper corners"
+            check (row.topPlacement(room).bounds=row.bounds) "A row with room beside it gained extra margins"
+            let indented = { row with decoratorIndentNormal=Dpi.scale 18 }
+            check (indented.topPlacement(frame.width).bounds=indented.bounds) "Corner clearance added to a wider custom margin"
+            let inside = { row with windowBounds=frame.move(0,-frame.y) }
+            let overlay = inside.topPlacement(frame.width)
+            check (overlay.showInside && overlay.bounds=inside.insideBounds) "Corner clearance changed a title-bar overlay"
             for dock in [TabDockLeft;TabDockRight] do
                 for inside in [false;true] do
                     let area = Rect(Pt(0,0),Sz(Dpi.scale 1920,Dpi.scale 1080))

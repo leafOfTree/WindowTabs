@@ -849,7 +849,7 @@ made and collected. Physical memory is the private working set, the figure in Ta
 Memory column (`ProcessVmCounters`; the whole working set where Windows does not tell it):
 the part of private memory in RAM now, smaller as Windows moves idle pages out. The
 scan takes about a millisecond on the pool with each reading. While the charts are on,
-readings are taken every 10 seconds (`ResourceMonitor`) and kept in memory only: the last
+readings are taken every 5 seconds (`ResourceMonitor`) and kept in memory only: the last
 hour as read, and 24 hours a minute at a time, each minute's average CPU and the highest of
 everything else, so a short peak still shows; switched off, the history is dropped. CPU is
 a share of all processors since the reading before, as Task Manager shows it.

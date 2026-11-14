@@ -785,3 +785,90 @@ module WindowExtensions =
         member this.loword = WinDefApi.LOWORD(this)
         member this.size = Sz(this.hiword.int32, this.loword.int32)
         member this.location = Pt(this.loword.int32, this.hiword.int32)
+
+/// Store the return point on the foreign window so a replacement instance can recover it.
+module IndependentWindowParking =
+    let private xKey = "WindowTabs.ParkedX.v1"
+    let private yKey = "WindowTabs.ParkedY.v1"
+    let private restoredXKey = "WindowTabs.RestoredX.v1"
+    let private encode value = nativeint (value * 2 + 1)
+    let private decode (value:IntPtr) = (int value - 1) / 2
+    let parked hwnd = WinUserApi.GetProp(hwnd,xKey)<>IntPtr.Zero
+    let fixedSize (window:Window) =
+        window.hasStyle WindowsStyles.WS_MINIMIZEBOX &&
+        not (window.hasStyle WindowsStyles.WS_MAXIMIZEBOX || window.hasStyle WindowsStyles.WS_THICKFRAME)
+    let move hwnd (point:Pt) =
+        WinUserApi.SetWindowPos(hwnd,IntPtr.Zero,point.x,point.y,0,0,
+            SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE ||| SetWindowPosFlags.SWP_ASYNCWINDOWPOS)
+    let private readPoint hwnd xKey =
+        let x,y = WinUserApi.GetProp(hwnd,xKey),WinUserApi.GetProp(hwnd,yKey)
+        if x<>IntPtr.Zero && y<>IntPtr.Zero then Some(Pt(decode x,decode y)) else None
+    let private savedPoint hwnd = readPoint hwnd xKey
+    let locationBeforeDrag (window:Window) =
+        match savedPoint window.hwnd with
+        | Some point -> point
+        | None when window.mon.IsNone -> readPoint window.hwnd restoredXKey |> Option.defaultValue window.bounds.location
+        | None -> window.bounds.location
+    let private parkingX() =
+        let right = Mon.all.list |> List.maxBy(fun monitor -> monitor.displayRect.right)
+        right.displayRect.right+32
+    /// An app can leave one pixel on screen when parked. Recover that saved point too,
+    /// while leaving a deliberately overhanging window with a reachable title bar alone.
+    let private reachablePoint hwnd (point:Pt) =
+        let size = Win32Helper.GetWindowRectangle(hwnd).Size
+        let title = Rectangle(point.x,point.y,max 1 size.Width,max 1 (min size.Height (Dpi.scale 32)))
+        let area = Screen.FromRectangle(title).WorkingArea
+        let overlap = Rectangle.Intersect(area,title)
+        if overlap.Width>=min title.Width (Dpi.scale 48) && overlap.Height>=min title.Height (Dpi.scale 12) then point
+        else Pt(area.Left + max 0 ((area.Width-size.Width)/2),area.Top + max 0 ((area.Height-size.Height)/2))
+    let restoreAt hwnd point =
+        if move hwnd point then
+            // A posted move can succeed before the app has returned to the monitor.
+            // Keep its destination even after it stops counting as a parked tab.
+            if WinUserApi.SetProp(hwnd,restoredXKey,encode point.x) && WinUserApi.SetProp(hwnd,yKey,encode point.y) then
+                WinUserApi.RemoveProp(hwnd,xKey) |> ignore
+    let restore hwnd =
+        savedPoint hwnd |> Option.iter (reachablePoint hwnd >> restoreAt hwnd)
+    /// Older copies could leave a grouped window at our parking column with neither coordinate.
+    let recoverUnmarked (window:Window) =
+        if window.isVisible && not window.isMinimized && window.mon.IsNone && window.bounds.x=parkingX() then
+            let point = readPoint window.hwnd restoredXKey |> Option.defaultWith(fun () -> window.bounds.location)
+            restoreAt window.hwnd (reachablePoint window.hwnd point)
+    let returnPoint stripAbove (front:Window) (window:Window) =
+        // Restoring a parked tab posts its move to the app. Its off-screen frame must
+        // not become the return point for the next tab while that move is pending.
+        if front.mon.IsNone then
+            if parked window.hwnd || window.mon.IsNone then None else Some window.bounds.location
+        elif not front.isMaximized then Some front.bounds.location
+        elif parked window.hwnd then None
+        else
+            // A maximized frame extends past the monitor. Keep the tab at its last normal
+            // position on this monitor, with enough space for the strip above its title.
+            let area = (Screen.FromHandle(front.hwnd).WorkingArea).Rect
+            let bounds = window.bounds
+            let clamp low high value = max low (min high value)
+            let top = area.top + stripAbove - (window.visibleBounds.top - bounds.top)
+            // A tall restored window can deliberately extend below its monitor. Fitting
+            // its bottom edge as well would pull its title and tabs back to the top.
+            let bottom = if window.mon=front.mon then area.bottom - max 1 (Dpi.scale 32)
+                         else area.bottom-bounds.height
+            Some(Pt(clamp area.left (area.right-bounds.width) bounds.x,
+                    clamp top bottom bounds.y))
+    let park (window:Window) (anchor:Pt) =
+        let hwnd = window.hwnd
+        // A maximized tab must return to its own monitor, with its OS restore rectangle intact.
+        let anchor =
+            if window.isMaximized && parked hwnd then
+                Pt(decode (WinUserApi.GetProp(hwnd,xKey)),decode (WinUserApi.GetProp(hwnd,yKey)))
+            elif window.isMaximized then window.bounds.location
+            else anchor
+        if not window.isMinimized &&
+           WinUserApi.SetProp(hwnd,yKey,encode anchor.y) && WinUserApi.SetProp(hwnd,xKey,encode anchor.x) then
+            let point = Pt(parkingX(),anchor.y)
+            if window.bounds.location<>point then move hwnd point |> ignore
+
+    /// The return point belongs to this window, including while another tab is dragged.
+    let parkInPlace (window:Window) =
+        if window.mon.IsSome then
+            let point = savedPoint window.hwnd |> Option.defaultWith(fun () -> window.bounds.location)
+            park window (if window.isMaximized then point else reachablePoint window.hwnd point)

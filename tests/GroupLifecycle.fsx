@@ -201,6 +201,77 @@ let main() =
         sourceWindow.setForeground(false)
         let snapForeground = WinUserApi.GetForegroundWindow()
         check (WinUserApi.GetActiveWindow()=snapSource.Handle) "Snap fixture did not activate its source"
+        do
+            use fixedForm = new Form(FormBorderStyle=FormBorderStyle.FixedSingle,MinimizeBox=true,MaximizeBox=false)
+            fixedForm.Show()
+            let fixedWindow = OS().windowFromHwnd fixedForm.Handle
+            let filter = FilterService()
+            check (filter.isAppWindowStyle fixedWindow) "An independent minimize-only window was filtered out"
+            use tool = new Form(FormBorderStyle=FormBorderStyle.FixedToolWindow,MinimizeBox=true,MaximizeBox=false)
+            check (not (filter.isAppWindowStyle (OS().windowFromHwnd tool.Handle))) "A tool window passed the app style filter"
+            let size = fixedWindow.bounds.size
+            let owner = obj()
+            FollowerPlacement.queue.claim(owner,fixedForm.Handle)
+            try
+                for cmd in [ShowWindowCommands.SW_SHOWNORMAL;ShowWindowCommands.SW_SHOWMAXIMIZED] do
+                    let request = FollowerPlacement.request fixedForm.Handle snapped {normalPlacement with showCmd=cmd}
+                    FollowerPlacement.queue.submit(owner,fixedForm.Handle,request)
+                    pumpUntil "Fixed window placement did not settle" (fun () -> FollowerPlacement.queue.isIdle owner)
+                    check (fixedWindow.bounds=Rect(snapped.location,size) && not fixedWindow.isMaximized) "A fixed-size follower lost its dimensions"
+            finally FollowerPlacement.queue.release(owner,fixedForm.Handle)
+            let anchor = fixedWindow.bounds.location
+            IndependentWindowParking.park fixedWindow anchor
+            check (IndependentWindowParking.parked fixedForm.Handle && Mon.fromHwnd(fixedForm.Handle).IsNone) "The inactive fixed window remained on a display"
+            IndependentWindowParking.restore fixedForm.Handle
+            check (fixedWindow.bounds=Rect(anchor,size) && not (IndependentWindowParking.parked fixedForm.Handle)) "Recovery lost a parked window"
+            let work = Screen.FromHandle(fixedForm.Handle).WorkingArea
+            let corner = Pt(work.Right-1,work.Bottom-1)
+            IndependentWindowParking.park fixedWindow corner
+            IndependentWindowParking.restore fixedForm.Handle
+            check (work.Contains(fixedForm.Bounds) && fixedWindow.bounds.size=size)
+                  "Restoring a tab at a one-pixel corner left its title bar off screen"
+            let overhang = Pt(work.Right-size.width/2,work.Bottom-size.height/2)
+            IndependentWindowParking.park fixedWindow overhang
+            IndependentWindowParking.restore fixedForm.Handle
+            check (fixedWindow.bounds=Rect(overhang,size)) "A reachable window was moved away from its chosen edge position"
+            do
+                use stranded = new Form()
+                stranded.Show()
+                let window = OS().windowFromHwnd stranded.Handle
+                let bounds = window.bounds
+                IndependentWindowParking.park window bounds.location
+                let outside = window.bounds.location
+                // Simulate a window left behind by a version which forgot both coordinates.
+                for key in ["WindowTabs.ParkedX.v1"; "WindowTabs.ParkedY.v1"] do
+                    WinUserApi.RemoveProp(stranded.Handle,key) |> ignore
+                WindowGroupToken.recoverAfterRestart window
+                check (window.bounds.location=outside) "Startup moved an unrelated off-screen window"
+                WindowGroupToken.save stranded.Handle (WindowGroupToken.fresh())
+                WindowGroupToken.recoverAfterRestart window
+                check (window.mon.IsSome && window.bounds.size=bounds.size) "Startup left a grouped tab in the parking column"
+                IndependentWindowParking.park window bounds.location
+                IndependentWindowParking.restore stranded.Handle
+                // A queued move was accepted but the window ended up parked anyway.
+                IndependentWindowParking.move stranded.Handle outside |> ignore
+                WindowGroupToken.recoverAfterRestart window
+                check (window.bounds=bounds) "Startup forgot the destination of an uncompleted restore"
+            use maximized = new Form(WindowState=FormWindowState.Maximized)
+            maximized.Show()
+            let maxWindow = OS().windowFromHwnd maximized.Handle
+            let area = Screen.FromHandle(maximized.Handle).WorkingArea
+            for y in [area.Top; area.Top + 160] do
+                fixedForm.Location <- Drawing.Point(area.Left + 90,y)
+                let visibleOffset = fixedWindow.visibleBounds.top - fixedWindow.bounds.top
+                let target = (IndependentWindowParking.returnPoint 30 maxWindow fixedWindow).Value
+                check (target.y=max y (area.Top + 30 - visibleOffset))
+                      "A maximized neighbour changed the window's height on screen beyond what the strip needed"
+            fixedForm.Height <- area.Height
+            fixedForm.Location <- Drawing.Point(area.Left + 90,area.Top + 160)
+            check (fixedForm.Bottom>area.Bottom && fixedForm.Top=area.Top+160)
+                  "The tall window fixture did not extend below the work area"
+            check (IndependentWindowParking.returnPoint 30 maxWindow fixedWindow=Some fixedWindow.bounds.location)
+                  "Switching to a maximized neighbour pulled a full-height restored window to the top"
+            snapSource.Activate()
         let snapQueueOwner = obj()
         FollowerPlacement.queue.claim(snapQueueOwner,snapFollower.Handle)
         // A window under a hidden owner that went to the top on its own (Windows raises a window by
@@ -423,6 +494,184 @@ let main() =
             finally
                 (fixture :> IGroup).destroy()
                 pumpUntil "Isolated fixture did not exit" (fun () -> fixture.isExited)
+
+        do
+            use fixedForm = new Form(FormBorderStyle=FormBorderStyle.FixedSingle,MaximizeBox=false)
+            use other = new Form()
+            fixedForm.Show()
+            other.Show()
+            let a,b = fixedForm.Handle,other.Handle
+            let fixture = desktopApi.createGroup(false) :?> GroupInfo
+            try
+                for h in [a;b] do (fixture :> IGroup).addWindow(h,false)
+                for selected,background in [a,b;b,a;a,b] do
+                    onGroup fixture (fun group -> group.tabActivate(Tab(selected),true))
+                    pumpUntil "Switching did not park only the background tab" (fun () ->
+                        IndependentWindowParking.parked background && Mon.fromHwnd(background).IsNone &&
+                        not (IndependentWindowParking.parked selected) && Mon.fromHwnd(selected).IsSome)
+                onGroup fixture (fun group -> group.tabActivate(Tab(b),true))
+                other.WindowState <- FormWindowState.Maximized
+                pumpUntil "The maximized tab did not park its fixed-size neighbour" (fun () -> IndependentWindowParking.parked a && other.WindowState=FormWindowState.Maximized)
+                onGroup fixture (fun group -> group.tabActivate(Tab(a),true))
+                pumpUntil "The fixed-size tab returned outside the work area" (fun () ->
+                    not (IndependentWindowParking.parked a) && Screen.FromHandle(a).WorkingArea.Contains(fixedForm.Bounds))
+                let stripAbove = onGroup fixture (fun group -> group.tabAppearance.tabHeight - group.tabAppearance.tabHeightOffset)
+                let front = OS().windowFromHwnd b
+                let follower = OS().windowFromHwnd a
+                pumpUntil "The maximized background remained visible" (fun () -> IndependentWindowParking.parked b && Mon.fromHwnd(b).IsNone)
+                check (IndependentWindowParking.returnPoint stripAbove front follower=Some follower.bounds.location)
+                      "An off-screen maximized tab changed its neighbour's return point"
+                onGroup fixture (fun group -> group.tabActivate(Tab(b),true))
+                pumpUntil "The maximized tab did not return to its monitor" (fun () -> Mon.fromHwnd(b).IsSome && front.isMaximized && not (IndependentWindowParking.parked b))
+                onGroup fixture (fun group -> group.tabActivate(Tab(a),true))
+                pumpUntil "The maximized tab was not parked again" (fun () -> IndependentWindowParking.parked b)
+                onGroup fixture (fun group -> group.removeWindow b)
+                pumpUntil "Detached window stayed parked" (fun () -> Mon.fromHwnd(b).IsSome && not (IndependentWindowParking.parked b))
+            finally
+                (fixture :> IGroup).destroy()
+                pumpUntil "Independent fixture did not exit" (fun () -> fixture.isExited)
+
+        do
+            use terminal = new Form(Opacity=0.6)
+            use browser = new Form(Opacity=0.6)
+            terminal.Show()
+            browser.Show()
+            let a,b = terminal.Handle,browser.Handle
+            let fixture = desktopApi.createGroup(false) :?> GroupInfo
+            try
+                for hwnd in [a;b] do (fixture :> IGroup).addWindow(hwnd,false)
+                onGroup fixture (fun group -> group.tabActivate(Tab(a),true))
+                pumpUntil "The translucent window did not come to the front" (fun () ->
+                    onGroup fixture (fun group -> group.topWindow=a && group.isPlacementIdle))
+                onGroup fixture (fun group -> group.transparentMode <- true)
+                let switched front back = Mon.fromHwnd(front).IsSome && Mon.fromHwnd(back).IsNone && IndependentWindowParking.parked back
+                pumpUntil "The browser remained behind the translucent window" (fun () -> switched a b)
+                terminal.WindowState <- FormWindowState.Maximized
+                pumpUntil "The terminal did not maximize" (fun () -> onGroup fixture (fun group -> group.isMaximized.value))
+                let select hwnd = onGroup fixture (fun group -> group.tabActivate(Tab(hwnd),true))
+                select b
+                pumpUntil "Transparency alone lost the shared maximized state" (fun () -> switched b a && browser.WindowState=FormWindowState.Maximized)
+                let mutable overlap = None
+                let observe _ =
+                    if overlap.IsNone && Mon.fromHwnd(a).IsSome && Mon.fromHwnd(b).IsSome then
+                        overlap <- Some(terminal.Bounds,browser.Bounds,IndependentWindowParking.parked a,IndependentWindowParking.parked b)
+                let observers = [terminal.LocationChanged.Subscribe observe; browser.LocationChanged.Subscribe observe]
+                try
+                    for front,back in [a,b; b,a; a,b; b,a] do
+                        select front
+                        pumpUntil "The two maximized translucent tabs did not exchange places" (fun () ->
+                            switched front back && onGroup fixture (fun group -> group.topWindow=front && group.isPlacementIdle))
+                    check overlap.IsNone (sprintf "Both translucent tabs were on screen during the switch: %A" overlap)
+                finally
+                    observers |> List.iter(fun observer -> observer.Dispose())
+                browser.WindowState <- FormWindowState.Normal
+                browser.Size <- Drawing.Size(580,390)
+                pumpUntil "The shared frame did not follow the browser" (fun () ->
+                    onGroup fixture (fun group -> group.layoutFrame=(OS().windowFromHwnd b).visibleBounds))
+                select a
+                pumpUntilShowing "Transparency alone lost the restored shared size" (fun () ->
+                    sprintf "%A %A, bounds %A / %A, parked %b / %b" terminal.WindowState browser.WindowState terminal.Bounds browser.Bounds
+                        (IndependentWindowParking.parked a) (IndependentWindowParking.parked b)) (fun () ->
+                    switched a b && terminal.WindowState=FormWindowState.Normal && terminal.Size=browser.Size &&
+                    onGroup fixture (fun group -> group.topWindow=a && group.isPlacementIdle))
+                onGroup fixture (fun group -> group.keepWindowSizes <- true)
+                let browserSize = browser.Size
+                terminal.WindowState <- FormWindowState.Maximized
+                pumpUntil "The independent terminal did not maximize" (fun () -> onGroup fixture (fun group -> group.isMaximized.value))
+                for front,back in [b,a; a,b] do
+                    onGroup fixture (fun group -> group.tabActivate(Tab(front),true))
+                    pumpUntil "Both choices did not preserve independent states" (fun () ->
+                        switched front back &&
+                        terminal.WindowState=FormWindowState.Maximized && browser.WindowState=FormWindowState.Normal && browser.Size=browserSize)
+                select b
+                pumpUntil "The restored tab did not appear" (fun () -> switched b a)
+                let work = Screen.FromHandle(b).WorkingArea
+                let location = Drawing.Point(work.Left + 90, work.Top + 160)
+                browser.Height <- work.Height
+                browser.Location <- location
+                pumpUntil "The strip did not follow the moved window" (fun () ->
+                    onGroup fixture (fun group -> group.layoutFrame=(OS().windowFromHwnd b).visibleBounds))
+                for _ in 1..2 do
+                    select a
+                    pumpUntil "The maximized tab did not return" (fun () -> switched a b)
+                    select b
+                    pumpUntil "Switching back pulled the restored tab up to the screen edge" (fun () ->
+                        switched b a && browser.Location=location)
+                browser.Size <- browserSize
+                select a
+                pumpUntil "The maximized tab did not park its neighbour" (fun () -> switched a b)
+                onGroup fixture (fun group -> group.transparentMode <- false)
+                pumpUntil "Size alone kept the browser hidden" (fun () -> Mon.fromHwnd(b).IsSome && not (IndependentWindowParking.parked b))
+                select b
+                pumpUntil "Size alone changed one of the window states" (fun () ->
+                    onGroup fixture (fun group -> group.topWindow=b) &&
+                    browser.Size=browserSize && browser.WindowState=FormWindowState.Normal && terminal.WindowState=FormWindowState.Maximized && Mon.fromHwnd(a).IsSome)
+                select a
+                pumpUntil "The maximized terminal did not return" (fun () -> onGroup fixture (fun group -> group.topWindow=a && group.isMaximized.value))
+                terminal.WindowState <- FormWindowState.Normal
+                pumpUntil "The terminal did not restore" (fun () -> onGroup fixture (fun group -> not group.isMaximized.value))
+                onGroup fixture (fun group -> group.keepWindowSizes <- false)
+                pumpUntil "Turning off independent mode left the browser parked" (fun () ->
+                    Mon.fromHwnd(b).IsSome && not (IndependentWindowParking.parked b) &&
+                    (OS().windowFromHwnd b).visibleBounds=(OS().windowFromHwnd a).visibleBounds)
+                onGroup fixture (fun group -> group.keepWindowSizes <- true)
+                pumpUntil "Keeping sizes did not also hide the background window" (fun () ->
+                    switched a b && onGroup fixture (fun group -> group.transparentMode))
+                onGroup fixture (fun group -> group.keepWindowSizes <- false)
+                check (onGroup fixture (fun group -> group.transparentMode)) "Turning off independent sizing also turned off hiding"
+                onGroup fixture (fun group ->
+                    group.keepWindowSizes <- true
+                    group.transparentMode <- false
+                    let saved = group.tabLayout
+                    group.keepWindowSizes <- false
+                    group.applyTabLayout saved
+                    check (group.keepWindowSizes && not group.transparentMode) "Restoring a group lost its explicit choice to show other windows")
+            finally
+                (fixture :> IGroup).destroy()
+                pumpUntil "Translucent window fixture did not exit" (fun () -> fixture.isExited)
+
+        do
+            use first = new Form()
+            use second = new Form()
+            use third = new Form()
+            let forms = [first;second;third]
+            let fixture = desktopApi.createGroup(false) :?> GroupInfo
+            try
+                for form in forms do form.Show()
+                onGroup fixture (fun group -> group.keepWindowSizes <- true)
+                for form in forms do (fixture :> IGroup).addWindow(form.Handle,false)
+                let select (form:Form) =
+                    onGroup fixture (fun group -> group.tabActivate(Tab(form.Handle),true))
+                    pumpUntil "The independent window did not return" (fun () ->
+                        Mon.fromHwnd(form.Handle).IsSome && onGroup fixture (fun group -> group.topWindow=form.Handle))
+                let area = Screen.FromHandle(first.Handle).WorkingArea
+                let frames = forms |> List.mapi(fun i form ->
+                    select form
+                    let frame = Drawing.Rectangle(area.Left+40+i*90,area.Top+70+i*60,320+i*35,240+i*20)
+                    form.Bounds <- frame
+                    pumpUntil "The strip did not follow its moved window" (fun () ->
+                        onGroup fixture (fun group -> group.layoutFrame=(OS().windowFromHwnd form.Handle).visibleBounds))
+                    form,frame)
+                for form,frame in frames @ List.rev frames do
+                    select form
+                    check (form.Bounds=frame) "Switching independent tabs replaced the window's own size or position"
+                let carried = third.Handle
+                let afterDrop = onGroup fixture (fun group ->
+                    TitleBarJoin.settle group [carried] carried 0
+                    group.topWindow,group.layoutFrame)
+                check (afterDrop=(carried,(OS().windowFromHwnd carried).visibleBounds))
+                      "A title-bar drop selected the carried window but left its tabs at the previous window's frame"
+                select first
+                onGroup fixture (fun group -> group.transparentMode <- false)
+                pumpUntil "Showing the background windows lost their individual frames" (fun () ->
+                    frames |> List.forall(fun (form,frame) -> form.Bounds=frame))
+                first.Left <- first.Left + 35
+                onGroup fixture (fun group -> group.onExitMoveSize())
+                check (frames.Tail |> List.forall(fun (form,frame) -> form.Bounds=frame))
+                      "Dragging a visible independent tab moved the other windows"
+            finally
+                (fixture :> IGroup).destroy()
+                pumpUntil "Independent position fixture did not exit" (fun () -> fixture.isExited)
 
         // Maximized, the group's frame is the work area itself, where the window shows: a pixel up
         // and left, the tab shown faded out off its place and a split from it left a pixel of
@@ -717,7 +966,7 @@ let main() =
             pumpUntil "Regrouping did not restore its window" (fun () -> nativeOrder source=handles)
             check (onGroup source (fun group -> group.ts.isShrunk)) "A background z-order change opened auto-hidden tabs"
             api.setValue("autoHideMode",box "Never")
-            let localLayout = {dock=TabDockRight;columnWidth=264;normalAlignment=TabRight;insideAlignment=TabCenter;iconOnly=false;position=None}
+            let localLayout = {dock=TabDockRight;columnWidth=264;normalAlignment=TabRight;insideAlignment=TabCenter;transparentMode=false;keepWindowSizes=false;iconOnly=false;position=None}
             onGroup source (fun group -> group.applyTabLayout localLayout)
             api.setValue("tabPosition",box "Left")
             pumpUntil "Global position did not replace the group's menu choice" (fun () ->
@@ -954,7 +1203,7 @@ let main() =
             (remembered :> IGroup).addWindow(a,false)
             pumpUntil "Remembered group did not acquire its window" (fun () -> nativeOrder remembered=[a])
             // Icons only too, so a window leaving its group takes that choice to the next one.
-            let rememberedLayout = {dock=TabDockRight;columnWidth=308;normalAlignment=TabRight;insideAlignment=TabLeft;iconOnly=true;position=None}
+            let rememberedLayout = {dock=TabDockRight;columnWidth=308;normalAlignment=TabRight;insideAlignment=TabLeft;transparentMode=false;keepWindowSizes=false;iconOnly=true;position=None}
             onGroup remembered (fun group -> group.applyTabLayout rememberedLayout)
             check (WindowTabLayout.read a=Some rememberedLayout) "Menu layout was not saved immediately on its window"
             onGroup remembered (fun group -> group.removeWindow a)
@@ -1011,8 +1260,8 @@ let main() =
             // Save and restore the production workspace across group STAs, after defaults change.
             let left = desktopApi.createGroup(false) :?> GroupInfo
             let right = desktopApi.createGroup(false) :?> GroupInfo
-            let leftLayout = {dock=TabDockLeft;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabCenter;iconOnly=true;position=None}
-            let rightLayout = {dock=TabDockRight;columnWidth=316;normalAlignment=TabLeft;insideAlignment=TabRight;iconOnly=false;position=None}
+            let leftLayout = {dock=TabDockLeft;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabCenter;transparentMode=false;keepWindowSizes=false;iconOnly=true;position=None}
+            let rightLayout = {dock=TabDockRight;columnWidth=316;normalAlignment=TabLeft;insideAlignment=TabRight;transparentMode=false;keepWindowSizes=false;iconOnly=false;position=None}
             for info,hwnd,layout in [left,a,leftLayout;right,b,rightLayout] do
                 onGroup info (fun group -> group.applyTabLayout layout)
                 (info :> IGroup).addWindow(hwnd,false)
@@ -1186,7 +1435,7 @@ let main() =
             (following :> IGroup).addWindow(a,false)
             (chosen :> IGroup).addWindow(b,false)
             pumpUntil "Groups did not acquire their windows" (fun () -> nativeOrder following = [a] && nativeOrder chosen = [b])
-            let choices = { iconOnly=true; dock=TabDockLeft; columnWidth=280; alignments=[TabUp,TabRight]; autoHideMode=Some "Always" }
+            let choices = { transparentMode=true;keepWindowSizes=true; iconOnly=true; dock=TabDockLeft; columnWidth=280; alignments=[TabUp,TabRight]; autoHideMode=Some "Always" }
             let savedChoices = onGroup following (fun group -> group.applyMenuChoices choices; group.menuChoices)
             desktopApi.restartGroup(chosen.hwnd, true)
             pumpUntil "Tab menu did not combine its group's taskbar icons" (fun () -> (soleGroup b true).IsSome)
@@ -1194,7 +1443,7 @@ let main() =
             api.setValue("combineIconsInTaskbar", box true)
             pumpUntil "Setting did not combine an open group's taskbar icons" (fun () -> (soleGroup a true).IsSome)
             let rebuilt = (soleGroup a true).Value
-            check (nativeOrder rebuilt = [a]) "Rebuilt group lost its window"
+            pumpUntil "Rebuilt group lost its window" (fun () -> nativeOrder rebuilt = [a])
             check (rebuilt.ruleGroupId=Some "project-a") "Taskbar rebuild lost the named grouping target"
             check (onGroup rebuilt (fun group -> group.menuChoices) = savedChoices) "Rebuilt group lost its tab menu choices"
             api.setValue("combineIconsInTaskbar", box false)
@@ -1209,15 +1458,17 @@ let main() =
             for info in [separate;chosenNow] do
                 onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             // Exercise production drag targets on their owning STAs without taking over the mouse.
-            for sourceDock,targetDock in [TabDockTop,TabDockLeft;TabDockLeft,TabDockTop;
+            for sourceDock,targetDock in [TabDockTop,TabDockLeft;TabDockTop,TabDockTop;TabDockLeft,TabDockTop;
                                           TabDockTop,TabDockRight;TabDockRight,TabDockTop;
                                           TabDockLeft,TabDockRight;TabDockRight,TabDockLeft] do
                 let dragSource = desktopApi.createGroup(false) :?> GroupInfo
                 let dragTarget = desktopApi.createGroup(false) :?> GroupInfo
+                let wideRow = sourceDock=TabDockTop && targetDock=TabDockTop
                 for hwnd in [a;b] do (dragSource :> IGroup).addWindow(hwnd,false)
                 (dragTarget :> IGroup).addWindow(d,false)
                 pumpUntil "Drag groups did not acquire windows" (fun () -> nativeOrder dragSource=[a;b] && nativeOrder dragTarget=[d])
                 let data = onGroup dragSource (fun group ->
+                    if sourceDock=TabDockTop && targetDock=TabDockLeft then group.keepWindowSizes <- true
                     group.ts.dock <- sourceDock
                     let size = if group.ts.isVertical then Sz(220,400) else Sz(600,40)
                     group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
@@ -1232,12 +1483,24 @@ let main() =
                     target.dragExit()
                     data)
                 pumpUntil "Drag source retained moved window" (fun () -> nativeOrder dragSource=[a] && publicOrder dragSource=[a])
+                if sourceDock=TabDockTop && (targetDock=TabDockLeft || wideRow) then
+                    joining.Bounds <- Drawing.Rectangle(work.Left+70,work.Top+140,(if wideRow then work.Width-140 else 540),360)
+                    pumpUntil "The destination group did not see its landing frame" (fun () ->
+                        onGroup dragTarget (fun group -> group.layoutFrame=(OS().windowFromHwnd d).visibleBounds))
+                let targetFrame = (OS().windowFromHwnd d).visibleBounds
+                let incomingSize = (OS().windowFromHwnd b).bounds.size
+                let mutable releasedAt = Pt.empty
                 onGroup dragTarget (fun group ->
+                    if sourceDock=TabDockTop && (targetDock=TabDockLeft || wideRow) then group.keepWindowSizes <- true
                     group.ts.dock <- targetDock
                     let size = if group.ts.isVertical then Sz(220,400) else Sz(600,40)
-                    group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
+                    if not wideRow then group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
                     let target = dragTargetFor group.ts.hwnd
                     check (target.dragEnter (box data) (Pt(1,1))) "Destination rejected a drag"
+                    if wideRow then
+                        let local = Pt(group.ts.bounds.width/2-Dpi.scale 100,group.ts.bounds.height/2)
+                        target.dragMove(local)
+                        releasedAt <- (OS().windowFromHwnd group.ts.hwnd).ptToScreen(local)
                     // Carried in and not let go, the tab's window waits out of sight: the group's
                     // window in front stays so, and the windows the drag passes stay over it.
                     check (group.topWindow=d) (sprintf "A tab carried into a strip brought its window to the front before the drop: %A" group.topWindow)
@@ -1246,6 +1509,27 @@ let main() =
                     check (group.ts.carriedIn=Some(Tab b) && front=[Tab b]) (sprintf "A tab carried into a strip was not drawn in front: %A" front)
                     target.dragEnd())
                 pumpUntil "Cross-orientation drag lost its insertion order" (fun () -> nativeOrder dragTarget=[b;d] && publicOrder dragTarget=[b;d])
+                if wideRow then
+                    pumpUntil "A narrower window jumped left of the grabbed tab on drop" (fun () ->
+                        onGroup dragTarget (fun group ->
+                            let tab = group.ts.rowTabs.Head
+                            let grabbed = tab.location.add(data.offsetIn tab.size)
+                            abs(grabbed.x-releasedAt.x)<=2 && (OS().windowFromHwnd b).bounds.size=incomingSize))
+                    let window = OS().windowFromHwnd b
+                    let beforeCancel = window.bounds
+                    onGroup dragTarget (fun group ->
+                        let target = dragTargetFor group.ts.hwnd
+                        check (target.dragEnter (box data) (group.ts.tabLocation(Tab b))) "The independent tab drag did not start"
+                        target.dragExit()
+                        target.dragCancel(box data)
+                        target.dragEnd())
+                    pumpUntil "Cancelling a drag left the independent window away from its original position" (fun () ->
+                        window.bounds=beforeCancel && onGroup dragTarget (fun group -> group.topWindow=b))
+                if sourceDock=TabDockTop && targetDock=TabDockLeft then
+                    let incoming = OS().windowFromHwnd b
+                    pumpUntil "A tab dropped into an independent group did not land at its destination at its own size" (fun () ->
+                        incoming.visibleBounds.location=targetFrame.location && incoming.bounds.size=incomingSize &&
+                        onGroup dragTarget (fun group -> group.layoutFrame=incoming.visibleBounds))
                 check (onGroup dragTarget (fun group -> group.ts.carriedIn)=None) "A tab let go in a strip stayed marked as carried in"
                 check (onGroup dragTarget (fun group -> group.ts.dock)=targetDock) "Drag changed the destination orientation"
                 // Only the group a tab was dropped into is one made by hand, to be remembered.
@@ -1288,6 +1572,9 @@ let main() =
                 onGroup group (fun g -> g.tabActivate(Tab pictured.Handle,false))
                 pumpUntil "The pictured tab did not come in front" (fun () -> onGroup group (fun g -> g.topWindow=pictured.Handle))
                 wait 900L
+                onGroup group (fun g ->
+                    let image = g.ts.tabInfo(Tab pictured.Handle).preview()
+                    image.bitmap.Dispose())
                 // It stops painting, and goes behind.
                 stripe.Visible <- false
                 pictured.Refresh()
