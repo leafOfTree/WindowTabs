@@ -1022,6 +1022,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             isPinned = false
             iconSmall = System.Drawing.SystemIcons.Application
             iconBig = System.Drawing.SystemIcons.Application
+            cachedPreview = fun _ -> Img(Sz(1,1))
             preview = fun() -> Img(Sz(1,1))
         })
 

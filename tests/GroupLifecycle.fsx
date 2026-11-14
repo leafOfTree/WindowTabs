@@ -1349,6 +1349,9 @@ let main() =
                 onGroup group (fun g -> g.tabActivate(Tab pictured.Handle,false))
                 pumpUntil "The pictured tab did not come in front" (fun () -> onGroup group (fun g -> g.topWindow=pictured.Handle))
                 wait 900L
+                onGroup group (fun g ->
+                    let image = g.ts.tabInfo(Tab pictured.Handle).preview()
+                    image.bitmap.Dispose())
                 // It stops painting, and goes behind.
                 stripe.Visible <- false
                 pictured.Refresh()

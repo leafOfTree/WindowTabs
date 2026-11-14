@@ -9,6 +9,7 @@ and TabInfo = {
     iconSmall: Icon
     iconBig: Icon
     preview: unit -> Img
+    cachedPreview: (unit -> unit) -> Img
     isRenamed: bool
     /// The splits above this tab's pane, root first, with the side taken at each: the button on
     /// the seam between two pane tabs shows the split that parts them; the text itself stays clean.

@@ -322,12 +322,24 @@ module WindowGroupToken =
 /// strip's preview on hover, printed off its thread, as much as the taskbar's.
 /// Each is kept as a PNG: as pixels, every tab of every group held over a megabyte that nothing
 /// looked at until its preview.
+type private TabCaptureState() =
+    member val saved : byte[] option = None with get,set
+    member val blank = false with get,set
+    member val busy = false with get,set
+    member val publishPending = false with get,set
+    member val completed = -1000L with get,set
+    member val notify : (unit -> unit) option = None with get,set
+
 type TabCaptures() =
     let gate = obj()
-    let captures = Collections.Generic.Dictionary<IntPtr,byte[]>()
-    /// Tabs that printed blank while hidden; printing them again before they come to the front
-    /// would only be slow.
-    let blank = Collections.Generic.HashSet<IntPtr>()
+    let clock = Diagnostics.Stopwatch.StartNew()
+    let entries = Collections.Generic.Dictionary<IntPtr,TabCaptureState>()
+    let mutable disposed = false
+    let current hwnd state =
+        match entries.TryGetValue hwnd with
+        | true,active -> obj.ReferenceEquals(active,state)
+        | _ -> false
+    let bytes (state:TabCaptureState) = state.saved |> Option.map(fun image -> int64 image.Length) |> Option.defaultValue 0L
 
     static member maxSide = 800
 
@@ -352,74 +364,100 @@ type TabCaptures() =
             result.Dispose()
             reraise()
 
-    member this.count = lock gate (fun () -> captures.Count)
-    member private this.keptBytesUnlocked = captures.Values |> Seq.sumBy(fun saved -> int64 saved.Length)
-    /// The bytes the kept captures hold.
-    member this.keptBytes = lock gate (fun () -> this.keptBytesUnlocked)
+    member _.count = lock gate (fun () -> entries.Values |> Seq.filter(fun entry -> entry.saved.IsSome) |> Seq.length)
+    member _.keptBytes = lock gate (fun () -> entries.Values |> Seq.sumBy bytes)
 
-    /// Keeps a copy of a capture that shows the window.
-    member this.remember (hwnd:IntPtr) (image:Bitmap) =
-        if not(TabCaptures.isBlank image) then
-            let ratio = min 1.0 (float TabCaptures.maxSide / float (max image.Width image.Height))
-            let size = Size(max 1 (int(float image.Width * ratio)),max 1 (int(float image.Height * ratio)))
-            let saved =
-                use copy = TabCaptures.scaled image size
-                use stream = new MemoryStream()
-                copy.Save(stream,ImageFormat.Png)
-                stream.ToArray()
-            lock gate (fun () ->
-                blank.Remove hwnd |> ignore
-                let previous = match captures.TryGetValue hwnd with | true,old -> int64 old.Length | _ -> 0L
-                captures.[hwnd] <- saved
-                ResourceCounters.capturesChanged (int64 saved.Length - previous))
-
-    /// The capture to show for a window of the given size: a live one when it shows the window,
-    /// else the last that did. A hidden tab known to print blank is not printed again. The live
-    /// one is printed outside the lock: a slow window held up every other picture of the group.
-    member this.preview (hwnd:IntPtr) (size:Size) (minimized:bool) (inFront:bool) (capture:unit -> Img) : Img =
-        let fromSaved (size:Size) =
-            match captures.TryGetValue hwnd with
-            | true,saved ->
-                use stream = new MemoryStream(saved)
-                use image = Image.FromStream(stream)
-                Some(Img(TabCaptures.scaled image size))
-            | _ -> None
-        let known = lock gate (fun () -> if not minimized && not inFront && blank.Contains hwnd then fromSaved size else None)
-        match known with
-        | Some image -> image
-        | None ->
-            let live = capture()
-            let shows = not minimized && not(TabCaptures.isBlank live.bitmap)
-            if shows then
-                this.remember hwnd live.bitmap
-                live
-            else
-                lock gate (fun () ->
-                    if not minimized then blank.Add hwnd |> ignore
-                    match fromSaved live.bitmap.Size with
-                    | Some image ->
+    /// Bind the preview to this membership, even if the same HWND later rejoins the group.
+    member _.bind hwnd =
+        let state = lock gate (fun () ->
+            match entries.TryGetValue hwnd with
+            | true,state -> state
+            | _ ->
+                let state = TabCaptureState()
+                if not disposed then entries.Add(hwnd,state)
+                state)
+        fun (size:Size) minimized inFront (placeholder:unit -> Img) (capture:unit -> Img) (notify:(unit -> unit) option) ->
+            let render saved =
+                match saved with
+                | None -> placeholder()
+                | Some (data:byte[]) ->
+                    use stream = new MemoryStream(data)
+                    use image = Image.FromStream(stream)
+                    Img(TabCaptures.scaled image size)
+            let start,saved = lock gate (fun () ->
+                let wanted = current hwnd state && not minimized && (inFront || not state.blank)
+                let fresh = notify.IsSome && (state.publishPending || clock.ElapsedMilliseconds-state.completed<500L)
+                if notify.IsSome then state.publishPending <- false
+                if wanted && not fresh && notify.IsSome then state.notify <- notify
+                let start = wanted && not fresh && not state.busy
+                if start then state.busy <- true
+                start,state.saved)
+            let grab() =
+                try
+                    let live = capture()
+                    try
+                        let saved =
+                            if TabCaptures.isBlank live.bitmap then None else
+                            let source = live.bitmap
+                            let ratio = min 1.0 (float TabCaptures.maxSide / float (max source.Width source.Height))
+                            use copy = TabCaptures.scaled source (Size(max 1 (int(float source.Width*ratio)),max 1 (int(float source.Height*ratio))))
+                            use stream = new MemoryStream()
+                            copy.Save(stream,ImageFormat.Png)
+                            Some(stream.ToArray())
+                        let fallback = lock gate (fun () ->
+                            if current hwnd state then
+                                match saved with
+                                | Some data ->
+                                    let previous = bytes state
+                                    state.saved <- Some data
+                                    ResourceCounters.capturesChanged (int64 data.Length-previous)
+                                    state.blank <- false
+                                | None -> state.blank <- not inFront
+                                state.completed <- clock.ElapsedMilliseconds
+                            state.saved)
+                        if saved.IsSome then live else
+                            live.bitmap.Dispose()
+                            render fallback
+                    with _ ->
                         live.bitmap.Dispose()
-                        image
-                    | None -> live)
+                        reraise()
+                finally
+                    let doneNotify = lock gate (fun () ->
+                        state.busy <- false
+                        let callback = if current hwnd state then state.notify else None
+                        state.notify <- None
+                        state.publishPending <- callback.IsSome
+                        callback)
+                    doneNotify |> Option.iter(fun ready -> ready())
+            if not start then render saved
+            elif notify.IsNone then grab()
+            else
+                ThreadHelper.queueBackground(fun () ->
+                    try (grab()).bitmap.Dispose() with _ -> ())
+                render saved
 
-    /// The tab is in front again and paints, so its next capture is worth taking.
-    member this.shown (hwnd:IntPtr) = lock gate (fun () -> blank.Remove hwnd |> ignore)
-
-    member this.forget (hwnd:IntPtr) =
-        lock gate (fun () ->
-            blank.Remove hwnd |> ignore
-            match captures.TryGetValue hwnd with
-            | true,saved ->
-                captures.Remove hwnd |> ignore
-                ResourceCounters.capturesChanged (-(int64 saved.Length))
-            | _ -> ())
-
+    member _.needsFrontCapture hwnd = lock gate (fun () ->
+        match entries.TryGetValue hwnd with true,state -> state.blank | _ -> false)
+    member _.shown hwnd = lock gate (fun () ->
+        match entries.TryGetValue hwnd with
+        | true,state -> state.blank <- false; state.completed <- -1000L; state.publishPending <- false
+        | _ -> ())
+    member _.forget hwnd = lock gate (fun () ->
+        match entries.TryGetValue hwnd with
+        | true,state ->
+            ResourceCounters.capturesChanged (-(bytes state))
+            state.saved <- None
+            state.notify <- None
+            entries.Remove hwnd |> ignore
+        | _ -> ())
     interface IDisposable with
-        member this.Dispose() =
-            lock gate (fun () ->
-                ResourceCounters.capturesChanged (-this.keptBytesUnlocked)
-                captures.Clear()
-                blank.Clear())
+        member _.Dispose() = lock gate (fun () ->
+            disposed <- true
+            for state in entries.Values do
+                ResourceCounters.capturesChanged (-(bytes state))
+                state.saved <- None
+                state.notify <- None
+            entries.Clear())
 
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
@@ -1018,37 +1056,39 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.getTabInfo(hwnd) =
         let window = this.os.windowFromHwnd(hwnd)
+
         let small,big = StartupTrace.measure "group.icons" (fun () -> iconCache.get(hwnd))
-        let print() =
+        let placeholder (size:Sz) () =
+            try
+                let side = max 32 (min 256 (min size.width size.height / 3))
+                let shellIcon =
+                    try
+                        if window.className="ApplicationFrameWindow" then AppIcons.GetAppIcon(AppIcons.GetHostedAppId(hwnd),side)
+                        else
+                            let path = window.pid.processPath
+                            if AppIcons.HasOwnIcon(path) then AppIcons.GetFileIcon(path,side) else null
+                    with _ -> null
+                use large = if isNull shellIcon then (let _,icon = iconCache.get(hwnd) in icon.ToBitmap()) else shellIcon
+                let img = Img(size)
                 try
-                    if window.isMinimized then
-                        // A minimized window cannot be printed. It stands in as its app's icon, a
-                        // third of the window's shorter side: the taskbar shrinks the whole window
-                        // to a thumbnail, and a 32-pixel icon became a dot.
-                        let size = this.previewArea.size
-                        let side = max 32 (min 256 (min size.width size.height / 3))
-                        let shellIcon =
-                            try
-                                if window.className="ApplicationFrameWindow" then AppIcons.GetAppIcon(AppIcons.GetHostedAppId(hwnd),side)
-                                else
-                                    let path = window.pid.processPath
-                                    if AppIcons.HasOwnIcon(path) then AppIcons.GetFileIcon(path,side) else null
-                            with _ -> null
-                        use large = if isNull shellIcon then (let _,icon = iconCache.get(hwnd) in icon.ToBitmap()) else shellIcon
-                        let img = Img(size)
-                        try
-                            use g = img.graphics
-                            use background = new SolidBrush(if ThemeService.currentIsDark() then Color.FromArgb(56,56,56) else Color.FromArgb(232,232,232))
-                            g.FillRectangle(background, Rect(Pt(), size).Rectangle)
-                            g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
-                            g.DrawImage(large, Rectangle((size.width-side)/2, (size.height-side)/2, side, side))
-                            img
-                        with _ ->
-                            img.bitmap.Dispose()
-                            reraise()
-                    else
-                        StartupTrace.measure "preview.print" (fun () -> Img(Win32Helper.PrintWindow(hwnd)))
-                with ex -> Img(Sz(1, 1))
+                    use g = img.graphics
+                    use background = new SolidBrush(if ThemeService.currentIsDark() then Color.FromArgb(56,56,56) else Color.FromArgb(232,232,232))
+                    g.FillRectangle(background, Rect(Pt(), size).Rectangle)
+                    g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
+                    g.DrawImage(large, Rectangle((size.width-side)/2, (size.height-side)/2, side, side))
+                    img
+                with _ ->
+                    img.bitmap.Dispose()
+                    reraise()
+            with _ -> Img(Sz(1, 1))
+        let print() =
+            try StartupTrace.measure "preview.print" (fun () -> Img(Win32Helper.PrintWindow(hwnd)))
+            with _ -> Img(Sz(1, 1))
+        let capture = captures.bind hwnd
+        let preview notify =
+            let minimized = window.isMinimized
+            let size = if minimized then this.previewArea.size else window.bounds.size
+            capture size.Size minimized (frontWindow=hwnd) (placeholder size) print notify
         {
             text = this.tabName hwnd
             isRenamed = this.isRenamed hwnd
@@ -1057,9 +1097,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             iconSmall = small
             iconBig = big
             // Called off the group's thread too: the tab in front is read from a field, not a cell.
-            preview = fun() ->
-                let bounds = window.bounds
-                captures.preview hwnd (Size(bounds.width,bounds.height)) window.isMinimized (frontWindow=hwnd) print
+            preview = fun() -> preview None
+            cachedPreview = fun ready -> preview (Some ready)
         }
     
     member private this.tintTab dark hwnd =
@@ -2845,10 +2884,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.captureFront() =
         captureTimer.Stop()
         let front = frontWindow
-        if not isDestroyed.value && this.windows.contains front then
+        if not isDestroyed.value && this.windows.contains front && captures.needsFrontCapture front then
             captures.shown front
             if not (this.os.windowFromHwnd(front).isMinimized) then
-                let image = this.ts.tabInfo(Tab front).preview()
+                let image = this.ts.tabInfo(Tab front).cachedPreview ignore
                 image.bitmap.Dispose()
 
     member this.destroy() =

@@ -223,6 +223,7 @@ type TitleBarDrag(hwnd:IntPtr, strips:ITitleBarDropTarget list, ownStrip:IntPtr,
             ownedIcons <- List.choose id [small;big]
             let orDefault = Option.defaultValue SystemIcons.Application
             brought <- [Tab hwnd,{ text=window.text; iconSmall=orDefault small; iconBig=orDefault big
+                                   cachedPreview=(fun _ -> Img(Sz(1,1)))
                                    preview=(fun () -> Img(Sz(1,1))); isRenamed=false; splitTrail=None; isPinned=false }]
         timer.Start()
 

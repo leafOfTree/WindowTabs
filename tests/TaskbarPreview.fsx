@@ -311,12 +311,16 @@ let main() =
     let captures = new TabCaptures()
     let picturesBefore = ResourceCounters.captureByteCount()
     let hwnd = IntPtr(0x1234)
+    check (not (captures.needsFrontCapture hwnd)) "A tab nobody previewed requested a front capture"
     let size = Size(1600,1000)
+    let mutable bound = captures.bind hwnd
+    let preview size minimized front placeholder capture = bound size minimized front placeholder capture None
+    let unexpectedPlaceholder() = failwith "Unexpected preview placeholder"
     let mutable printed = 0
     let print (image:unit -> Img) = fun () -> printed <- printed + 1; image()
     // In front, the live capture is shown and kept, smaller than the window.
     let front = drawn (Sz(1600,1000))
-    let shown = captures.preview hwnd size false true (print (fun () -> front))
+    let shown = preview size false true unexpectedPlaceholder (print (fun () -> front))
     check (obj.ReferenceEquals(shown.bitmap, front.bitmap) && captures.count = 1) "A capture from the front was not shown and kept"
     // Kept compressed: as pixels, each tab of every group held over a megabyte.
     let pixelBytes = int64(TabCaptures.maxSide * TabCaptures.maxSide * 1000 / 1600 * 4)
@@ -327,37 +331,82 @@ let main() =
     shown.bitmap.Dispose()
     // Hidden and printing black, the kept capture comes back at the window's size.
     let black = solidImage (Sz(1600,1000)) Color.Black
-    let standIn = captures.preview hwnd size false false (print (fun () -> black))
+    let standIn = preview size false false unexpectedPlaceholder (print (fun () -> black))
     check (disposed black.bitmap) "A blank capture was kept instead of released"
     check (standIn.bitmap.Width = 1600 && standIn.bitmap.GetPixel(800,500).ToArgb() = Color.SeaGreen.ToArgb()) "A blank hidden tab did not show its last capture"
     standIn.bitmap.Dispose()
     // Known to print blank, it is not printed again while hidden.
+    check (captures.needsFrontCapture hwnd) "A blank background preview did not request a refreshed picture"
     let before = printed
-    let again = captures.preview hwnd size false false (print (fun () -> failwith "printed a tab known to print blank"))
+    let again = preview size false false unexpectedPlaceholder (print (fun () -> failwith "printed a tab known to print blank"))
     check (printed = before && again.bitmap.Width = 1600) "A tab known to print blank was printed again"
     again.bitmap.Dispose()
     // Minimized, the last capture stands in for the placeholder.
-    let placeholder = drawn (Sz(400,250))
-    let minimized = captures.preview hwnd (Size(400,250)) true false (fun () -> placeholder)
-    check (disposed placeholder.bitmap && minimized.bitmap.GetPixel(200,125).ToArgb() = Color.SeaGreen.ToArgb()) "A minimized tab did not show its last capture"
+    let placeholder() = failwith "A minimized tab ignored its saved image"
+    let minimized = preview (Size(400,250)) true false placeholder (fun () -> failwith "Printed a minimized tab")
+    check (minimized.bitmap.GetPixel(200,125).ToArgb() = Color.SeaGreen.ToArgb()) "A minimized tab did not show its last capture"
     minimized.bitmap.Dispose()
     // Back in front, it is printed again; a window that left takes its capture with it.
     captures.shown hwnd
-    let printedAgain = captures.preview hwnd size false false (print (fun () -> drawn (Sz(1600,1000))))
+    let printedAgain = preview size false false unexpectedPlaceholder (print (fun () -> drawn (Sz(1600,1000))))
     check (printed = before + 1) "A tab that was in front again was not printed"
     printedAgain.bitmap.Dispose()
     captures.forget hwnd
+    bound <- captures.bind hwnd
     let unknown = solidImage (Sz(64,48)) Color.Black
-    let withoutCapture = captures.preview hwnd (Size(64,48)) false false (fun () -> unknown)
-    check (obj.ReferenceEquals(withoutCapture.bitmap, unknown.bitmap) && captures.count = 0) "A forgotten tab kept its capture"
+    let placeholder() = drawn (Sz(64,48))
+    let beforeBlank = printed
+    for attempt in 1..3 do
+        let result = preview (Size(64,48)) false false placeholder (print (fun () -> unknown))
+        use bitmap = result.bitmap
+        check (bitmap.GetPixel(32,24).ToArgb()=Color.SeaGreen.ToArgb()) "A first blank capture had no fallback"
+    check (printed=beforeBlank+1 && disposed unknown.bitmap && captures.count=0 && captures.needsFrontCapture hwnd)
+          "An uncached blank tab was printed repeatedly or lost its refresh"
     check (ResourceCounters.captureByteCount()=picturesBefore) "The resources still counted a forgotten tab's capture"
-    withoutCapture.bitmap.Dispose()
     (captures :> IDisposable).Dispose()
+    // While PrintWindow is blocked, both DWM requests return immediately. A late result
+    // belongs to the membership that started it, even when the HWND rejoins the same group.
+    for closeGroup in [false;true] do
+        use cache = new TabCaptures()
+        use started = new Threading.ManualResetEventSlim()
+        use release = new Threading.ManualResetEventSlim()
+        let mutable calls = 0
+        let mutable notified = 0
+        let slow() =
+            Threading.Interlocked.Increment(&calls) |> ignore
+            started.Set()
+            if not (release.Wait(3000)) then failwith "A preview blocked the requesting thread"
+            drawn (Sz(64,48))
+        let old = cache.bind hwnd
+        let ready() = Threading.Interlocked.Increment(&notified) |> ignore
+        let request() = old (Size(64,48)) false true placeholder slow (Some ready)
+        try
+            (request()).bitmap.Dispose()
+            check (started.Wait(1000)) "The background capture did not start"
+            (request()).bitmap.Dispose()
+            let overlap = old (Size(64,48)) false true placeholder slow None
+            overlap.bitmap.Dispose()
+            check (calls=1) "Concurrent requests printed the slow window again"
+            if closeGroup then (cache :> IDisposable).Dispose() else cache.forget hwnd
+            if not closeGroup then
+                let next = cache.bind hwnd
+                (next (Size(64,48)) false true placeholder (fun () -> drawn (Sz(64,48))) None).bitmap.Dispose()
+        finally release.Set()
+        // Use a synchronous in-flight capture to check completion without relying on sleeps.
+        let cache2 = new TabCaptures()
+        let bound2 = cache2.bind hwnd
+        let during() =
+            if closeGroup then (cache2 :> IDisposable).Dispose() else cache2.forget hwnd
+            drawn (Sz(64,48))
+        (bound2 (Size(64,48)) false true placeholder during None).bitmap.Dispose()
+        check (cache2.count=0 && cache2.keptBytes=0) "A late capture repopulated released storage"
+        (cache2 :> IDisposable).Dispose()
+        check (notified=0 && cache.count=(if closeGroup then 0 else 1)) "An obsolete preview was published"
     // Captures still kept as their group closes leave the count with it.
     do
         use closing = new TabCaptures()
-        use picture = (drawn (Sz(400,300))).bitmap
-        closing.remember (IntPtr(0x5678)) picture
+        let picture = closing.bind (IntPtr(0x5678)) (Size(400,300)) false true unexpectedPlaceholder (fun () -> drawn (Sz(400,300))) None
+        picture.bitmap.Dispose()
         check (ResourceCounters.captureByteCount()>picturesBefore) "The resources did not count a second capture"
     check (ResourceCounters.captureByteCount()=picturesBefore) "The resources still counted a closed group's captures"
     printfn "PASS: preview ownership on success/failure, crop identity, composition, 400 native bitmap publications without forced GC, centred thumbnails, the badged taskbar icon and stand-in captures for hidden tabs."
