@@ -1264,7 +1264,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let palette = TabSearchForm([],[],settings=(settingsManager :> ISettings),pick=this.activateWindow,pages=pages,scope=wanted,windows=false)
                 // The group's own choices, read on its thread, shown beside their commands once in.
                 match this.desktop.groups.tryFind(fun group -> group.windows.contains((=)active)) with
-                | Some(:? GroupInfo as info) -> info.readShownChoices(fun () -> palette.Refresh())
+                | Some(:? GroupInfo as info) ->
+                    let changes = info.shownChoicesChanged.Subscribe(fun () -> palette.Refresh())
+                    palette.Ended.Add(fun () -> changes.Dispose())
+                    info.readShownChoices ignore
                 | _ -> ()
                 palette
         let isWindows = scope.IsNone

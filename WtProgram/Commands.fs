@@ -248,6 +248,15 @@ module Commands =
     let private shownChoices hwnd =
         groupOf hwnd |> Option.bind(fun group -> match group with :? GroupInfo as info -> info.shownChoices | _ -> None)
     let private readAgain (group:IGroup) = match group with :? GroupInfo as info -> info.readShownChoices ignore | _ -> ()
+    let private windowBehavior id text command (selected:GroupChoicesShown -> bool) =
+        let enabled hwnd = groupOf hwnd |> Option.exists(function :? GroupInfo as info -> info.group.canChangeWindowBehavior | _ -> false)
+        { plain id text GroupCommands enabled (onGroup(fun g ->
+              match g with
+              | :? GroupInfo as info when info.group.canChangeWindowBehavior ->
+                  g.run command
+                  readAgain g
+              | _ -> ()))
+          with state=fun hwnd -> if hasGroup hwnd then Some(shownChoices hwnd |> Option.exists selected) else None }
     /// A group setting's choices, the one it has now ticked as a setting's are, and its name now.
     /// `now`: the group's own value, or none when no option is its value.
     let private groupChoice (options:(LocalizedText * 'value) list) (now:GroupChoicesShown -> 'value option) (set:'value -> GroupCommand) =
@@ -528,6 +537,10 @@ module Commands =
                         | None,Some layout -> Some layout.iconOnly
                         | None,None -> Some(Services.settings.getValue("showIconsOnly") :?> bool) }
         { choosing "group-tab-position" Strings.Commands.groupTabPosition GroupCommands hasGroup (snd positionChoice) with current=fst positionChoice }
+        windowBehavior "group-keep-window-sizes" Strings.Commands.keepWindowSizes ToggleKeepWindowSizes
+            (fun shown -> shown.keepWindowSizes)
+        windowBehavior "group-inactive-off-screen" Strings.Commands.inactiveOffScreen ToggleInactiveOffScreen
+            (fun shown -> shown.transparentMode)
         { choosing "group-tab-alignment" Strings.Commands.groupTabAlignment GroupCommands hasGroup (snd alignmentChoice) with current=fst alignmentChoice }
         { choosing "group-auto-hide" Strings.Commands.groupAutoHide GroupCommands hasGroup (snd autoHideChoice) with current=fst autoHideChoice }
         { plain "combine-group-taskbar-icons" Strings.Commands.combineGroupIcons GroupCommands hasGroup (onGroup(fun g ->

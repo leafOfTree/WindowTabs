@@ -777,6 +777,9 @@ module Strings =
         let private forThisGroup (setting:LocalizedText) (more:string) =
             { en=setting.en+" for this group"+more; zh=setting.zh+"（此分组）"+more; ja=setting.ja+"（このグループ）"+more; ar=setting.ar+" لهذه المجموعة"+more }
         let iconsOnly = { caption=forThisGroup TabMenu.showIconsOnly ""; description={ en="Again, and the titles come back."; zh="再次执行则恢复标题。"; ja="もう一度実行するとタイトルが戻ります。"; ar="مرة أخرى، وتعود العناوين." }; keywords={ en="titles compact"; zh="标题 紧凑"; ja="タイトル コンパクト"; ar="عناوين مضغوط" } }
+        let keepWindowSizes = { caption=TabMenu.keepWindowSizes; description=TabMenu.windowBehavior
+                                keywords={ en="independent windows"; zh="独立窗口"; ja="独立ウィンドウ"; ar="نوافذ مستقلة" } }
+        let inactiveOffScreen = { caption=TabMenu.transparentMode; description=TabMenu.transparentModeNote; keywords=TabMenu.windowBehavior }
         let groupTabPosition = { caption=forThisGroup Settings.tabPosition.caption "…"; description=groupNote; keywords={ en="move top left right side"; zh="移动 顶部 左侧 右侧"; ja="移動 上 左 右"; ar="نقل أعلى يسار يمين" } }
         let groupTabAlignment = { caption=forThisGroup Settings.tabAlignment.caption "…"; description=groupNote; keywords={ en="move alignment center"; zh="移动 对齐 居中"; ja="移動 配置 中央"; ar="نقل محاذاة وسط" } }
         let groupAutoHide = { caption=forThisGroup Settings.autoHide.caption "…"; description=groupNote; keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }

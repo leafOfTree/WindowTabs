@@ -1468,6 +1468,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.placementBounds : Rect = placement.value.map(fun(bounds,_,_) -> bounds).def(Rect())
 
     member _.layout = groupLayout
+    /// Commands also check availability on the desktop thread, before dispatch to this group.
+    member _.canChangeWindowBehavior = System.Threading.Volatile.Read(&groupLayout)=GroupLayout.Single
     /// Set by the strip for the length of a tab drag, on this thread.
     member _.transitionsPaused with get() = dragPause and set(value) = dragPause <- value
     member this.splitLayout = match groupLayout with Split s -> Some s | _ -> None
@@ -2174,6 +2176,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 StripOrder.arrange PinnedTabs.contains this.lorder.list wanted
                 |> List.iteri(fun index hwnd -> if this.lorder.list.[index]<>hwnd then this.ts.moveTab(Tab(hwnd),index))
             | ToggleIconsOnly -> this.isIconOnly <- not this.isIconOnly
+            | ToggleKeepWindowSizes -> if this.canChangeWindowBehavior then this.keepWindowSizes <- not this.keepWindowSizes
+            | ToggleInactiveOffScreen -> if this.canChangeWindowBehavior then this.transparentMode <- not this.transparentMode
             | SetTabDock dock -> this.ts.dock <- dock
             // The tabs' direction in view, as the tab menu's alignment items set.
             | SetTabAlignment alignment -> this.chooseAlignment(alignment,zorderCell.value.tryHead |> Option.defaultValue IntPtr.Zero)

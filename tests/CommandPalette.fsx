@@ -387,6 +387,27 @@ let main() =
             info.readShownChoices(fun () -> read <- true)
             pumpUntil "The group's choices read" (fun () -> read)
             let palettePage = CommandPalette.actionsPage active
+            let keepId,hideId = "group-keep-window-sizes","group-inactive-off-screen"
+            let behaviorRow id =
+                let command = (Commands.find id).Value
+                palettePage.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
+            let keep,hide = behaviorRow keepId,behaviorRow hideId
+            let turn id row =
+                commandsRun.Add id |> ignore
+                match palettePage.choose row with Stay -> () | _ -> issues.Add(id+" closed the palette")
+            let checkModes keepSize offScreen =
+                pumpUntil "The palette updating both window behavior switches" (fun () ->
+                    (palettePage.aside "" keep).switch=Some keepSize && (palettePage.aside "" hide).switch=Some offScreen)
+                note (onGroupOf active (fun group -> group.keepWindowSizes,group.transparentMode)=(keepSize,offScreen))
+                     "The palette and tab menu disagree about window behavior"
+            note (TabSearch.matches "window behavior" keep && TabSearch.matches "window behavior" hide && TabSearch.matches "透明" hide)
+                 "Window behavior switches were missing from palette search"
+            turn keepId keep
+            checkModes true true
+            turn hideId hide
+            checkModes true false
+            turn keepId keep
+            checkModes false false
             for id,expected in ["group-tab-position",tr Strings.TabMenu.top
                                 "group-tab-alignment",tr Strings.Common.left
                                 "group-auto-hide",tr Strings.Common.never] do
@@ -476,6 +497,8 @@ let main() =
             let before = picks.Count
             runDone "split-next" splitOne
             pumpUntil "Split with the next tab" isSplit
+            for id in ["group-keep-window-sizes";"group-inactive-off-screen"] do
+                note (not ((Commands.find id).Value.enabled splitOne)) (id+" was offered in split view")
             let pair = onGroupOf splitOne (fun group -> group.splitLayout |> Option.map(fun s -> s.tree.axis,s.tree.first,s.tree.second))
             note (pair=Some(SideBySide,Leaf(Occupied shown),Leaf(Occupied other)) && picks.Count=before)
                  (sprintf "Split with the next tab did not put the next tab on the right of the one in front: %A" pair)

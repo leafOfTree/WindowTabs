@@ -497,15 +497,15 @@ type TabStripDecorator(group:WindowGroup) as this =
         let processPath = pid.processPath
 
         let windowBehaviorMenu =
-            let item label enabled click =
-                CmiRegular({ text=tr label; image=None; click=click
-                             flags=if group.layout=GroupLayout.Single then checkedFlag enabled else grayed true })
+            let item label enabled command =
+                CmiRegular({ text=tr label; image=None; click=(fun () -> group.run command)
+                             flags=if group.canChangeWindowBehavior then checkedFlag enabled else grayed true })
             CmiPopUp({
                 text=tr Strings.TabMenu.windowBehavior
                 image=None
                 items=List2([
-                    item Strings.TabMenu.keepWindowSizes group.keepWindowSizes (fun () -> group.keepWindowSizes <- not group.keepWindowSizes)
-                    item Strings.TabMenu.transparentMode group.transparentMode (fun () -> group.transparentMode <- not group.transparentMode)
+                    item Strings.TabMenu.keepWindowSizes group.keepWindowSizes ToggleKeepWindowSizes
+                    item Strings.TabMenu.transparentMode group.transparentMode ToggleInactiveOffScreen
                     CmiNote(tr Strings.TabMenu.transparentModeNote)
                 ])
             })

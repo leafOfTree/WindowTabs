@@ -273,6 +273,8 @@ type GroupCommand =
     | SetTabColor of IntPtr * TabColorChoice option
     | SetTabPinned of IntPtr * bool
     | ToggleIconsOnly
+    | ToggleKeepWindowSizes
+    | ToggleInactiveOffScreen
     | SetTabDock of TabDock
     | SetTabAlignment of Bemo.TabAlignment
     /// "Never", "Maximized" or "Always", for this group.
