@@ -193,14 +193,16 @@ module TabOrder =
 /// Native window properties survive WindowTabs restarts and expire with their owning HWND.
 module WindowTabLayout =
     let private key = "WindowTabs.TabLayout.v1"
-    let private marker = 0x57000000
+    // The earlier combined choice used 0x5f. Keep both choices when reading it back.
+    let private markers = [|(0x57,false,false); (0x5f,true,true); (0x67,true,false); (0x77,false,true)|]
     let save hwnd (layout:GroupTabLayout) =
         let dock = match layout.dock with TabDockTop -> 0 | TabDockBottom -> 1 | TabDockLeft -> 2 | TabDockRight -> 3
         let alignment = function TabLeft -> 0 | TabCenter -> 1 | TabRight -> 2
         let width = between SettingsCatalog.columnWidthRange layout.columnWidth
         // A dragged row's place in 254 steps above the alignments; 0 for none, as before it was kept.
         let placed = match layout.position with Some fraction -> 1+int(Math.Round(254.0*max 0.0 (min 1.0 fraction))) | None -> 0
-        let value = marker ||| width ||| (dock <<< 9) ||| (alignment layout.normalAlignment <<< 11) ||| (alignment layout.insideAlignment <<< 13) ||| (if layout.iconOnly then 1 <<< 15 else 0) ||| (placed <<< 16)
+        let marker,_,_ = markers |> Array.find(fun (_,hide,keep) -> hide=layout.transparentMode && keep=layout.keepWindowSizes)
+        let value = (marker <<< 24) ||| width ||| (dock <<< 9) ||| (alignment layout.normalAlignment <<< 11) ||| (alignment layout.insideAlignment <<< 13) ||| (if layout.iconOnly then 1 <<< 15 else 0) ||| (placed <<< 16)
         WinUserApi.SetProp(hwnd,key,IntPtr(value)) |> ignore
 
     let read hwnd =
@@ -208,12 +210,14 @@ module WindowTabLayout =
         let width = int(value &&& 511L)
         let normal,inside = int((value >>> 11) &&& 3L),int((value >>> 13) &&& 3L)
         let placed = int((value >>> 16) &&& 255L)
-        if value &&& ~~~0xFFFFFFL <> int64 marker || width<fst SettingsCatalog.columnWidthRange || width>snd SettingsCatalog.columnWidthRange || normal>2 || inside>2 then None
-        else
+        match markers |> Array.tryFind(fun (tag,_,_) -> value >>> 24 = int64 tag) with
+        | Some(_,hide,keep) when width>=fst SettingsCatalog.columnWidthRange && width<=snd SettingsCatalog.columnWidthRange && normal<=2 && inside<=2 ->
             let alignment = function 0 -> TabLeft | 1 -> TabCenter | _ -> TabRight
             let dock = match int((value >>> 9) &&& 3L) with 0 -> TabDockTop | 1 -> TabDockBottom | 2 -> TabDockLeft | _ -> TabDockRight
             Some {dock=dock;columnWidth=width;normalAlignment=alignment normal;insideAlignment=alignment inside;iconOnly=value &&& 32768L <> 0L
+                  transparentMode=hide; keepWindowSizes=keep
                   position=(if placed=0 then None else Some(float(placed-1)/254.0))}
+        | _ -> None
 
 /// A pane window's place in its group's split view, kept on the window itself as the group
 /// token is, so a restarted WindowTabs shows the split again as the windows come back.
@@ -462,6 +466,8 @@ type TabCaptures() =
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
     iconOnly: bool
+    transparentMode: bool
+    keepWindowSizes: bool
     dock: TabDock
     columnWidth: int
     alignments: (TabDirection * Bemo.TabAlignment) list
@@ -474,6 +480,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let invoker = InvokerService.invoker
     let _os = OS()
     let mutable hasSavedTabLayout = false
+    let mutable transparentModeChosen = false
+    let mutable keepWindowSizesChosen = false
     let mutable token = WindowGroupToken.fresh()
     let addedEvent = Event<_>()
     let movedEvent = Event<IntPtr*int>()
@@ -868,10 +876,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         Cell.listen <| fun() ->
             this.ts.visible <- isVisibleCell.value
 
-        this.ts.layoutChanged.Add(fun chosen ->
-            if chosen then hasSavedTabLayout <- true
-            if hasSavedTabLayout then
-                this.windows.items.iter(fun hwnd -> if heldByDrag<>Some hwnd then WindowTabLayout.save hwnd this.tabLayout))
+        this.ts.layoutChanged.Add(this.saveTabLayout)
         Services.registerLocal(this)
 
         plugins.iter <| fun p -> p.init()
@@ -974,12 +979,33 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             window.setForeground(false)
         | None -> ()
 
-    member private this.independentWindows =
-        groupLayout=GroupLayout.Single && this.windows.count>1 &&
+    member private this.hasFixedWindow =
         this.windows.items.any(fun hwnd -> IndependentWindowParking.fixedSize(this.os.windowFromHwnd hwnd))
 
+    member private this.parkInactive =
+        groupLayout=GroupLayout.Single && this.windows.count>1 &&
+        (transparentModeChosen || this.hasFixedWindow)
+
+    member private this.keepSizes = groupLayout=GroupLayout.Single && (keepWindowSizesChosen || this.hasFixedWindow)
+
+    /// A hidden follower takes the shared frame when revealed. Maximizing it while parked
+    /// would bring it back onto a monitor behind the translucent window.
+    member private this.revealWindow previous hwnd =
+        if IndependentWindowParking.parked hwnd then
+            if this.parkInactive && this.os.windowFromHwnd(hwnd).isMaximized then
+                previous |> Option.iter(fun old ->
+                    let outgoing = this.os.windowFromHwnd old
+                    if old<>hwnd && this.windows.contains old && outgoing.isMaximized && not (IndependentWindowParking.parked old) then
+                        IndependentWindowParking.park outgoing outgoing.bounds.location)
+            IndependentWindowParking.restore hwnd
+            if transparentModeChosen && not this.keepSizes && this.windows.contains hwnd then
+                placement.value |> Option.iter(fun (bounds,wp,visible) ->
+                    let request = FollowerPlacement.alignFrameRequest hwnd bounds visible wp None
+                    FollowerPlacement.queue.submit(placementOwner,hwnd,request)
+                    reconcilePlacementState <- true)
+
     member private this.hideChildWindows() =
-        if not this.independentWindows then
+        if not this.parkInactive && not this.keepSizes then
             zorderCell.value.tail.iter(fun hwnd -> FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.hideRequest hwnd))
 
     member private this.inZorder(windows:List2<IntPtr>) =
@@ -1010,10 +1036,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         match request with
                         | SetMinimized _ | AlignWindow(_,_,None,_) -> false
                         | _ -> true)))
-            newZorder.tryHead |> Option.iter IndependentWindowParking.restore
+            newZorder.tryHead |> Option.iter (this.revealWindow zorderCell.value.tryHead)
             prevTop.set(zorderCell.value.tryHead)
             zorderCell.set(newZorder)
-            if this.independentWindows && not newZorder.isEmpty then this.applyLayout()
+            if this.parkInactive && not newZorder.isEmpty then this.applyLayout()
 
     /// While the group minimizes or restores, Windows reorders its windows one by one; restored
     /// without activation, a tab owned by the taskbar window even rises above the one in front.
@@ -1363,9 +1389,33 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.tabLayout : GroupTabLayout = {
         dock=this.ts.dock; columnWidth=this.ts.columnWidth
         normalAlignment=this.ts.getAlignment TabUp; insideAlignment=this.ts.getAlignment TabDown
-        iconOnly=this.isIconOnly; position=this.ts.position }
+        iconOnly=this.isIconOnly; position=this.ts.position; transparentMode=transparentModeChosen; keepWindowSizes=keepWindowSizesChosen }
+
+    member private this.saveTabLayout chosen =
+        if chosen then hasSavedTabLayout <- true
+        if hasSavedTabLayout then
+            this.windows.items.iter(fun hwnd -> if heldByDrag<>Some hwnd then WindowTabLayout.save hwnd this.tabLayout)
+
+    member private this.setWindowModes(hide,keep) =
+        if (transparentModeChosen,keepWindowSizesChosen)<>(hide,keep) then
+            transparentModeChosen <- hide
+            keepWindowSizesChosen <- keep
+            this.saveTabLayout true
+            if groupLayout=GroupLayout.Single && this.windows.count>1 then
+                if not this.parkInactive then this.windows.items.iter IndependentWindowParking.restore
+                this.applyLayout()
+
+    member this.transparentMode
+        with get() = transparentModeChosen
+        and set(value) = this.setWindowModes(value,keepWindowSizesChosen)
+
+    member this.keepWindowSizes
+        with get() = keepWindowSizesChosen
+        and set(value) =
+            if value<>keepWindowSizesChosen then this.setWindowModes(value || transparentModeChosen,value)
 
     member this.applyTabLayout(layout:GroupTabLayout) =
+        this.setWindowModes(layout.transparentMode,layout.keepWindowSizes)
         this.ts.dock <- layout.dock
         this.ts.columnWidth <- layout.columnWidth
         this.ts.setAlignment(TabUp,layout.normalAlignment)
@@ -1387,6 +1437,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.appPathOf hwnd |> Option.iter AppTabPositions.forget
 
     member this.menuChoices = {
+        transparentMode = transparentModeChosen
+        keepWindowSizes = keepWindowSizesChosen
         iconOnly = this.isIconOnly
         dock = this.ts.dock
         columnWidth = this.ts.columnWidth
@@ -1394,6 +1446,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         autoHideMode = Option.ofObj(this.bb.read<string>("autoHideMode", null)) }
 
     member this.applyMenuChoices(choices:GroupMenuChoices) =
+        this.setWindowModes(choices.transparentMode,choices.keepWindowSizes)
         this.ts.dock <- choices.dock
         this.ts.columnWidth <- choices.columnWidth
         this.isIconOnly <- choices.iconOnly
@@ -2315,12 +2368,20 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // A tab carried in is placed once it is let go.
         if heldByDrag=Some hwnd then ()
         elif this.isSplit then this.applyLayout()
-        elif this.independentWindows && not this.isEmpty && hwnd<>this.topWindow then
+        elif this.parkInactive && not this.isEmpty && hwnd<>this.topWindow then
             let front = this.os.windowFromHwnd this.topWindow
             if not front.isMinimized then
+                FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) -> match request with AlignWindow _ -> true | _ -> false))
                 let follower = this.os.windowFromHwnd hwnd
                 let stripAbove = if this.ts.isVertical then 0 else max 0 (this.tabAppearance.tabHeight - this.tabAppearance.tabHeightOffset)
                 IndependentWindowParking.returnPoint stripAbove front follower |> Option.iter (IndependentWindowParking.park follower)
+        elif this.keepSizes then
+            if not this.isEmpty && hwnd<>this.topWindow then
+                let front,follower = this.os.windowFromHwnd this.topWindow,this.os.windowFromHwnd hwnd
+                if not (front.isMinimized || follower.isMaximized || follower.isMinimized) then
+                    let stripAbove = if this.ts.isVertical then 0 else max 0 (this.tabAppearance.tabHeight - this.tabAppearance.tabHeightOffset)
+                    IndependentWindowParking.returnPoint stripAbove front follower |> Option.iter(fun point ->
+                        if point<>follower.bounds.location then IndependentWindowParking.move hwnd point |> ignore)
         elif placement.value.IsSome && not changingMinimizeState then
             let bounds,wp,visible = placement.value.Value
             let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
@@ -2739,7 +2800,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.ts.removeTab(Tab(hwnd))
             tabColors <- tabColors.Remove hwnd
             this.setWindows(this.windows.remove hwnd)
-            if not this.independentWindows then this.windows.items.iter IndependentWindowParking.restore
+            if not this.parkInactive then this.windows.items.iter IndependentWindowParking.restore
             hookCleanup.value.find(hwnd).Dispose()
             hookCleanup.map(fun hooks -> hooks.remove(hwnd))
             removedEvent.Trigger(hwnd)
@@ -2839,8 +2900,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.activateIndex(index, force) =
         let nextTab = this.ts.lorder.tryAt(index)
-        nextTab.iter <| fun(nextTab) ->
-            this.tabActivate(nextTab, force)
+        nextTab.iter <| fun(Tab(hwnd)) ->
+            this.activate(hwnd,force,true,shortcut=true)
 
     member this.switchWindow(next,force) = 
         if this.windowCount > 1 then
@@ -2866,7 +2927,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         TabNavigation.lastActive order isOpen previousActiveTab current
 
     member this.switchToLastActive(force) =
-        this.lastUsedTab |> Option.iter(fun target -> this.tabActivate(Tab target, force))
+        this.lastUsedTab |> Option.iter(fun target -> this.activate(target,force,true,shortcut=true))
 
     /// A plugin can retain its native owners until asynchronous shell registration finishes.
     member _.addExitPreparation(action:(unit -> unit) -> unit) = exitPreparations.Add action
@@ -3024,9 +3085,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.tabActivate(Tab(hwnd), force) = this.activate(hwnd,force,true)
 
-    member private this.activate(hwnd, force, fade) =
-        IndependentWindowParking.restore hwnd
+    member private this.activate(hwnd, force, fade, ?shortcut:bool) =
+        if defaultArg shortcut false && zorderCell.value.tryHead<>Some hwnd then this.ts.prepareShortcutMove(Tab hwnd)
+        else this.ts.cancelShortcutMove()
         let window = this.os.windowFromHwnd(hwnd)
+        // Activating a parked maximized window can bring it back on screen immediately.
+        // Exchange it with the outgoing tab before handing foreground to its application.
+        // A shared-size follower may need a restore or maximize on the placement worker.
+        // Start that work after activation so it cannot put the old tab back in front.
+        let previous = zorderCell.value.tryHead
+        if previous=Some hwnd || window.isMinimized || this.keepSizes ||
+           (window.isMaximized && previous |> Option.exists(fun old -> this.os.windowFromHwnd(old).isMaximized)) then
+            this.revealWindow previous hwnd
         // The cover goes up before the window comes to the front: raised first, a parked pane
         // showed at the group's size over the tab shown for a frame, and a tab clicked over the
         // panes rose pane-sized among them, before the layout followed.
@@ -3035,7 +3105,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if next<>groupLayout then
                 this.beginTransition(groupLayout,next,hwnd,focus=hwnd,durationMs=SplitTransition.ClickMs)
                 coverAhead <- true
-            elif groupLayout=GroupLayout.Single && fade && not this.independentWindows then this.crossFadeTo hwnd
+            elif groupLayout=GroupLayout.Single && fade && not (this.parkInactive || this.keepSizes) then this.crossFadeTo hwnd
         // The strip is owned by the top window and only follows a new top window once the
         // foreground event comes back through the group. Until then the activated window
         // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows
@@ -3073,6 +3143,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.onActivated(hwnd)
                 if inFront then this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd))
         if not inFront then
+            this.ts.cancelShortcutMove()
+            if this.parkInactive then
+                zorderCell.value.tryHead |> Option.iter (this.revealWindow (Some hwnd))
+                this.applyLayout()
             // Activation can be refused (foreground lock), and the strip then goes back to the real
             // top window. Windows can also take a moment to raise it, so that is only decided once
             // it has had the time: handed back at once, the strip went under the tab as it rose.

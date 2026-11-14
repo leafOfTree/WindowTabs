@@ -332,7 +332,7 @@ let main() =
     check roundTrip.tabLayout.IsNone "Legacy workspace acquired an unintended tab layout"
     for dock in [TabDockTop;TabDockLeft;TabDockRight] do
         // A row's dragged place goes with the layout; a column has none.
-        let layout = {dock=dock;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabLeft;iconOnly=(dock=TabDockLeft);position=(if dock=TabDockTop then Some 0.25 else None)}
+        let layout = {dock=dock;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabLeft;transparentMode=(dock<>TabDockLeft);keepWindowSizes=(dock<>TabDockTop);iconOnly=(dock=TabDockLeft);position=(if dock=TabDockTop then Some 0.25 else None)}
         savedGroup.tabLayout <- Some layout
         let restored = WorkspaceGroup.deserialize(savedGroup.serialize())
         check (restored.tabLayout=Some layout) "Workspace lost tab position, logical width, alignment or the row's dragged place"
@@ -347,6 +347,9 @@ let main() =
     let oversized = WorkspaceData.tabLayout (JObject(JProperty("position","Right"),JProperty("columnWidth",10000)))
     check (oversized.columnWidth=snd SettingsCatalog.columnWidthRange) "Workspace width escaped the supported range"
     check (not oversized.iconOnly) "A workspace saved before icons-only layouts hid its titles"
+    check (not oversized.transparentMode && not oversized.keepWindowSizes) "An older workspace unexpectedly hid inactive windows"
+    let combined = WorkspaceData.tabLayout (JObject(JProperty("independentWindows",true)))
+    check (combined.transparentMode && combined.keepWindowSizes) "The previous combined mode lost one of its choices"
     for schema in [1;2;3] do
         let compatible = JObject(JProperty("workspaceSchemaVersion",schema),JProperty("workspaces",JArray(savedGroup.serialize() |> fun group -> JObject(JProperty("groups",JArray(group))))))
         let entries,_,blocked = WorkspaceData.read compatible

@@ -286,7 +286,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let placement,span = this.placementAndSpan
             // A column dragged along the side needs its room to know where it is let go.
             span |> Option.iter(fun span -> this.ts.columnSpan <- span)
-            this.ts.setPlacement(placement)
+            this.ts.setPlacement(placement, ?owner=(group.zorder.value.tryHead |> Option.map Tab))
             this.ts.visible <- not shownElsewhere
         // An empty pane keeps clear of tabs shown inside the title bars, wherever they now are.
         group.refreshSplitChrome()
@@ -481,6 +481,20 @@ type TabStripDecorator(group:WindowGroup) as this =
         let pid = window.pid
         let exeName = pid.exeName
         let processPath = pid.processPath
+
+        let windowBehaviorMenu =
+            let item label enabled click =
+                CmiRegular({ text=tr label; image=None; click=click
+                             flags=if group.layout=GroupLayout.Single then checkedFlag enabled else grayed true })
+            CmiPopUp({
+                text=tr Strings.TabMenu.windowBehavior
+                image=None
+                items=List2([
+                    item Strings.TabMenu.keepWindowSizes group.keepWindowSizes (fun () -> group.keepWindowSizes <- not group.keepWindowSizes)
+                    item Strings.TabMenu.transparentMode group.transparentMode (fun () -> group.transparentMode <- not group.transparentMode)
+                    CmiNote(tr Strings.TabMenu.transparentModeNote)
+                ])
+            })
 
         let positionItem =
             let item (text,dock) = CmiRegular({
@@ -796,6 +810,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(alignmentItem)
             Some(autoHideItem)
             Some(iconOnlyItem)
+            Some(CmiSeparator)
+            Some(windowBehaviorMenu)
             Some(CmiSeparator)
             Some(sortTabsItem)
             Some(combineIconsInTaskbar)

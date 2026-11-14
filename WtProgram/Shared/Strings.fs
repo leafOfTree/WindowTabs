@@ -53,6 +53,10 @@ module Strings =
 
     /// Tab context menu.
     module TabMenu =
+        let windowBehavior = { en="Window behavior"; zh="窗口行为"; ja="ウィンドウの動作"; ar="سلوك النوافذ" }
+        let keepWindowSizes = { en="Keep each window’s size"; zh="保留各窗口的大小"; ja="各ウィンドウのサイズを保持"; ar="الاحتفاظ بحجم كل نافذة" }
+        let transparentMode = { en="Keep inactive windows off-screen"; zh="将同组后台窗口移出屏幕"; ja="グループ内の非アクティブなウィンドウを画面外に置く"; ar="إبقاء النوافذ غير النشطة في المجموعة خارج الشاشة" }
+        let transparentModeNote = { en="Useful for transparent windows."; zh="适合透明窗口。"; ja="半透明のウィンドウに便利です。"; ar="مفيد للنوافذ الشفافة." }
         /// Under the alignments: the tabs can also be dragged along their edge with the right button.
         let dragToPlace = { en="Hold the right button on a tab, then drag anywhere"; zh="在标签上按住右键，拖动到任意位置"; ja="タブを右ボタンで押したまま、好きな位置へドラッグ"; ar="اضغط بالزر الأيمن على علامة تبويب، ثم اسحب إلى أي مكان" }
         /// In place of the hint once the row has been dragged, marked as the alignments are.

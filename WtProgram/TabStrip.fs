@@ -29,6 +29,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let dimmedCell = Bemo.Cell<bool>(Cell, false, (=))
     // Position is presentation state, not an input to pixel rendering.
     let mutable location = Pt.empty
+    let mutable destination = Pt.empty
+    let mutable shortcutTarget : (Tab * Pt) option = None
+    let mutable entryOffset = Pt.empty
+    let entryClock = Diagnostics.Stopwatch()
+    let entryTimer = new Timer(Interval=15)
     let mutable renderedFrames = 0L
     let mutable renderedOffset = 0
     let mutable relocating = false
@@ -170,6 +175,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         showInsideExport.init()
 
         revealTimer.Tick.Add(fun _ -> this.stepReveal())
+        entryTimer.Tick.Add(fun _ ->
+            let t = min 1.0 (entryClock.Elapsed.TotalMilliseconds / 100.0)
+            let remaining = 1.0 - TabReveal.ease t
+            let point = destination.add(entryOffset.mulf(remaining,remaining))
+            if t>=1.0 then entryTimer.Stop()
+            if location<>point then
+                location <- point
+                if this.visible then this.move())
         rowDragTimer.Tick.Add(fun _ ->
             match rowPress with
             | None -> rowDragTimer.Stop()
@@ -1220,11 +1233,42 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         with get() = appBarsCell.value
         and set(value) = appBarsCell.set(value)
 
-    member this.setPlacement(placement) =
-        let moved = location <> placement.bounds.location
+    member this.cancelShortcutMove() =
+        shortcutTarget <- None
+        entryTimer.Stop()
+        if location<>destination then
+            location <- destination
+            if this.visible then this.move()
+
+    member this.prepareShortcutMove(tab) =
+        let origin = location
+        this.cancelShortcutMove()
+        if this.visible && TabReveal.enabled() then
+            shortcutTarget <- Some(tab,origin)
+            entryClock.Restart()
+
+    member this.setPlacement(placement, ?owner:Tab) =
+        let previous = location
+        let target = placement.bounds.location
+        if destination<>target then
+            entryTimer.Stop()
+            destination <- target
+            location <- target
+            match shortcutTarget with
+            | Some(tab,origin) when Some tab=owner && entryClock.ElapsedMilliseconds<400L ->
+                shortcutTarget <- None
+                let delta = origin.sub target
+                let distance = delta.distance Pt.empty
+                if distance>=float (Dpi.scale 24) then
+                    let scale = float (Dpi.scale 8)/distance
+                    entryOffset <- delta.mulf(scale,scale)
+                    location <- target.add entryOffset
+                    entryClock.Restart()
+                    entryTimer.Start()
+            | _ -> ()
+        let moved = location<>previous
         let heightChanged = this.size.height<>placement.bounds.height
         let previousRender = renderedFrames
-        location <- placement.bounds.location
         this.withUpdate(fun () ->
             showInsideCell.set(placement.showInside)
             sizeCell.set(placement.bounds.size)
@@ -1243,6 +1287,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         and set(value) =
             // Windows may hide an owned popup independently of our desired state.
             // Keep the equal-value fast path, but restore externally hidden strips.
+            if not value then this.cancelShortcutMove()
             if value && visibleCell.value && not this.window.isVisible then this.update()
             else visibleCell.set(value)
             
@@ -1274,6 +1319,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member _.destroying = destroyingEvent.Publish
     member this.destroy() = 
         dragScrollTimer.Dispose()
+        entryTimer.Dispose()
         destroyingEvent.Trigger()
         revealTimer.Dispose()
         rowDragTimer.Dispose()

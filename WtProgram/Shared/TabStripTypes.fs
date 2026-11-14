@@ -124,6 +124,8 @@ type GroupTabLayout = {
     normalAlignment: TabAlignment
     insideAlignment: TabAlignment
     iconOnly: bool
+    transparentMode: bool
+    keepWindowSizes: bool
     /// Where a row of tabs was dragged to, as a share of the width left beside it, in place of
     /// its alignment; none for a column.
     position: float option }

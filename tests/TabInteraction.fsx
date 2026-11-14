@@ -835,6 +835,21 @@ let main() =
                 check (strip.bounds.location=moved && strip.bounds.size=size) "Tab strip did not follow the move"
                 check (shadow.location=moved.sub(Pt(Dpi.scale 15,Dpi.scale 15)) && shadow.isVisible) "Shadow did not follow the move"
                 check (os.windowFromHwnd(strip.hwnd).prevZorder.hwnd=shadow.hwnd) "Moving changed shadow stacking"
+                TabReveal.forced <- Some true
+                let active = strip.zorder.head
+                let below = moved.add(Pt(0,Dpi.scale 120))
+                strip.prepareShortcutMove(active)
+                strip.setPlacement(placement below size false,owner=active)
+                check (strip.bounds.location=below.sub(Pt(0,Dpi.scale 8))) "Shortcut slide did not start beside the destination"
+                strip.prepareShortcutMove(active)
+                strip.setPlacement(placement moved size false,owner=active)
+                check (strip.bounds.location=moved.add(Pt(0,Dpi.scale 8))) "A second shortcut queued the previous slide"
+                let settle = Diagnostics.Stopwatch.StartNew()
+                while strip.bounds.location<>moved && settle.ElapsedMilliseconds<1000L do
+                    Application.DoEvents()
+                    Threading.Thread.Sleep(5)
+                check (strip.bounds.location=moved && frames strip=count) "Shortcut slide did not settle using the existing strip pixels"
+                TabReveal.forced <- Some false
                 let larger = Sz(size.width+Dpi.scale 40,size.height)
                 strip.setPlacement(placement moved larger false)
                 check (frames strip=count+1L && strip.bounds.size=larger) "Resize did not repaint once"

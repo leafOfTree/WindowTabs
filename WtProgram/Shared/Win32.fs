@@ -796,7 +796,7 @@ module IndependentWindowParking =
     let fixedSize (window:Window) =
         window.hasStyle WindowsStyles.WS_MINIMIZEBOX &&
         not (window.hasStyle WindowsStyles.WS_MAXIMIZEBOX || window.hasStyle WindowsStyles.WS_THICKFRAME)
-    let private move hwnd (point:Pt) =
+    let move hwnd (point:Pt) =
         WinUserApi.SetWindowPos(hwnd,IntPtr.Zero,point.x,point.y,0,0,
             SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE ||| SetWindowPosFlags.SWP_ASYNCWINDOWPOS)
     let restore hwnd =
@@ -805,7 +805,11 @@ module IndependentWindowParking =
             WinUserApi.RemoveProp(hwnd,xKey) |> ignore
             WinUserApi.RemoveProp(hwnd,yKey) |> ignore
     let returnPoint stripAbove (front:Window) (window:Window) =
-        if not front.isMaximized then Some front.bounds.location
+        // Restoring a parked tab posts its move to the app. Its off-screen frame must
+        // not become the return point for the next tab while that move is pending.
+        if front.mon.IsNone then
+            if parked window.hwnd || window.mon.IsNone then None else Some window.bounds.location
+        elif not front.isMaximized then Some front.bounds.location
         elif parked window.hwnd then None
         else
             // A maximized frame extends past the monitor. Keep the tab at its last normal
@@ -814,8 +818,12 @@ module IndependentWindowParking =
             let bounds = window.bounds
             let clamp low high value = max low (min high value)
             let top = area.top + stripAbove - (window.visibleBounds.top - bounds.top)
+            // A tall restored window can deliberately extend below its monitor. Fitting
+            // its bottom edge as well would pull its title and tabs back to the top.
+            let bottom = if window.mon=front.mon then area.bottom - max 1 (Dpi.scale 32)
+                         else area.bottom-bounds.height
             Some(Pt(clamp area.left (area.right-bounds.width) bounds.x,
-                    max area.top (min top (area.bottom-bounds.height))))
+                    clamp top bottom bounds.y))
     let park (window:Window) (anchor:Pt) =
         let hwnd = window.hwnd
         // A maximized tab must return to its own monitor, with its OS restore rectangle intact.
