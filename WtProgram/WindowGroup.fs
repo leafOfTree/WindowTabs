@@ -3080,7 +3080,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     IndependentWindowParking.restoreAt hwnd origin
                 | _ -> this.adjustWindowPlacement hwnd
                 dragReleasedEvent.Trigger hwnd
-                this.tabActivate(Tab hwnd,true)
+                // Placement can already expose the dropped window. Fading the previous tab
+                // over it here briefly brings that tab back after the drop.
+                this.activate(hwnd,true,false)
     member this.dragReleased = dragReleasedEvent.Publish
 
     /// The tab after a closed one. No fade: the window shown is the one Windows brought up for
