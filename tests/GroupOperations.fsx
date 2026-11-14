@@ -1032,6 +1032,14 @@ let main() =
                         let clock = Stopwatch.StartNew()
                         pumpUntil(fun () -> panes |> List.forall(fun hwnd -> z strip < z hwnd))
                         printfn "METRIC raised-pane-covered-tabs=%dms" clock.ElapsedMilliseconds
+                        let divider = onGroup(fun group ->
+                            let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
+                            snd (field.GetValue(group) :?> Map<PanePath,SplitDivider * IntPtr>).[[]])
+                        pumpUntil(fun () -> panes |> List.forall(fun hwnd -> z divider < z hwnd))
+                        check (WinUserApi.SetWindowPos(raised,strip,0,0,0,0,
+                                   SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE))
+                              "Could not raise the pane beneath the strip"
+                        pumpUntil(fun () -> panes |> List.forall(fun hwnd -> z divider < z hwnd))
                     // The pane in focus leads the group whichever pane its app or a click raised last:
                     // its tab shows in front and the strip belongs to it. Led by the other pane, the
                     // focus showed on the wrong tab and the focused app covered the tabs.

@@ -1290,16 +1290,20 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 let panes = SplitView.windows s |> List.filter(fun hwnd -> not(isMinimized hwnd))
                 let behind = this.windows.items.list |> List.filter(fun hwnd -> not(List.contains hwnd panes) && not(isMinimized hwnd))
                 let covers = if backdropHandle<>IntPtr.Zero && WinUserApi.IsWindow backdropHandle then backdropHandle::panes else panes
-                let ranks = this.zorderRanks(this.ts.hwnd::behind@covers)
+                let dividers = if dividerShown then splitDividers |> Map.toList |> List.map(snd >> snd) else []
+                let ranks = this.zorderRanks(this.ts.hwnd::behind@covers@dividers)
                 let above a b = match ranks.TryFind a,ranks.TryFind b with Some x,Some y -> x<y | _ -> false
                 // A pane over the tabs, or a tab behind the panes over any of them or the backdrop.
                 let covered = panes |> List.exists(fun hwnd -> above hwnd this.ts.hwnd)
                 let behindAbove = behind |> List.exists(fun hwnd -> covers |> List.exists(fun over -> above hwnd over))
+                // A browser can rise under its owned strip and still cover the unowned seam.
+                let dividerCovered = dividers |> List.exists(fun divider -> panes |> List.exists(fun pane -> above pane divider))
                 if covered || behindAbove then
                     this.withUpdate(fun () ->
                         this.saveZorder()
                         if covered && not this.isEmpty then this.setTsParent(this.topWindow)
                         elif behindAbove && not this.isEmpty then this.keepPanesBelowStrip(this.topWindow))
+                elif dividerCovered then this.updateSplitChrome()
         | _ -> this.watchOrder()
 
     /// What the panes go just below: the divider, which lies over their edges, or else the strip.
