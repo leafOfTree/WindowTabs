@@ -1768,7 +1768,7 @@ module Bootstrap =
                 // own, so a run outside the debugger can find what the debugger would stop at.
                 if Environment.GetEnvironmentVariable("WINDOWTABS_CHECK_THREADS")="1" then Control.CheckForIllegalCrossThreadCalls <- true
                 use lifetime = new LifetimeScope(fun error -> logger.log "Shutdown" error)
-                OS().windowsInZorder.iter(fun window -> IndependentWindowParking.restore window.hwnd)
+                OS().windowsInZorder.iter WindowGroupToken.recoverAfterRestart
                 let program = StartupTrace.measure "program.initialize" (fun () -> Program(lifetime))
                 if forwarded then program.queueRequest request
                 program.claimRunAtStartup()

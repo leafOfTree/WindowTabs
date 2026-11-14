@@ -299,8 +299,11 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// Where the strip goes and, for a column, the room it has along the side. A column being
     /// dragged sits where the pointer holds it; otherwise where it was dragged to, else aligned.
     member private this.placementAndSpan =
+        this.placementFor(group.bounds.value.def(Rect()),group.isMaximized.value)
+
+    member private this.placementFor(frame:Rect,maximized:bool) =
         let decorator =  {
-            windowBounds = group.bounds.value.def(Rect())
+            windowBounds = frame
             monitorBounds = Mon.all.map(fun m -> m.workRect)
             decoratorHeight = group.tabAppearance.tabHeight
             decoratorHeightOffset = group.tabAppearance.tabHeightOffset
@@ -311,12 +314,22 @@ type TabStripDecorator(group:WindowGroup) as this =
             let width = Dpi.scale (if this.ts.isIconOnly then 48 else this.ts.columnWidth)
             let position = match this.ts.columnSlide with Some fraction -> Some fraction | None -> this.ts.position
             let placed = decorator.sidePlacement(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
-                                                 alignment=this.ts.getAlignment TabUp,maximized=group.isMaximized.value,?position=position)
+                                                 alignment=this.ts.getAlignment TabUp,maximized=maximized,?position=position)
             let span = decorator.sideSpan(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
-                                          alignment=this.ts.getAlignment TabUp,maximized=group.isMaximized.value,?position=position)
+                                          alignment=this.ts.getAlignment TabUp,maximized=maximized,?position=position)
             placed,Some span
         else
             decorator.topPlacement(this.ts.rowContentWidth),None
+
+    member private this.tabLanding(drag:TabDragInfo, pointer:Pt, window:Window) =
+        let frame = Rect(group.layoutFrame.location,window.visibleBounds.size)
+        if this.ts.isVertical then frame.location
+        else
+            let placement,_ = this.placementFor(frame,false)
+            let offset = this.ts.dropOffset(drag,placement)
+            let x = pointer.x - (placement.bounds.x-frame.x) - offset.x
+            let area = Screen.FromPoint(pointer.Point).WorkingArea
+            Pt(between (area.Left,max area.Left (area.Right-frame.width)) x,frame.y)
 
     member this.beginRename(hwnd) =
         let tab = Tab(hwnd)
@@ -1254,7 +1267,10 @@ type TabStripDecorator(group:WindowGroup) as this =
                 | None -> ()
                 if joinedByDrag && dragInfoCell.value.IsSome then group.joinedByHand()
                 // Let go in this strip: the window it carried in comes into place, in front.
-                dragInfoCell.value |> Option.iter(fun drag -> let (Tab hwnd) = drag.tab in group.releaseDrag(hwnd,true))
+                dragInfoCell.value |> Option.iter(fun drag ->
+                    let (Tab hwnd) = drag.tab
+                    let pointer = os.windowFromHwnd(this.ts.hwnd).ptToScreen(dragPtCell.value)
+                    group.releaseDrag(hwnd,true,landing=(fun window -> this.tabLanding(drag,pointer,window))))
                 joinedByDrag <- false
                 dragInfoCell.set(None)
                 this.updateTsSlide()

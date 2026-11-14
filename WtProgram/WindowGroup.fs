@@ -319,6 +319,10 @@ module WindowGroupToken =
     let saveMadeByHand hwnd value = WindowFlag.set madeByHandKey hwnd value
     let madeByHand hwnd = WindowFlag.get madeByHandKey hwnd
 
+    let recoverAfterRestart (window:Window) =
+        if IndependentWindowParking.parked window.hwnd then IndependentWindowParking.restore window.hwnd
+        elif (read window.hwnd).IsSome then IndependentWindowParking.recoverUnmarked window
+
 /// Chromium and Electron windows stop painting while another window covers them, so a tab
 /// behind the active one prints blank, and a minimized one prints only a placeholder. Each
 /// tab's last good capture stands in for it, kept small: thumbnails are a few hundred pixels
@@ -1003,6 +1007,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     let request = FollowerPlacement.alignFrameRequest hwnd bounds visible wp None
                     FollowerPlacement.queue.submit(placementOwner,hwnd,request)
                     reconcilePlacementState <- true)
+        elif this.windows.contains hwnd then IndependentWindowParking.recoverUnmarked (this.os.windowFromHwnd hwnd)
 
     member private this.hideChildWindows() =
         if not this.parkInactive && not this.keepSizes then
@@ -2373,15 +2378,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if not front.isMinimized then
                 FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) -> match request with AlignWindow _ -> true | _ -> false))
                 let follower = this.os.windowFromHwnd hwnd
-                let stripAbove = if this.ts.isVertical then 0 else max 0 (this.tabAppearance.tabHeight - this.tabAppearance.tabHeightOffset)
-                IndependentWindowParking.returnPoint stripAbove front follower |> Option.iter (IndependentWindowParking.park follower)
-        elif this.keepSizes then
-            if not this.isEmpty && hwnd<>this.topWindow then
-                let front,follower = this.os.windowFromHwnd this.topWindow,this.os.windowFromHwnd hwnd
-                if not (front.isMinimized || follower.isMaximized || follower.isMinimized) then
+                if keepWindowSizesChosen then IndependentWindowParking.parkInPlace follower
+                else
                     let stripAbove = if this.ts.isVertical then 0 else max 0 (this.tabAppearance.tabHeight - this.tabAppearance.tabHeightOffset)
-                    IndependentWindowParking.returnPoint stripAbove front follower |> Option.iter(fun point ->
-                        if point<>follower.bounds.location then IndependentWindowParking.move hwnd point |> ignore)
+                    IndependentWindowParking.returnPoint stripAbove front follower |> Option.iter (IndependentWindowParking.park follower)
+        elif this.keepSizes then
+            FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) -> match request with AlignWindow _ -> true | _ -> false))
         elif placement.value.IsSome && not changingMinimizeState then
             let bounds,wp,visible = placement.value.Value
             let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
@@ -3066,12 +3068,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// held any more. Let go in the strip, it is placed and comes to the front as the tab chosen.
     member this.holdForDrag(hwnd:IntPtr) = heldByDrag <- Some hwnd
     member this.isHeldByDrag(hwnd:IntPtr) = heldByDrag=Some hwnd
-    member this.releaseDrag(hwnd:IntPtr, dropped:bool) =
+    member this.releaseDrag(hwnd:IntPtr, dropped:bool, ?landing:(Window -> Pt)) =
         if heldByDrag=Some hwnd then
             heldByDrag <- None
             if dropped && this.windows.contains hwnd && WinUserApi.IsWindow hwnd then
                 if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
-                this.adjustWindowPlacement hwnd
+                let window = this.os.windowFromHwnd hwnd
+                match landing with
+                | Some place when this.keepSizes && placement.value.IsSome && not (window.isMaximized || window.isMinimized) ->
+                    let origin = (place window).add(window.bounds.location.sub(window.visibleBounds.location))
+                    IndependentWindowParking.restoreAt hwnd origin
+                | _ -> this.adjustWindowPlacement hwnd
                 dragReleasedEvent.Trigger hwnd
                 this.tabActivate(Tab hwnd,true)
     member this.dragReleased = dragReleasedEvent.Publish
@@ -3141,7 +3148,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.withUpdate(fun () ->
             if this.windows.contains(hwnd) then
                 this.onActivated(hwnd)
-                if inFront then this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd))
+                if inFront then
+                    this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
+                    // A window carried by its title bar may already have focus. No new
+                    // foreground event will correct a strip still sized for the old tab.
+                    if this.keepSizes && this.topWindow=hwnd then this.saveWindowPlacement hwnd)
         if not inFront then
             this.ts.cancelShortcutMove()
             if this.parkInactive then

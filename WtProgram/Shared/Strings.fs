@@ -54,7 +54,7 @@ module Strings =
     /// Tab context menu.
     module TabMenu =
         let windowBehavior = { en="Window behavior"; zh="窗口行为"; ja="ウィンドウの動作"; ar="سلوك النوافذ" }
-        let keepWindowSizes = { en="Keep each window’s size"; zh="保留各窗口的大小"; ja="各ウィンドウのサイズを保持"; ar="الاحتفاظ بحجم كل نافذة" }
+        let keepWindowSizes = { en="Keep each window’s size and position"; zh="保留各窗口的大小和位置"; ja="各ウィンドウのサイズと位置を保持"; ar="الاحتفاظ بحجم كل نافذة وموضعها" }
         let transparentMode = { en="Keep inactive windows off-screen"; zh="将同组后台窗口移出屏幕"; ja="グループ内の非アクティブなウィンドウを画面外に置く"; ar="إبقاء النوافذ غير النشطة في المجموعة خارج الشاشة" }
         let transparentModeNote = { en="Useful for transparent windows."; zh="适合透明窗口。"; ja="半透明のウィンドウに便利です。"; ar="مفيد للنوافذ الشفافة." }
         /// Under the alignments: the tabs can also be dragged along their edge with the right button.

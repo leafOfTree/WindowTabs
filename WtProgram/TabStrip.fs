@@ -1045,6 +1045,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member internal this.hasTabInfo(tab) = tabInfoCell.value.contains(tab)
             
     member this.tabLocation = this.ts.tabLocation
+
+    /// The grabbed point after the row fits the incoming window and the drag slide ends.
+    member this.dropOffset(drag:TabDragInfo, placement:TabStripPlacment) =
+        let direction = if placement.showInside then TabDown else TabUp
+        let row = { this.tsBase direction with size=placement.bounds.size; slide=None
+                                               centerShift=if placement.showInside then float(this.appearance.tabIndentFlipped-this.appearance.tabIndentNormal)/2.0 else 0.0 }
+        let tab = row.tabBounds drag.tab
+        tab.Location.Pt.add(drag.offsetIn tab.Size.Sz)
     
     /// The window capture is full size; release it here rather than waiting for the GC. The
     /// window is drawn at `DragImage.windowScale` of the size it lands at on the desktop, the tab
