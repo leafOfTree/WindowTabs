@@ -146,6 +146,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     let mutable dragParked = false
     let mutable dragSource : IntPtr option = None
     let mutable dragStartIndex : int option = None
+    let mutable dragStartFrame : (IntPtr * OSWindowPlacement * Pt) option = None
 
     do this.init()
 
@@ -1215,6 +1216,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                         dragInfoCell.set(None)       
                         let (Tab(hwnd)) = tab
                         let window = os.windowFromHwnd(hwnd)
+                        if dragStartFrame.IsNone && group.keepWindowSizes && group.layout=GroupLayout.Single && not (group.isHeldByDrag hwnd) then
+                            dragStartFrame <- Some(hwnd,window.placement,IndependentWindowParking.locationBeforeDrag window)
                         group.releaseDrag(hwnd,false)
                         // The tab behind shows where it is, in the group's place in the order: chosen,
                         // it brought the group up over the one the tab was carried to.
@@ -1244,6 +1247,13 @@ type TabStripDecorator(group:WindowGroup) as this =
                 this.ts.carriedIn <- None
                 group.releaseDrag(hwnd,true)
                 if WinUserApi.IsWindow hwnd then
+                    // Dragging out temporarily moves even an independent window to a screen corner.
+                    match dragStartFrame with
+                    | Some(source,placement,point) when source=hwnd ->
+                        let window = os.windowFromHwnd hwnd
+                        window.setPlacement placement
+                        IndependentWindowParking.restoreAt hwnd point
+                    | _ -> ()
                     if not(group.windows.contains hwnd) then group.addWindow(hwnd,false)
                     dragStartIndex |> Option.iter(fun index -> this.ts.moveTab(drag.tab,index))
                     group.tabActivate(drag.tab,false)
@@ -1255,6 +1265,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 group.transitionsPaused <- false
                 dragSource <- None
                 dragStartIndex <- None
+                dragStartFrame <- None
                 this.ts.dragScrollPoint <- None
                 this.ts.carriedIn <- None
                 isDraggingCell.value <- false

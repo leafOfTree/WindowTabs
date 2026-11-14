@@ -1515,6 +1515,16 @@ let main() =
                             let tab = group.ts.rowTabs.Head
                             let grabbed = tab.location.add(data.offsetIn tab.size)
                             abs(grabbed.x-releasedAt.x)<=2 && (OS().windowFromHwnd b).bounds.size=incomingSize))
+                    let window = OS().windowFromHwnd b
+                    let beforeCancel = window.bounds
+                    onGroup dragTarget (fun group ->
+                        let target = dragTargetFor group.ts.hwnd
+                        check (target.dragEnter (box data) (group.ts.tabLocation(Tab b))) "The independent tab drag did not start"
+                        target.dragExit()
+                        target.dragCancel(box data)
+                        target.dragEnd())
+                    pumpUntil "Cancelling a drag left the independent window away from its original position" (fun () ->
+                        window.bounds=beforeCancel && onGroup dragTarget (fun group -> group.topWindow=b))
                 if sourceDock=TabDockTop && targetDock=TabDockLeft then
                     let incoming = OS().windowFromHwnd b
                     pumpUntil "A tab dropped into an independent group did not land at its destination at its own size" (fun () ->

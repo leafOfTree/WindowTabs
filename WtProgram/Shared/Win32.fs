@@ -804,6 +804,11 @@ module IndependentWindowParking =
         let x,y = WinUserApi.GetProp(hwnd,xKey),WinUserApi.GetProp(hwnd,yKey)
         if x<>IntPtr.Zero && y<>IntPtr.Zero then Some(Pt(decode x,decode y)) else None
     let private savedPoint hwnd = readPoint hwnd xKey
+    let locationBeforeDrag (window:Window) =
+        match savedPoint window.hwnd with
+        | Some point -> point
+        | None when window.mon.IsNone -> readPoint window.hwnd restoredXKey |> Option.defaultValue window.bounds.location
+        | None -> window.bounds.location
     let private parkingX() =
         let right = Mon.all.list |> List.maxBy(fun monitor -> monitor.displayRect.right)
         right.displayRect.right+32
