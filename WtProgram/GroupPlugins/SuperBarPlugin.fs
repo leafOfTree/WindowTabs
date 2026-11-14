@@ -26,6 +26,10 @@ module TaskbarPreviewTrace =
 
 /// Preview producers transfer ownership of their bitmap to this request.
 module TaskbarPreview =
+    /// A parked tab has its own size but is shown at the group's anchor in the preview.
+    let contentBounds parked (anchor:Rect) (actual:Rect) =
+        if parked then Rect(anchor.location,actual.size) else actual
+
     let relativeLocation (previewBounds:Rect) (windowBounds:Rect) =
         windowBounds.location.sub(previewBounds.location).Point
 
@@ -898,7 +902,15 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                                     let (Tab(hwnd)) = tab
                                     let window = this.os.windowFromHwnd(hwnd)
                                     // A minimized window sits far off screen; it shows where the group's windows are restored to.
-                                    let area = if window.isMinimized then this.wtGroup.previewArea else window.bounds
+                                    let anchor = this.wtGroup.previewArea
+                                    let parked = IndependentWindowParking.parked hwnd
+                                    let area =
+                                        if window.isMinimized then anchor
+                                        else TaskbarPreview.contentBounds parked anchor window.bounds
+                                    let previewBounds =
+                                        if not parked then previewBounds
+                                        elif stripShown then this.ts.bounds.union(area)
+                                        else area
                                     let contentLocation = TaskbarPreview.relativeLocation previewBounds area
                                     Some(TaskbarPreview.compose previewBounds.size
                                         contentLocation

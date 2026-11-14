@@ -785,3 +785,47 @@ module WindowExtensions =
         member this.loword = WinDefApi.LOWORD(this)
         member this.size = Sz(this.hiword.int32, this.loword.int32)
         member this.location = Pt(this.loword.int32, this.hiword.int32)
+
+/// Store the return point on the foreign window so a replacement instance can recover it.
+module IndependentWindowParking =
+    let private xKey = "WindowTabs.ParkedX.v1"
+    let private yKey = "WindowTabs.ParkedY.v1"
+    let private encode value = nativeint (value * 2 + 1)
+    let private decode (value:IntPtr) = (int value - 1) / 2
+    let parked hwnd = WinUserApi.GetProp(hwnd,xKey)<>IntPtr.Zero
+    let fixedSize (window:Window) =
+        window.hasStyle WindowsStyles.WS_MINIMIZEBOX &&
+        not (window.hasStyle WindowsStyles.WS_MAXIMIZEBOX || window.hasStyle WindowsStyles.WS_THICKFRAME)
+    let private move hwnd (point:Pt) =
+        WinUserApi.SetWindowPos(hwnd,IntPtr.Zero,point.x,point.y,0,0,
+            SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE ||| SetWindowPosFlags.SWP_ASYNCWINDOWPOS)
+    let restore hwnd =
+        let x,y = WinUserApi.GetProp(hwnd,xKey),WinUserApi.GetProp(hwnd,yKey)
+        if x<>IntPtr.Zero && y<>IntPtr.Zero && move hwnd (Pt(decode x,decode y)) then
+            WinUserApi.RemoveProp(hwnd,xKey) |> ignore
+            WinUserApi.RemoveProp(hwnd,yKey) |> ignore
+    let returnPoint stripAbove (front:Window) (window:Window) =
+        if not front.isMaximized then Some front.bounds.location
+        elif parked window.hwnd then None
+        else
+            // A maximized frame extends past the monitor. Keep the tab at its last normal
+            // position on this monitor, with enough space for the strip above its title.
+            let area = (Screen.FromHandle(front.hwnd).WorkingArea).Rect
+            let bounds = window.bounds
+            let clamp low high value = max low (min high value)
+            let top = area.top + stripAbove - (window.visibleBounds.top - bounds.top)
+            Some(Pt(clamp area.left (area.right-bounds.width) bounds.x,
+                    max area.top (min top (area.bottom-bounds.height))))
+    let park (window:Window) (anchor:Pt) =
+        let hwnd = window.hwnd
+        // A maximized tab must return to its own monitor, with its OS restore rectangle intact.
+        let anchor =
+            if window.isMaximized && parked hwnd then
+                Pt(decode (WinUserApi.GetProp(hwnd,xKey)),decode (WinUserApi.GetProp(hwnd,yKey)))
+            elif window.isMaximized then window.bounds.location
+            else anchor
+        if not window.isMinimized &&
+           WinUserApi.SetProp(hwnd,yKey,encode anchor.y) && WinUserApi.SetProp(hwnd,xKey,encode anchor.x) then
+            let right = Mon.all.list |> List.maxBy(fun monitor -> monitor.displayRect.right)
+            let point = Pt(right.displayRect.right+32,anchor.y)
+            if window.bounds.location<>point then move hwnd point |> ignore

@@ -201,6 +201,30 @@ let main() =
         sourceWindow.setForeground(false)
         let snapForeground = WinUserApi.GetForegroundWindow()
         check (WinUserApi.GetActiveWindow()=snapSource.Handle) "Snap fixture did not activate its source"
+        do
+            use fixedForm = new Form(FormBorderStyle=FormBorderStyle.FixedSingle,MinimizeBox=true,MaximizeBox=false)
+            fixedForm.Show()
+            let fixedWindow = OS().windowFromHwnd fixedForm.Handle
+            let filter = FilterService()
+            check (filter.isAppWindowStyle fixedWindow) "An independent minimize-only window was filtered out"
+            use tool = new Form(FormBorderStyle=FormBorderStyle.FixedToolWindow,MinimizeBox=true,MaximizeBox=false)
+            check (not (filter.isAppWindowStyle (OS().windowFromHwnd tool.Handle))) "A tool window passed the app style filter"
+            let size = fixedWindow.bounds.size
+            let owner = obj()
+            FollowerPlacement.queue.claim(owner,fixedForm.Handle)
+            try
+                for cmd in [ShowWindowCommands.SW_SHOWNORMAL;ShowWindowCommands.SW_SHOWMAXIMIZED] do
+                    let request = FollowerPlacement.request fixedForm.Handle snapped {normalPlacement with showCmd=cmd}
+                    FollowerPlacement.queue.submit(owner,fixedForm.Handle,request)
+                    pumpUntil "Fixed window placement did not settle" (fun () -> FollowerPlacement.queue.isIdle owner)
+                    check (fixedWindow.bounds=Rect(snapped.location,size) && not fixedWindow.isMaximized) "A fixed-size follower lost its dimensions"
+            finally FollowerPlacement.queue.release(owner,fixedForm.Handle)
+            let anchor = fixedWindow.bounds.location
+            IndependentWindowParking.park fixedWindow anchor
+            check (IndependentWindowParking.parked fixedForm.Handle && Mon.fromHwnd(fixedForm.Handle).IsNone) "The inactive fixed window remained on a display"
+            IndependentWindowParking.restore fixedForm.Handle
+            check (fixedWindow.bounds=Rect(anchor,size) && not (IndependentWindowParking.parked fixedForm.Handle)) "Recovery lost a parked window"
+            snapSource.Activate()
         let snapQueueOwner = obj()
         FollowerPlacement.queue.claim(snapQueueOwner,snapFollower.Handle)
         // A window under a hidden owner that went to the top on its own (Windows raises a window by
@@ -423,6 +447,43 @@ let main() =
             finally
                 (fixture :> IGroup).destroy()
                 pumpUntil "Isolated fixture did not exit" (fun () -> fixture.isExited)
+
+        do
+            use fixedForm = new Form(FormBorderStyle=FormBorderStyle.FixedSingle,MaximizeBox=false)
+            use other = new Form()
+            fixedForm.Show()
+            other.Show()
+            let a,b = fixedForm.Handle,other.Handle
+            let fixture = desktopApi.createGroup(false) :?> GroupInfo
+            try
+                for h in [a;b] do (fixture :> IGroup).addWindow(h,false)
+                for selected,background in [a,b;b,a;a,b] do
+                    onGroup fixture (fun group -> group.tabActivate(Tab(selected),true))
+                    pumpUntil "Switching did not park only the background tab" (fun () ->
+                        IndependentWindowParking.parked background && Mon.fromHwnd(background).IsNone &&
+                        not (IndependentWindowParking.parked selected) && Mon.fromHwnd(selected).IsSome)
+                onGroup fixture (fun group -> group.tabActivate(Tab(b),true))
+                other.WindowState <- FormWindowState.Maximized
+                pumpUntil "The maximized tab did not park its fixed-size neighbour" (fun () -> IndependentWindowParking.parked a && other.WindowState=FormWindowState.Maximized)
+                onGroup fixture (fun group -> group.tabActivate(Tab(a),true))
+                pumpUntil "The fixed-size tab returned outside the work area" (fun () ->
+                    not (IndependentWindowParking.parked a) && Screen.FromHandle(a).WorkingArea.Contains(fixedForm.Bounds))
+                let stripAbove = onGroup fixture (fun group -> group.tabAppearance.tabHeight - group.tabAppearance.tabHeightOffset)
+                let front = OS().windowFromHwnd b
+                let follower = OS().windowFromHwnd a
+                pumpUntil "The maximized background remained visible" (fun () -> IndependentWindowParking.parked b && Mon.fromHwnd(b).IsNone)
+                let target = (IndependentWindowParking.returnPoint stripAbove front follower).Value
+                check (target.y + follower.visibleBounds.top - follower.bounds.top - stripAbove = Screen.FromHandle(a).WorkingArea.Top)
+                      "The restored tab strip reserved extra room above the monitor edge"
+                onGroup fixture (fun group -> group.tabActivate(Tab(b),true))
+                pumpUntil "The maximized tab did not return to its monitor" (fun () -> Mon.fromHwnd(b).IsSome && front.isMaximized && not (IndependentWindowParking.parked b))
+                onGroup fixture (fun group -> group.tabActivate(Tab(a),true))
+                pumpUntil "The maximized tab was not parked again" (fun () -> IndependentWindowParking.parked b)
+                onGroup fixture (fun group -> group.removeWindow b)
+                pumpUntil "Detached window stayed parked" (fun () -> Mon.fromHwnd(b).IsSome && not (IndependentWindowParking.parked b))
+            finally
+                (fixture :> IGroup).destroy()
+                pumpUntil "Independent fixture did not exit" (fun () -> fixture.isExited)
 
         // Maximized, the group's frame is the work area itself, where the window shows: a pixel up
         // and left, the tab shown faded out off its place and a split from it left a pixel of

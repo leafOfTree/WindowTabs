@@ -282,10 +282,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                         if bar.y<bottom && bar.y+bar.height>top then Some(float(bar.x-location.x),float(bar.x+bar.width-location.x))
                         else None)
             appearance =
-                if this.isIconOnly then
-                    { this.appearance with tabMaxWidth = Dpi.scale 50 }
-                else
-                    this.appearance
+                if this.isIconOnly then { this.appearance with tabMaxWidth = this.iconTabWidth }
+                else this.appearance
         }
     member private this.ts : TabStripSprite<Tab> = this.tsBase this.direction
         
@@ -652,7 +650,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         slide.iter <| fun slide ->
             this.slide <- Some(slide)
         Cell.endUpdate()
-        if this.isVertical && this.tabs.count<>previousCount then dockChangedEvent.Trigger()
+        if this.tabs.count<>previousCount then dockChangedEvent.Trigger()
     
     member this.addTab tab = this.addTabSlide tab None
 
@@ -665,7 +663,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         tabBgColor.map(fun m -> m.remove tab)
         this.ensureSelectedVisible()
         Cell.endUpdate()
-        if this.isVertical then dockChangedEvent.Trigger()
+        dockChangedEvent.Trigger()
 
     member this.tabs : Set2<Tab> = Set2(lorderCell.value)
 
@@ -704,7 +702,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 iconOnlyCell.set(value)
                 if this.isVertical && not value && columnWidthValue=fst SettingsCatalog.columnWidthRange then this.columnWidth <- SettingsCatalog.columnWidthDefault
                 else
-                    if this.isVertical then dockChangedEvent.Trigger()
+                    dockChangedEvent.Trigger()
                     layoutChangedEvent.Trigger(true)
 
     member this.dock
@@ -785,6 +783,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             this.updateDragScroll()
 
     member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
+    member private this.iconTabWidth = Dpi.scale 50
+    member this.rowContentWidth =
+        let count = this.lorder.count
+        let width = if this.isIconOnly then this.iconTabWidth else this.appearance.tabMaxWidth
+        count*width - max 0 (count-1)*this.appearance.tabOverlap
     member this.columnContentHeight = this.lorder.count*this.ts.rowStep+Dpi.scale 4
     member private this.renderedShift = if this.isVertical then Pt(renderedOffset,0) else Pt(0,renderedOffset)
 

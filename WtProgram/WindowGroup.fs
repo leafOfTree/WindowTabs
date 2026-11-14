@@ -936,8 +936,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             window.setForeground(false)
         | None -> ()
 
+    member private this.independentWindows =
+        groupLayout=GroupLayout.Single && this.windows.count>1 &&
+        this.windows.items.any(fun hwnd -> IndependentWindowParking.fixedSize(this.os.windowFromHwnd hwnd))
+
     member private this.hideChildWindows() =
-        zorderCell.value.tail.iter(fun hwnd -> FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.hideRequest hwnd))
+        if not this.independentWindows then
+            zorderCell.value.tail.iter(fun hwnd -> FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.hideRequest hwnd))
 
     member private this.inZorder(windows:List2<IntPtr>) =
         // One desktop snapshot keeps the order consistent and avoids enumerating
@@ -967,8 +972,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         match request with
                         | SetMinimized _ | AlignWindow(_,_,None,_) -> false
                         | _ -> true)))
+            newZorder.tryHead |> Option.iter IndependentWindowParking.restore
             prevTop.set(zorderCell.value.tryHead)
             zorderCell.set(newZorder)
+            if this.independentWindows && not newZorder.isEmpty then this.applyLayout()
 
     /// While the group minimizes or restores, Windows reorders its windows one by one; restored
     /// without activation, a tab owned by the taskbar window even rises above the one in front.
@@ -1911,6 +1918,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.setLayout(next:GroupLayout, ?focus:IntPtr) =
         let before = groupLayout
         if next<>before then
+            this.windows.items.iter IndependentWindowParking.restore
             groupLayout <- next
             // Out of the split, the images of its start go at once: left until their wait ran
             // out, they stayed over the group, topmost, in the way of what came next. Those
@@ -2268,6 +2276,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // A tab carried in is placed once it is let go.
         if heldByDrag=Some hwnd then ()
         elif this.isSplit then this.applyLayout()
+        elif this.independentWindows && not this.isEmpty && hwnd<>this.topWindow then
+            let front = this.os.windowFromHwnd this.topWindow
+            if not front.isMinimized then
+                let follower = this.os.windowFromHwnd hwnd
+                let stripAbove = if this.ts.isVertical then 0 else max 0 (this.tabAppearance.tabHeight - this.tabAppearance.tabHeightOffset)
+                IndependentWindowParking.returnPoint stripAbove front follower |> Option.iter (IndependentWindowParking.park follower)
         elif placement.value.IsSome && not changingMinimizeState then
             let bounds,wp,visible = placement.value.Value
             let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
@@ -2667,6 +2681,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.removeDraggedWindow(hwnd) = this.removeWindowCore(hwnd,false)
 
     member private this.removeWindowCore(hwnd, chooseNext:bool) = this.withUpdate <| fun() ->
+        IndependentWindowParking.restore hwnd
         inputOwnership.Remove hwnd |> ignore
         if not isDestroyed.value && this.windows.contains(hwnd) then
             this.onRemoved(hwnd)
@@ -2685,6 +2700,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.ts.removeTab(Tab(hwnd))
             tabColors <- tabColors.Remove hwnd
             this.setWindows(this.windows.remove hwnd)
+            if not this.independentWindows then this.windows.items.iter IndependentWindowParking.restore
             hookCleanup.value.find(hwnd).Dispose()
             hookCleanup.map(fun hooks -> hooks.remove(hwnd))
             removedEvent.Trigger(hwnd)
@@ -2838,6 +2854,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
+            this.windows.items.iter IndependentWindowParking.restore
             splitSettleTimer.Dispose()
             captureTimer.Dispose()
             hiddenCloseTimer.Dispose()
@@ -2969,6 +2986,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.tabActivate(Tab(hwnd), force) = this.activate(hwnd,force,true)
 
     member private this.activate(hwnd, force, fade) =
+        IndependentWindowParking.restore hwnd
         let window = this.os.windowFromHwnd(hwnd)
         // The cover goes up before the window comes to the front: raised first, a parked pane
         // showed at the group's size over the tab shown for a frame, and a tab clicked over the
@@ -2978,7 +2996,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if next<>groupLayout then
                 this.beginTransition(groupLayout,next,hwnd,focus=hwnd,durationMs=SplitTransition.ClickMs)
                 coverAhead <- true
-            elif groupLayout=GroupLayout.Single && fade then this.crossFadeTo hwnd
+            elif groupLayout=GroupLayout.Single && fade && not this.independentWindows then this.crossFadeTo hwnd
         // The strip is owned by the top window and only follows a new top window once the
         // foreground event comes back through the group. Until then the activated window
         // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows

@@ -164,6 +164,11 @@ module FollowerPlacement =
                     below |> Option.iter(fun top -> if valid() && WinUserApi.IsWindow(top) then window.insertAfter(top))
             | AlignWindow(bounds,wp,below,visible) ->
                 let actual = window.placement
+                let fixedSize = IndependentWindowParking.fixedSize window
+                let wp =
+                    if not fixedSize then wp else
+                    { wp with showCmd=ShowWindowCommands.SW_SHOWNORMAL
+                              rcNormalPosition=Rect(wp.rcNormalPosition.location,actual.rcNormalPosition.size) }
                 let previous = defaultArg below window.prevZorder.hwnd
                 let mutable positioned = false
                 // Apps draw invisible resize borders of different widths (new Outlook 10px, most
@@ -179,14 +184,17 @@ module FollowerPlacement =
                             let left,top = seen.x-own.x,seen.y-own.y
                             Rect(Pt(frame.x-left,frame.y-top),Sz(frame.width+own.width-seen.width,frame.height+own.height-seen.height))
                     | _ -> bounds
-                let move() = if valid() then positioned <- true;window.move(target())
+                let targetBounds() =
+                    let rect = target()
+                    if fixedSize then Rect(rect.location,actual.rcNormalPosition.size) else rect
+                let move() = if valid() then positioned <- true;window.move(targetBounds())
                 let place value =
                     if valid() then
                         positioned <- true
                         window.setPlacement(value)
                 // MoveWindow preserves the visible bounds of an Aero snapped window.
                 if wp.showCmd=ShowWindowCommands.SW_SHOWNORMAL && actual.showCmd=ShowWindowCommands.SW_SHOWNORMAL then
-                    if window.bounds<>target() then move()
+                    if window.bounds<>targetBounds() then move()
                 elif actual.showCmd=ShowWindowCommands.SW_SHOWMINIMIZED then
                     let minimized = {wp with showCmd=ShowWindowCommands.SW_SHOWMINIMIZED}
                     if actual<>minimized then place minimized
@@ -203,7 +211,7 @@ module FollowerPlacement =
                     if Screen.FromHandle(hwnd).DeviceName=Screen.FromRectangle(bounds.Rectangle).DeviceName then
                         if actual.rcNormalPosition<>wp.rcNormalPosition then place wp
                     // Cross-monitor maximization requires moving before restoring placement.
-                    elif actual<>wp || window.bounds<>target() then
+                    elif actual<>wp || window.bounds<>targetBounds() then
                         move()
                         place wp
                 elif wp.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED && actual.showCmd=ShowWindowCommands.SW_SHOWNORMAL &&

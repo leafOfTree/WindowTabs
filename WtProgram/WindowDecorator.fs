@@ -39,6 +39,18 @@ type WindowDecorator = {
             use onMonitorOutsideRegion = monitorRegion.intersect(decoratorOutsideRegion)
             onMonitorInsideRegion.box.height > onMonitorOutsideRegion.box.height
 
+    /// A row wide enough to reach both upper corners sits on the straight part of the frame.
+    member this.topPlacement(contentWidth:int) : TabStripPlacment =
+        if this.shouldShowInside then { showInside=true; bounds=this.insideBounds }
+        else
+            let width = this.windowBounds.width
+            let corner = min (Dpi.scale 8) (max 0 ((width-1)/2))
+            let bounds =
+                if this.decoratorIndentNormal < corner && contentWidth > width-2*corner then
+                    { this with decoratorIndentNormal=corner }.outsideBounds
+                else this.outsideBounds
+            { showInside=false; bounds=bounds }
+
     /// Prefer the chosen outside edge; an inset overlay keeps snapped windows reachable.
     /// `position`: where the column was dragged to, as a share of the height left beside it,
     /// in place of the alignment.

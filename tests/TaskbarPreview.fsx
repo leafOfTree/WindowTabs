@@ -81,6 +81,10 @@ let main() =
     check (drawn.Width=60 && drawn.Height=40) (sprintf "A drag image set while showing was not drawn: %dx%d" drawn.Width drawn.Height)
     // A desktop origin must be subtracted before drawing into the preview canvas.
     let origin = Pt(300,200)
+    let anchor = Rect(Pt(300,220),Sz(640,480))
+    let parked = Rect(Pt(5000,220),Sz(1920,1080))
+    check (TaskbarPreview.contentBounds true anchor parked = Rect(anchor.location,parked.size) &&
+           TaskbarPreview.contentBounds false anchor parked = parked) "Parking coordinates clipped a taskbar preview"
     let location = TaskbarPreview.relativeLocation (Rect(origin,Sz(64,52))) (Rect(Pt(300,220),Sz(64,32)))
     use positioned = (TaskbarPreview.compose (Sz(64,52)) location Point.Empty
                         (fun () -> colored Color.CornflowerBlue (Sz(64,32)))

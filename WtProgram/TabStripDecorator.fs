@@ -316,7 +316,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                                           alignment=this.ts.getAlignment TabUp,maximized=group.isMaximized.value,?position=position)
             placed,Some span
         else
-            { showInside=decorator.shouldShowInside; bounds=decorator.bounds },None
+            decorator.topPlacement(this.ts.rowContentWidth),None
 
     member this.beginRename(hwnd) =
         let tab = Tab(hwnd)
