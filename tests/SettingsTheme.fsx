@@ -1070,6 +1070,9 @@ let main() =
                 tree.Rebuild()
                 let switcher = TaskSwitchForm(control)
                 use switcherForm = Control.FromHandle(switcher.hwnd) :?> Form
+                let bounds = (tree.RowBounds tree.Roots.[0]).Value
+                check (tree.Left+bounds.Left=switcherForm.ClientSize.Width-tree.Left-bounds.Right)
+                      "The vertical switcher's rows have uneven side padding"
                 let row = Dpi.scale tree.RowHeight
                 check (control.IndexAt(Point(Dpi.scale 40,row*2+row/2))=Some 2 && control.IndexAt(Point(Dpi.scale 40,row/2))=Some 0)
                       "List rows are not where the pointer finds them"

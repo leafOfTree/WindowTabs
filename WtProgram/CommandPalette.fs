@@ -90,7 +90,7 @@ module CommandPalette =
             try
                 match action with
                 | AChoice(item,key,values) -> choiceNow item key values
-                | ANumberKeys _ -> fst (List.item (numberKeysNow()) (numberKeyOptions()))
+                | ANumberKeys _ -> numberKeyLabel()
                 | ASetting item ->
                     match item.binding with
                     | _ when item.id=presetId -> presetNow()
@@ -115,7 +115,13 @@ module CommandPalette =
                       let text = text action
                       let recency = rank action
                       let key = (keyText action).ToLowerInvariant()
-                      { row index (tr text.caption) [text.caption;text.keywords;text.description] (extra action)
+                      let options =
+                          match action with
+                          | AChoice(item,_,_) -> choiceLabels item
+                          | ASetting item when item.id=presetId -> Strings.Appearance.custom :: List.ofArray ThemePresets.names
+                          | ANumberKeys _ -> numberKeyOptions() |> List.map fst
+                          | _ -> []
+                      { row index (tr text.caption) (text.caption::text.keywords::text.description::options) (extra action)
                             (if recency<recentLimit then -1 else group action)
                         with recency=recency*listed.Length+index; keys=(if key="" then [] else [key]) })
                   |> Array.sortBy(fun entry -> entry.recency) |> List.ofArray
@@ -181,7 +187,7 @@ module CommandPalette =
               | ACommand command,_ when (command.state active).IsSome ->
                   { detail=""; switch=command.state active; swatch=None; shortcut=shortcutText command; dropdown=false; small=false }
               | ANumberKeys item,_ ->
-                  { detail=fst (List.item (numberKeysNow()) (numberKeyOptions())); switch=None; swatch=None; shortcut=settingKey item; dropdown=true; small=false }
+                  { detail=numberKeyLabel(); switch=None; swatch=None; shortcut=settingKey item; dropdown=true; small=false }
               | ACommand command,_ when command.current active<>"" ->
                   { detail=command.current active; switch=None; swatch=None; shortcut=shortcutText command; dropdown=true; small=false }
               | _,(true,aside) -> aside
@@ -191,7 +197,7 @@ module CommandPalette =
                       | ACommand command -> { detail=""; switch=None; swatch=None; shortcut=shortcutText command; dropdown=false; small=false }
                       | ASwitch(_,key,command) -> { detail=""; switch=Some(Services.settings.getValue key :?> bool); swatch=None; shortcut=shortcutText command; dropdown=false; small=false }
                       | AChoice(item,key,values) -> { detail=choiceNow item key values; switch=None; swatch=None; shortcut=settingKey item; dropdown=true; small=false }
-                      | ANumberKeys item -> { detail=fst (List.item (numberKeysNow()) (numberKeyOptions())); switch=None; swatch=None; shortcut=settingKey item; dropdown=true; small=false }
+                      | ANumberKeys item -> { detail=numberKeyLabel(); switch=None; swatch=None; shortcut=settingKey item; dropdown=true; small=false }
                       | ASetting item ->
                           match item.binding with
                           // Its presets listed in place, as a choice setting's values are.

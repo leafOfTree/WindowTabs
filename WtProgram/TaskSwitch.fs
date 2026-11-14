@@ -217,7 +217,7 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
         new SettingsTreeList([TreeListColumn("",0,TextColumn)],
                              ShowHeader=false,ShowExpanders=false,RowHeight=rowHeight,IconSize=32,
                              BackColor=(SettingsColors.current()).surface,ForeColor=(SettingsColors.current()).text,
-                             Margin=Padding.Empty)
+                             ScrollBarWidth=Dpi.scale 12-1,Margin=Padding.Empty)
     let lists = Array.init columns (fun _ -> newList())
     /// Where a window sits: its column and its row in that column.
     let place index = if columns=1 then 0,index else index/perColumn,index%perColumn
@@ -311,7 +311,8 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
         let height = max (Dpi.scale 120) (control.contentHeight+padding*2)
         let formSize = Size(min (control.contentWidth+padding*2) (area.Width-Dpi.scale 32),min height (area.Height*85/100))
         f.AutoScaleMode <- AutoScaleMode.None
-        f.Padding <- Padding(padding)
+        // The list reserves a scroll bar column. Let it occupy the right padding.
+        f.Padding <- Padding(padding,padding,1,padding)
         f.Font <- SettingsUi.bodyFont()
         f.ShowInTaskbar <- false
         f.StartPosition <- FormStartPosition.Manual

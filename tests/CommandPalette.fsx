@@ -795,10 +795,16 @@ let main() =
         | None -> issues.Add "No action had a key to search for"
         // The window search and the palette, driven as a user would.
         let entries = TabSearch.tabs (fun _ -> None) active (groups() |> List.map(fun info -> (info :> IGroup).windows.list))
+        api.setValue("switcherStyle",box "Icons")
         let palette = TabSearchForm([],[],settings=api,pages=[CommandPalette.actionsPage active],scope=ActionScope,windows=false)
         palette.Show()
         pump 100
         note (palette.Scope=ActionScope) "The palette did not open on the actions"
+        for query in ["vertical";"switcher vertical";"纵向"] do
+            palette.Query <- query
+            note (palette.Results |> List.exists(fun entry -> entry.title=tr Strings.Settings.switcherStyle.caption))
+                 (sprintf "The unselected switcher style was missing for %s" query)
+        palette.Query <- ""
         // Its rows keep the colours it opened with, as the rest of it does: a theme tried from its
         // choices painted the rows in the new theme over the old background.
         let rec trees (control:Control) : SettingsTreeList list =
