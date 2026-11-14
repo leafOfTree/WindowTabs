@@ -170,12 +170,13 @@ type GroupingApplicationMenu() as this =
                  |> List.toArray
     /// Looks for running apps again, off the UI thread.
     member _.Scan() =
+        let filter = Services.filter
         scanner.Request(fun cancellation ->
             let os = OS()
             os.windowsInZorder.toArray |> Array.choose(fun window ->
                 cancellation.ThrowIfCancellationRequested()
                 try
-                    if window.isWindow && Services.filter.isAppWindow(window.hwnd) then
+                    if window.isWindow && filter.isAppWindow(window.hwnd) then
                         let path = window.pid.processPath
                         if String.IsNullOrWhiteSpace path then None else Some(path,window.hwnd)
                     else None

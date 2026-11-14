@@ -248,7 +248,7 @@ let main() =
         let mutable restoring = true
         let mutable discovering = true
         let filter = FilterService() :> IFilterService
-        Services.registerLocal<IFilterService>({new IFilterService with
+        let fixtureFilter = {new IFilterService with
             member _.isAppWindow hwnd = List.contains hwnd handles || List.contains hwnd restoredHandles || List.contains hwnd (reopenedHandles @ twinHandles.Value)
             member _.isAppWindowStyle hwnd = List.contains hwnd handles || List.contains hwnd restoredHandles || List.contains hwnd (reopenedHandles @ twinHandles.Value)
             member _.isTabbableWindow hwnd =
@@ -258,8 +258,9 @@ let main() =
             member _.isTabbingEnabledForAllProcessesByDefault with get()=false and set _=()
             member _.setIsTabbingEnabledForProcess value enabled = filter.setIsTabbingEnabledForProcess value enabled
             member _.setIsTabbingEnabledForProcesses values enabled = filter.setIsTabbingEnabledForProcesses values enabled
-            member _.getIsTabbingEnabledForProcess value = filter.getIsTabbingEnabledForProcess value})
+            member _.getIsTabbingEnabledForProcess value = filter.getIsTabbingEnabledForProcess value}
         let dispatcher = InvokerService.invoker :> IDispatcher
+        Services.registerLocal<IFilterService>(DispatchedFilterService(fixtureFilter,dispatcher))
         let nativeWindows (group:GroupInfo) =
             let mutable result = None
             group.invokeGroup(fun () ->
@@ -395,14 +396,16 @@ let main() =
                 let targets = api.getValue("appGroupingTargets") :?> AppGroupingTarget list
                 let root = tree.Roots.[targets |> List.findIndex(fun group -> group.id=target)]
                 // The "+" after the group's apps opens the list of apps to add.
-                editor.AddMenu.UpdateApplications [path]
                 let addAt = typeof<SettingsTreeList>.GetMethod("chipAddAt",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
                 let point =
                     seq { for y in 0..2..tree.Height-1 do for x in 0..2..tree.Width-1 -> Drawing.Point(x,y) }
                     |> Seq.find(fun point -> tree.ItemAt(point) |> Option.exists(fun row -> obj.ReferenceEquals(row,root))
                                              && not(isNull (addAt.Invoke(tree,[|box point|]))))
                 let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
+                let previous = editor.AddMenu.Choice
                 typeof<SettingsTreeList>.GetMethod("OnMouseDown",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).Invoke(tree,[|box mouse|]) |> ignore
+                pumpUntil "The refreshed application menu did not open" (fun () ->
+                    editor.AddMenu.Choice |> Option.exists(fun choice -> previous<>Some choice))
                 editor.AddMenu.Choice.Value.SelectedIndex <- Array.findIndex ((=)path) editor.AddMenu.Shown
                 editor.AddMenu.DropDown |> Option.iter(fun window -> window.Close())
             let waitForTarget target =
