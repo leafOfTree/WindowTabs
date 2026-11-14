@@ -85,6 +85,11 @@ let main() =
     let parked = Rect(Pt(5000,220),Sz(1920,1080))
     check (TaskbarPreview.contentBounds true anchor parked = Rect(anchor.location,parked.size) &&
            TaskbarPreview.contentBounds false anchor parked = parked) "Parking coordinates clipped a taskbar preview"
+    let visibleTab = Rect(Pt(1200,100),Sz(320,200))
+    let independent = TaskbarPreview.usesOwnFrame false true GroupLayout.Single false
+    check (TaskbarPreview.contentBounds independent anchor visibleTab = Rect(anchor.location,visibleTab.size) &&
+           not (TaskbarPreview.usesOwnFrame false true GroupLayout.Single true))
+          "A visible independent background window was drawn outside its taskbar thumbnail"
     let location = TaskbarPreview.relativeLocation (Rect(origin,Sz(64,52))) (Rect(Pt(300,220),Sz(64,32)))
     use positioned = (TaskbarPreview.compose (Sz(64,52)) location Point.Empty
                         (fun () -> colored Color.CornflowerBlue (Sz(64,32)))
