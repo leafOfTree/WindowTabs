@@ -25,6 +25,12 @@ let pumpUntilShowing description (state:unit -> string) predicate =
     with _ -> failwithf "%s: %s" description (state())
 
 let main() =
+    let press = POINT(100,100)
+    check (BrowserTabDrag.moved press (POINT(450,200))) "A completed browser drag lost its displacement"
+    check (not (BrowserTabDrag.moved press press)) "A browser click looked like a drag"
+    let browserDrag = Program.DiscoveryEvents.isBrowserTearOff "Chrome_WidgetWin_1" (IntPtr 2)
+    check (browserDrag (IntPtr 1) IntPtr.Zero) "Dragging from a Chromium window lost the tear-off"
+    check (not (browserDrag IntPtr.Zero IntPtr.Zero)) "An ordinary browser window looked like a tear-off"
     // Explorer windows 1 and 3 are on desktop 1, window 4 on desktop 2; window 5's desktop is unknown.
     let desk1, desk2 = Guid.NewGuid(), Guid.NewGuid()
     let pathOf (hwnd:IntPtr) = if hwnd = IntPtr(2) then "chrome.exe" else "explorer.exe"

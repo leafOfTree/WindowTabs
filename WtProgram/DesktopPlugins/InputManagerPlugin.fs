@@ -139,6 +139,32 @@ type ShortcutKeys(cancelDrag:unit -> bool, closeEmptyPane:unit -> bool) =
           maskAlt=(activate.IsSome || leaderConsumed) && key.alt
           leaderEnded=wasArmed && not leader.active }
 
+module BrowserTabDrag =
+    let mutable private press : (IntPtr * POINT) option = None
+    let mutable private release : (int64 * POINT) option = None
+
+    let buttonDown point =
+        let source = WinUserApi.GetAncestor(WinUserApi.WindowFromPoint(point),GetAncestorConstants.GA_ROOT)
+        press <- Some(source,point)
+        release <- None
+
+    let buttonUp point = release <- Some(Diagnostics.Stopwatch.GetTimestamp(),point)
+
+    let moved (start:POINT) (finish:POINT) =
+        let size = System.Windows.Forms.SystemInformation.DragSize
+        abs(finish.X-start.X) >= size.Width || abs(finish.Y-start.Y) >= size.Height
+
+    /// The shell can announce a torn-off tab after Chromium has already released mouse capture.
+    let matches (window:Window) =
+        match press,release with
+        | Some(source,start),ended when source<>IntPtr.Zero && source<>window.hwnd &&
+                                        (ended |> Option.forall(fun (at,_) -> Diagnostics.Stopwatch.GetTimestamp()-at < Diagnostics.Stopwatch.Frequency / 2L)) ->
+            let finish = match ended with Some(_,pt) -> pt | None -> Win32Helper.GetCursorLocation()
+            moved start finish && window.tid=Win32Helper.GetWindowThreadId(source) &&
+            (window.className="Chrome_WidgetWin_1" || window.className="MozillaWindowClass") &&
+            window.className=Win32Helper.GetClassName(source)
+        | _ -> false
+
 type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let hookProcDelegate = HOOKPROC(this.llHook)
     let mutable kbHook = null
@@ -197,6 +223,10 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
         // Moves, and other buttons' releases, are read only while a press is on its way to being a
         // gesture, or one given up still has a release to keep.
         let released = msg=WindowMessages.WM_LBUTTONUP || msg=WindowMessages.WM_MBUTTONUP || msg=WindowMessages.WM_XBUTTONUP
+        if nCode>=0 && (msg=WindowMessages.WM_LBUTTONDOWN || msg=WindowMessages.WM_LBUTTONUP) then
+            let data = unbox<MSLLHOOKSTRUCT>(Marshal.PtrToStructure(lParam,typeof<MSLLHOOKSTRUCT>))
+            if msg=WindowMessages.WM_LBUTTONDOWN then BrowserTabDrag.buttonDown data.pt
+            else BrowserTabDrag.buttonUp data.pt
         let gesture =
             match gestures with
             | Some input when nCode>=0 && (button || msg=WindowMessages.WM_RBUTTONUP || ((msg=WindowMessages.WM_MOUSEMOVE || released) && input.busy)) ->

@@ -47,6 +47,10 @@ module GroupLookup =
             |> List.tryHead |> Option.map fst
 
 module DiscoveryEvents =
+    let isBrowserTearOff className hwnd capture moving =
+        (className = "Chrome_WidgetWin_1" || className = "MozillaWindowClass") &&
+        (capture <> IntPtr.Zero || moving = hwnd)
+
     /// Shown and hidden; uncloaked too, as Chromium browsers cloak a new window themselves for a
     /// moment as it starts. Looked at then it is hidden and not grouped, and its uncloaking is the
     /// only sign it is shown: missed, the window joined at the next full scan, behind the tab in
@@ -88,6 +92,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Subscribed while full screen, with their moves: watched anew once they are windows again.
     let subscribedFullScreen = HashSet<IntPtr>()
     let isDroppedAndAwaitingGrouping = Cell.create(Set2())
+    let browserDrags = HashSet<IntPtr>()
     let windowColors = WindowTabColors()
     // An immutable map swapped whole on the main thread, so tab strips on group threads
     // read renames without waiting for it: tab text is rebuilt on every title change.
@@ -201,7 +206,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let mutable fullScreenResize : IDisposable option = None
     let mutable fullScreenResizePid = 0
     let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
-                                        for hwnd in List.ofSeq awaitingDesktop.Keys do refreshQueue.RequestWindow hwnd))
+                                        for hwnd in List.ofSeq awaitingDesktop.Keys @ List.ofSeq browserDrags do refreshQueue.RequestWindow hwnd))
 
     do
         // A new window waiting only for its desktop is grouped as soon as Windows tells it, not a
@@ -792,6 +797,14 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member this.ensureWindowIsGrouped(window) =
         if this.isTabbableWindow(window) then
             match this.desktop.groups.tryFind(fun group -> group.windows.contains((=)window.hwnd)) with
+            | None when browserDrags.Contains window.hwnd ||
+                        (initialDiscoveryComplete && not (groupedThisRun.Contains window.hwnd) && BrowserTabDrag.matches window) ->
+                browserDrags.Add window.hwnd |> ignore
+                if Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_LBUTTON) then desktopRetry.Request()
+                else
+                    browserDrags.Remove window.hwnd |> ignore
+                    isDroppedAndAwaitingGrouping.map(fun s -> s.add window.hwnd)
+                    this.addWindowToGroup(window)
             | None -> if not (this.awaitsDesktop window) then this.addWindowToGroup(window)
             | Some group ->
                 let info = group :?> GroupInfo
@@ -1021,6 +1034,13 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         | WinEvent(hwnd, evt) -> refreshQueue.RequestWindow(hwnd)
         | ShellEvent(hwnd, evt) ->
             match evt with
+            // Capture the drag before the queued scan: the mouse may already be up by then.
+            | ShellEvent.HSHELL_WINDOWCREATED when initialDiscoveryComplete && not (groupedThisRun.Contains hwnd) &&
+                                                  Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_LBUTTON) ->
+                let window = os.windowFromHwnd hwnd
+                let info = window.uiThreadInfo
+                if DiscoveryEvents.isBrowserTearOff window.className hwnd info.hwndCapture info.hwndMoveSize then
+                    browserDrags.Add hwnd |> ignore
             // The shell also says so when a window only loses its taskbar button, as one does when a
             // group with combined icons takes it; forgetting that window let ungrouped windows be
             // put back together by their saved group.
@@ -1034,6 +1054,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member private this.forgetWindow(hwnd:IntPtr) =
         isSubscribed.Remove(hwnd)
         subscribedFullScreen.Remove hwnd |> ignore
+        browserDrags.Remove hwnd |> ignore
         groupedThisRun.Remove hwnd |> ignore
         appKeys.Remove hwnd |> ignore
         newTabAnchors.Remove hwnd |> ignore
@@ -1047,7 +1068,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     /// A full scan lets go of windows that closed with no word from the shell or an event since.
     member private this.forgetClosedWindows() =
-        let known = isSubscribed.Keys @ List.ofSeq appKeys.Keys @ List.ofSeq settling.Keys @ List.ofSeq awaitingDesktop.Keys
+        let known = List.ofSeq browserDrags @ isSubscribed.Keys @ List.ofSeq appKeys.Keys @ List.ofSeq settling.Keys @ List.ofSeq awaitingDesktop.Keys
         for hwnd in List.distinct known do
             if not (WinUserApi.IsWindow hwnd) then this.forgetWindow hwnd
 
