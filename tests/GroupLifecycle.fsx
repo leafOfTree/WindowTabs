@@ -25,6 +25,12 @@ let pumpUntilShowing description (state:unit -> string) predicate =
     with _ -> failwithf "%s: %s" description (state())
 
 let main() =
+    let press = POINT(100,100)
+    check (BrowserTabDrag.moved press (POINT(450,200))) "A completed browser drag lost its displacement"
+    check (not (BrowserTabDrag.moved press press)) "A browser click looked like a drag"
+    let browserDrag = Program.DiscoveryEvents.isBrowserTearOff "Chrome_WidgetWin_1" (IntPtr 2)
+    check (browserDrag (IntPtr 1) IntPtr.Zero) "Dragging from a Chromium window lost the tear-off"
+    check (not (browserDrag IntPtr.Zero IntPtr.Zero)) "An ordinary browser window looked like a tear-off"
     // Explorer windows 1 and 3 are on desktop 1, window 4 on desktop 2; window 5's desktop is unknown.
     let desk1, desk2 = Guid.NewGuid(), Guid.NewGuid()
     let pathOf (hwnd:IntPtr) = if hwnd = IntPtr(2) then "chrome.exe" else "explorer.exe"
@@ -1586,23 +1592,22 @@ let main() =
                 onGroup group (fun g -> g.tabActivate(Tab pictured.Handle,false))
                 pumpUntil "The pictured tab did not come in front" (fun () -> onGroup group (fun g -> g.topWindow=pictured.Handle))
                 wait 900L
-                onGroup group (fun g ->
-                    let image = g.ts.tabInfo(Tab pictured.Handle).preview()
-                    image.bitmap.Dispose())
+                // PrintWindow sends paint messages to the form's owner. Fetch the callback
+                // on the group STA, then render on the thread that owns the form.
+                let picturedTab = Tab pictured.Handle
+                let preview() =
+                    let render = onGroup group (fun g -> g.ts.tabInfo(picturedTab).preview)
+                    render()
+                (preview()).bitmap.Dispose()
                 // It stops painting, and goes behind.
                 stripe.Visible <- false
                 pictured.Refresh()
                 onGroup group (fun g -> g.tabActivate(Tab other.Handle,false))
                 pumpUntil "The other tab did not come in front" (fun () -> onGroup group (fun g -> g.topWindow=other.Handle))
                 let shows =
-                    onGroup group (fun g ->
-                        let image = g.ts.tabInfo(Tab pictured.Handle).preview()
-                        let bitmap = image.bitmap
-                        let green =
-                            seq { for x in 1..7 do for y in 2..7 -> bitmap.GetPixel(bitmap.Width*x/8,bitmap.Height*y/8) }
-                            |> Seq.exists(fun pixel -> pixel.G>100uy && pixel.R<80uy)
-                        bitmap.Dispose()
-                        green)
+                    use bitmap = (preview()).bitmap
+                    seq { for x in 1..7 do for y in 2..7 -> bitmap.GetPixel(bitmap.Width*x/8,bitmap.Height*y/8) }
+                    |> Seq.exists(fun pixel -> pixel.G>100uy && pixel.R<80uy)
                 check shows "A tab behind that no longer paints did not show its last picture"
                 for hwnd in [pictured.Handle;other.Handle] do (group :> IGroup).removeWindow hwnd
                 (group :> IGroup).destroy()
