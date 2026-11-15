@@ -72,6 +72,7 @@ type SettingsRec = {
     /// Which tab titles are bold: "Never", "Active" or "All".
     tabTextWeight: string
     /// Where tabs show a close button: "ActiveAndHover", "Active" or "Never".
+    tabAddButton: string
     tabCloseButton: string
     /// Percent the tabs are solid while the pointer is elsewhere.
     tabOpacity: int
@@ -209,8 +210,8 @@ type IProgram =
     abstract member suspendTabMonitoring : unit -> unit
     abstract member resumeTabMonitoring : unit -> unit
     abstract member llMouse : IEvent<int32 * IntPtr>
-    /// Windows an empty pane can take, on this desktop: handle, tab name and program.
-    abstract member paneCandidates : unit -> (IntPtr * string * string) list
+    /// Windows on this desktop. With a destination strip, offer only windows that can join it.
+    abstract member windowCandidates : targetGroup:IntPtr option -> (IntPtr * string * string) list
     /// Opens the palette on a scope, the windows when none is given, or closes it when it is
     /// open on that scope already; open on another, it switches. Posted to the UI thread.
     abstract member toggleSearch : PaletteScope option -> unit
@@ -262,6 +263,7 @@ type GroupCommand =
     /// Every tab of the window's program.
     | CloseAppTabs of IntPtr
     | CloseAllTabs
+    | AddExistingWindow
     | SortTabs
     /// By that many places along the strip, backwards when negative.
     | MoveTab of IntPtr * int
@@ -273,6 +275,7 @@ type GroupCommand =
     | SetTabColor of IntPtr * TabColorChoice option
     | SetTabPinned of IntPtr * bool
     | ToggleIconsOnly
+    | ToggleGroupTopmost
     | ToggleKeepWindowSizes
     | ToggleInactiveOffScreen
     | SetTabDock of TabDock
@@ -317,6 +320,7 @@ type IDesktop =
     abstract member adoptIntoPane: IntPtr * IntPtr * PanePath -> unit
     /// Puts a window, grouped elsewhere or not at all, beside the partner tab of the group whose
     /// strip is given, as the drop says.
+    abstract member addExistingWindow: IntPtr * IntPtr -> unit
     abstract member adoptBeside: IntPtr * IntPtr * LayoutDrop * IntPtr -> unit
 
 type IPlugin =

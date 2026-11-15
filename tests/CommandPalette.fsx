@@ -111,7 +111,7 @@ let main() =
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
-            member _.paneCandidates() = candidates
+            member _.windowCandidates _ = candidates
             member _.toggleSearch scope = calls.Enqueue(sprintf "toggleSearch %A" scope)
             member _.saveWorkspace() = calls.Enqueue "saveWorkspace"
             member _.restoreWorkspace() = calls.Enqueue "restoreWorkspace"
@@ -136,7 +136,10 @@ let main() =
         let picks = ConcurrentQueue<int>()
         Services.register<ISplitPanePicker>({new ISplitPanePicker with
             member _.show(_,_,windows,_) = picks.Enqueue windows.Length
-            member _.showWithin(_,windows,_) = picks.Enqueue windows.Length})
+            member _.showWithin(_,_,windows,_) = picks.Enqueue windows.Length
+            member _.showForMerge(prompt,windows,choose) =
+                check (prompt=tr Strings.TabMenu.addExisting) "Wrong prompt for the merge picker"
+                windows |> List.tryHead |> Option.iter(fun (hwnd,_,_) -> choose hwnd)})
         // Groups whose taskbar button would be the real one get a stand-in, as no taskbar is needed here.
         let noTaskbar() = {new IPlugin with member _.init() = ()}
         let desktop = Desktop({new IDesktopNotification with
@@ -402,6 +405,50 @@ let main() =
                      "The palette and tab menu disagree about window behavior"
             note (TabSearch.matches "window behavior" keep && TabSearch.matches "window behavior" hide && TabSearch.matches "透明" hide)
                  "Window behavior switches were missing from palette search"
+            let topId = "group-always-on-top"
+            let top = behaviorRow topId
+            // WindowTabs only lays out chrome for on-screen windows.
+            let front = onGroupOf active (fun group -> group.topWindow)
+            let originalPosition = (OS().windowFromHwnd front).bounds.location
+            let moveFront (point:Point) = helper.asyncInvoke(fun () -> (Control.FromHandle(front) :?> Form).Location <- point)
+            let work = Screen.PrimaryScreen.WorkingArea
+            moveFront (Point(work.Left+40,work.Top+80))
+            pumpUntil "The on-screen group getting a frame" (fun () -> onGroupOf active (fun group -> group.bounds.value.IsSome))
+            let size = Size(160,100)
+            let accent = Color.MediumVioletRed
+            let pad = PinnedFrameDrawing.margin false false
+            note (pad>=Dpi.scale 12) "Pinned shadow should extend beyond the native border"
+            use rounded = PinnedFrameDrawing.render size accent false false
+            let side x = rounded.GetPixel(x,rounded.Height/2)
+            note ((side pad).ToArgb()=accent.ToArgb() && (side (pad+max 1 (Dpi.scale 1))).A=0uy && (side (pad-1)).A>(side (pad-3)).A &&
+                  (side (pad-3)).A>0uy && (side (rounded.Width/2)).A=0uy &&
+                  rounded.GetPixel(pad,pad).A<(side pad).A) "Pinned outline lost its accent, rounded corners, clear center or fading shadow"
+            use maximized = PinnedFrameDrawing.render size accent true false
+            note (maximized.Size=size && maximized.GetPixel(0,size.Height/2).A>0uy) "Maximized outline did not follow the square frame"
+            for expected in [true;false] do
+                turn topId top
+                pumpUntil "The palette reflecting group topmost" (fun () -> (palettePage.aside "" top).switch=Some expected)
+                note (onGroupOf active (fun group -> group.windows.items.list |> List.forall(fun hwnd ->
+                    (OS().windowFromHwnd hwnd).isTopMost=expected && GroupTopmost.marked hwnd=expected)))
+                     "Group topmost did not update every native member"
+                let framed = onGroupOf active (fun group ->
+                    Application.OpenForms |> Seq.cast<Form> |> Seq.choose(function :? PinnedGroupFrame as f -> Some f | _ -> None)
+                    |> Seq.exists(fun f ->
+                        let outline = OS().windowFromHwnd f.Handle
+                        f.Visible && outline.isTopMost && outline.zorder<(OS().windowFromHwnd group.topWindow).zorder &&
+                        (group.bounds.value |> Option.exists(fun bounds -> f.Bounds=Rectangle.Inflate(bounds.Rectangle,PinnedFrameDrawing.margin group.isMaximized.value SystemInformation.HighContrast,PinnedFrameDrawing.margin group.isMaximized.value SystemInformation.HighContrast))) &&
+                        (WinUserApi.GetWindowLong(f.Handle,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64() &&& 0x20L)<>0L))
+                note (framed=expected) "Pinned group outline should show only its click-through edges"
+                if expected && framed then
+                    onGroupOf active (fun group ->
+                        let frame = Application.OpenForms |> Seq.cast<Form> |> Seq.pick(function :? PinnedGroupFrame as f when f.Visible -> Some f | _ -> None)
+                        let outline = OS().windowFromHwnd frame.Handle
+                        group.onEnterMoveSize()
+                        outline.makeNotTopMost()
+                        group.onExitMoveSize()
+                        note (outline.isTopMost && outline.zorder<(OS().windowFromHwnd group.topWindow).zorder)
+                             "The stationary pinned outline stayed below its window after a move")
+            moveFront originalPosition.Point
             turn keepId keep
             checkModes true true
             turn hideId hide
@@ -564,6 +611,20 @@ let main() =
                     runDone command.id active
                     note ((api.getValue key :?> bool)=before) (sprintf "%s run again did not turn %s back" command.id key)
                 | _ -> issues.Add(sprintf "%s has no setting to turn" command.id))
+        attempt "add button visibility" (fun () ->
+            let page = CommandPalette.actionsPage active
+            let row = page.entries |> List.find(fun entry -> entry.title=tr Strings.Settings.tabAddButton.caption)
+            match page.choose row with
+            | Choose choices ->
+                let labels = [Strings.Common.never;Strings.Settings.addButtonHover;Strings.Common.always] |> List.map tr
+                note ((choices |> List.map(fun choice -> choice.label))=labels) "Add button visibility choices were out of order"
+                let previous = api.getValue "tabAddButton"
+                for mode,choice in List.zip ["Never";"Hover";"Always"] choices do
+                    note (TabSearch.matches choice.label row) "The palette did not find an add button visibility choice"
+                    choice.run() |> ignore
+                    pumpUntil "Add button mode reaching the open group" (fun () -> onGroupOf active (fun g -> g.ts.addButtonMode)=mode)
+                api.setValue("tabAddButton",previous)
+            | _ -> issues.Add "The add button visibility row did not offer its choices")
         // Bold tab text reaches each group's strip as it is turned, and back.
         attempt "tab text bold" (fun () ->
             let weight = api.getValue "tabTextWeight"
@@ -619,6 +680,14 @@ let main() =
         attempt "close-all-tabs" (fun () ->
             runDone "close-all-tabs" (hwndOf "All one")
             pumpUntil "Closing all tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "All one")) && not (WinUserApi.IsWindow (hwndOf "All two"))))
+        attempt "add-existing-window" (fun () ->
+            let picked = hwndOf "Delta"
+            let sibling = hwndOf "Echo"
+            candidates <- [picked,"Delta","app"; sibling,"Echo","app"]
+            runDone "add-existing-window" active
+            pumpUntil "Adding the picked window" (fun () ->
+                onGroupOf active (fun g -> g.windows.contains picked) && onGroup groupB (fun g -> not (g.windows.contains picked)))
+            note (onGroup groupB (fun g -> g.windows.contains sibling)) "Picking one window moved another tab from its group")
         // Last, as it gathers every window of this app: all of them join the group in front.
         attempt "group-app" (fun () ->
             let delta = hwndOf "Delta"
@@ -1153,6 +1222,57 @@ let main() =
                 pumpUntil "The palette was never put away after its command" (fun () -> paletteForms() |> List.forall(fun form -> not form.Visible)))
         api.setValue("tabStyle",box before)
         pump 100
+        let candidates = [for i in 1..6 -> TabSearch.create (nativeint i) (string i) (string i) ""]
+        let mutable picked = []
+        let merge = TabSearchForm(candidates,[],pickMany=(fun ids -> picked <- ids))
+        merge.Show()
+        let checkGestureHints() =
+            let hint = defaultArg merge.FooterNote ""
+            for key in ["Ctrl";"Shift"] do check (hint.Contains(key+"+"+tr Strings.TabMenu.click)) "The picker lost a modified click gesture"
+        checkGestureHints()
+        merge.SelectWindow(2n,Keys.None)
+        checkGestureHints()
+        merge.SelectWindow(4n,Keys.Shift)
+        merge.SelectWindow(3n,Keys.Control)
+        merge.SelectWindow(6n,Keys.Control)
+        merge.Accept()
+        check (picked=[2n;4n;6n]) "Ctrl and Shift did not add the chosen windows in list order"
+        let clickPicker = TabSearchForm(candidates,[],pickMany=(fun ids -> picked <- ids))
+        clickPicker.Show()
+        let confirmFor (rows:SettingsTreeList) =
+            rows.FindForm().Controls |> Seq.cast<Control> |> Seq.collect(fun c -> c.Controls |> Seq.cast<Control>)
+            |> Seq.pick(function :? SettingsActionButton as b when b.Text=tr Strings.TabMenu.confirmSelection -> Some b | _ -> None)
+        let pickerRows() =
+            Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun f -> f.Visible)
+            |> Seq.collect(fun f -> f.Controls |> Seq.cast<Control>)
+            |> Seq.pick(function :? SettingsTreeList as t when t.ColumnSpans.Length=2 -> Some t | _ -> None)
+        let click (rows:SettingsTreeList) x y =
+            let args = MouseEventArgs(MouseButtons.Left,1,x,y,0)
+            for handler in ["OnMouseMove";"OnMouseDown";"OnMouseUp";"OnMouseClick"] do
+                typeof<Control>.GetMethod(handler,Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(rows,[|box args|]) |> ignore
+        let rows = pickerRows()
+        check (not (confirmFor rows).Visible) "The initial picker should hide confirmation"
+        let left,width = rows.ColumnSpans.[1]
+        let height = Dpi.scale rows.RowHeight
+        picked <- []
+        click rows (left+width/2) (height/2)
+        check (picked=[1n]) "Clicking the indicator area should activate the row like a title click"
+        let batch = TabSearchForm(candidates,[],pickMany=(fun ids -> picked <- ids))
+        batch.Show()
+        let rows = pickerRows()
+        picked <- []
+        batch.SelectWindow(1n,Keys.Control)
+        click rows (left+width/2) (height+height/2)
+        click rows (Dpi.scale 60) (2*height+height/2)
+        check (picked.IsEmpty && [0..2] |> List.forall(fun i -> rows.RowSelection.Value rows.Roots.[i])) "Selection marks should reflect clicks anywhere on a row in multi-select mode"
+        let confirm = confirmFor rows
+        check confirm.Visible "Entering multi-select should show confirmation"
+        for index in 0..2 do click rows (Dpi.scale 60) (index*height+height/2)
+        check (picked.IsEmpty && not confirm.Enabled) "Emptying a selection should disable confirmation and keep the picker open"
+        click rows (Dpi.scale 60) (height/2)
+        check (picked.IsEmpty && confirm.Enabled) "Clearing all checks must not restore single-click activation"
+        confirm.PerformClick()
+        check (picked=[1n]) "Confirmation should add only the marked windows"
         let search = TabSearchForm(entries,[active],settings=api)
         search.Show()
         pump 100

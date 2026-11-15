@@ -323,29 +323,31 @@ module KeyCaps =
     let private capWidth (font:Font) height (key:string) =
         max height (TextRenderer.MeasureText(key,font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 10)
     /// The room between two caps, where a + joins them.
-    let private joinWidth (font:Font) = TextRenderer.MeasureText("+",font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 8
+    let private joinWidth padding (font:Font) = TextRenderer.MeasureText("+",font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale padding
     /// How wide the caps of a shortcut are, side by side with a + between them.
-    let width (font:Font) height shortcut =
+    let widthWithJoinPadding padding (font:Font) height shortcut =
         let caps = keys shortcut
-        (caps |> List.sumBy (capWidth font height))+joinWidth font*(max 0 (caps.Length-1))
+        (caps |> List.sumBy (capWidth font height))+joinWidth padding font*(max 0 (caps.Length-1))
+    let width font height shortcut = widthWithJoinPadding 8 font height shortcut
     /// The caps of a shortcut, from a point, a + between them and their names in the muted
     /// colour; their width.
-    let draw (g:Graphics) (font:Font) (x:int) (y:int) height (shortcut:string) (p:SettingsPalette) =
+    let drawWithJoinPadding padding (g:Graphics) (font:Font) (x:int) (y:int) height (shortcut:string) (p:SettingsPalette) =
         let centred = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter
         let ink = if SystemInformation.HighContrast then SystemColors.WindowText else p.muted
-        let join = joinWidth font
+        let join = joinWidth padding font
         let right =
             keys shortcut |> List.fold(fun (left,first) key ->
                 let left =
                     if first then left
                     else
-                        TextRenderer.DrawText(g,"+",font,Rectangle(left,y,join,height),ink,centred)
+                        TextRenderer.DrawText(g,"+",font,Rectangle(left,y,join,height),ink,centred ||| TextFormatFlags.NoPadding)
                         left+join
                 let bounds = Rectangle(left,y,capWidth font height key,height)
                 outline g bounds p
                 TextRenderer.DrawText(g,key,font,bounds,ink,centred)
                 bounds.Right,false) (x,true) |> fst
         right-x
+    let draw g font x y height shortcut palette = drawWithJoinPadding 8 g font x y height shortcut palette
 
 /// Click (or Enter/Space) to record, press the combination, Esc to cancel.
 /// The × button, or Backspace/Delete while recording, removes the shortcut (0); see AnyKey for

@@ -90,6 +90,9 @@ module TabReveal =
 /// Tab contents keep their full size until the tab is too short for them, then shrink together,
 /// so a low tab still shows its icon, close button and text whole.
 module TabMetrics =
+    let rowStep height = max (Dpi.scale 32) height + Dpi.scale 4
+    let columnHeight count height = count * rowStep height + Dpi.scale 4
+
     let sideHoverTolerance = 16
     /// Icon side for a tab this many pixels high: 16 logical px, or less to keep a tenth of the
     /// height clear above and below it.
@@ -565,7 +568,7 @@ type TabSprite<'id> = {
             // A clear gap all round, in screen pixels rather than shrunk with the icon, so it shows
             // at any scale. A third as much above and below as at the sides: the same in both looked
             // wider above and below, on a shape far longer than it is tall.
-            let sideGap = this.floatingSideGap
+            let sideGap = min this.floatingSideGap (max 0 ((this.size.width-1)/2))
             // Above a window the tab runs to the strip's bottom row, a pixel lower than its top is
             // from the strip's top: the gap below takes that pixel, so the shape sits in the middle
             // of the strip, the same size as inside the window.
@@ -575,15 +578,16 @@ type TabSprite<'id> = {
             // A wider gap above and below shrinks the shape round an icon and title of the same size,
             // which then look cramped in it.
             let inset = max 1 (min ((sideGap+1)/3) (min iconRoom (height/4)))
-            let side = float32 sideGap
             // Pixel k spans k-0.5 to k+0.5 here: the shape runs half a pixel up and left to sit in
             // the middle with crisp edges.
+            let side = float32 sideGap
             let l,t,r,b = side - 0.5f,float32 inset - 0.5f,w - side - 0.5f,float32 (height - inset) - 0.5f
             // In a row the ends round to 40% of the shape's height at any tab height: rounder than a
             // box, short of a capsule.
             let d =
                 if this.inColumn then 2.0f * float32(this.raisedRadius (height - 2 * inset) 6)
-                else 0.8f * float32(height - 2 * inset)
+                else 0.8f * (b-t)
+            let d = min d (r-l)
             path.AddArc(l,t,d,d,180.0f,90.0f)
             path.AddArc(r - d,t,d,d,270.0f,90.0f)
             path.AddArc(r - d,b - d,d,d,0.0f,90.0f)
@@ -729,35 +733,41 @@ type TabSprite<'id> = {
     member this.tabTextBrush =
         new SolidBrush(this.textColor)
 
+    member this.drawSeparator(g:Graphics) =
+        if this.showLeftSeparator then
+            let inset = float32 this.size.height * 0.28f
+            use pen = new Pen(this.separatorColor,1.0f)
+            g.DrawLine(pen,0.0f,inset,0.0f,float32 this.size.height-inset)
+
+    /// The add button uses the same tab surface with its own glyph and hit target.
+    member this.drawSurface(g:Graphics) =
+        use path = this.fillPath
+        match this.style with
+        | JoinedTabs ->
+            use background = new SolidBrush(this.fillColor)
+            g.FillPath(background, path)
+        | FolderTabs | FloatingTabs ->
+            use bar = new SolidBrush(if this.isRaised then this.barColor else this.fillColor)
+            g.FillPath(bar, path)
+            if this.isRaised then
+                use raised = this.raisedShape -0.5f
+                use fill = new SolidBrush(this.fillColor)
+                g.FillPath(fill, raised)
+                if this.needsOutline then
+                    use outline = this.raisedShape 0.5f
+                    use pen = new Pen(this.appearance.tabBorderColor, 1.0f)
+                    g.DrawPath(pen, outline)
+        this.drawSeparator(g)
+
     interface ISprite with
         member this.image =
             let img = Img(this.size)
             use g = img.graphics
-            use path = this.fillPath
-            match this.style with
-            | JoinedTabs ->
-                use background = new SolidBrush(this.fillColor)
-                g.FillPath(background, path)
-            | FolderTabs | FloatingTabs ->
-                use bar = new SolidBrush(if this.isRaised then this.barColor else this.fillColor)
-                g.FillPath(bar, path)
-                if this.isRaised then
-                    use raised = this.raisedShape -0.5f
-                    use fill = new SolidBrush(this.fillColor)
-                    g.FillPath(fill, raised)
-                    if this.needsOutline then
-                        use outline = this.raisedShape 0.5f
-                        use pen = new Pen(this.appearance.tabBorderColor, 1.0f)
-                        g.DrawPath(pen, outline)
-            // No outline on any tab, the way a browser draws them: the active
-            // tab is told apart by its fill, and a hairline divides adjacent
-            // plain tabs. An outline round the active tab made it read as a box
-            // sitting on the title bar rather than one tab among several.
-            // Exterior shadows are rendered by TabShadowWindow, outside the
-            // strip bounds so the tabs remain flush with the original window.
+            this.drawSurface(g)
             match this.stripeColor with
             | Some color ->
                 let state = g.Save()
+                use path = this.fillPath
                 g.SetClip(path)
                 use stripe = new SolidBrush(color)
                 match this.dock with
@@ -779,11 +789,6 @@ type TabSprite<'id> = {
                     g.FillRectangle(stripe,0,y,this.size.width,thickness)
                 g.Restore(state)
             | _ -> ()
-            if this.showLeftSeparator then
-                let inset = float32 this.size.height * 0.28f
-                let x = 0.0f
-                use pen = new Pen(this.separatorColor, 1.0f)
-                do g.DrawLine(pen, x, inset, x, float32 this.size.height - inset)
             if this.onlyIcon.not then
                 //the text can't be drawn as a separate bitmap because clearcase fonts
                 //can't be drawn by gdi+ to a transparent background, need to draw directly on the tab background
@@ -866,6 +871,47 @@ module StripRoom =
             |> List.tryHead
             |> Option.defaultValue wanted
 
+module TabAddButton =
+    let width height = max 0 (min (Dpi.scale 22) (height-2))
+    /// A hover button borrows space past the row when available. Fit only the shortfall
+    /// beside the tabs before hover so the last tab and the caption buttons stay reachable.
+    let hoverReserve (size:Sz) (room:Rectangle option) =
+        match room with
+        | Some area ->
+            let side = min (width size.height) (max 0 (size.width-2))
+            min size.width (max 0 (size.width+side-area.Right))
+        | None -> 0
+
+    let visible mode hovered = mode="Always" || (mode="Hover" && hovered)
+
+type AddButtonSprite = {
+    drawSurface: Graphics -> unit
+    size: Sz
+    background: Color
+    foreground: Color
+    } with
+    interface ISpriteHitTest with
+        member this.containsPoint pt = Rect(Pt(),this.size).containsPoint pt
+    interface ISprite with
+        member this.children = List2()
+        member this.image =
+            let image = Img(this.size)
+            use g = image.graphics
+            g.SmoothingMode <- SmoothingMode.AntiAlias
+            this.drawSurface g
+            let available = min this.size.width this.size.height
+            let length = max 1 (min (Dpi.scale 12) (available*2/3))
+            let stroke = min length (Dpi.scale 2)
+            // Matching parity puts both strokes on whole pixels with equally long arms.
+            let arm = (length-stroke)/2
+            let side = 2*arm+stroke
+            let x,y = (this.size.width-side)/2,(this.size.height-side)/2
+            g.SmoothingMode <- SmoothingMode.None
+            use ink = new SolidBrush(TextContrast.readable this.foreground this.background)
+            g.FillRectangle(ink,x,y+arm,side,stroke)
+            g.FillRectangle(ink,x+arm,y,stroke,side)
+            image
+
 type TabStripSprite<'id> when 'id : equality = {
     tabs: Map2<'id, TabDisplayInfo>
     appearance: TabAppearanceInfo
@@ -893,19 +939,34 @@ type TabStripSprite<'id> when 'id : equality = {
     /// The row's left edge while it is being dragged along the strip.
     rowSlide: float option
     dock: TabDock
+    reserveAddButton: bool
+    showAddButton: bool
+    /// Right edge of the group window in strip coordinates.
+    windowRight: int option
+    buttonScreen: Rectangle option
     scrollOffset: int
     } with
 
     member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
     member this.rowHeight = max (Dpi.scale 32) this.appearance.tabHeight
-    member this.rowStep = this.rowHeight + Dpi.scale 4
-    member this.scrollMaximum = max 0 (this.lorder.count*this.rowStep+Dpi.scale 4-this.size.height)
-    member this.scrollTrack = Rect(Pt(this.size.width-Dpi.scale 12,Dpi.scale 4),Sz(Dpi.scale 6,max 1 (this.size.height-Dpi.scale 8)))
+    member this.rowStep = TabMetrics.rowStep this.appearance.tabHeight
+    member private this.addButtonSide = min (TabAddButton.width this.size.height) (max 0 (this.size.width-2))
+    member private this.rowButtonWidth =
+        if this.isVertical then 0
+        elif this.reserveAddButton then this.addButtonSide
+        else TabAddButton.hoverReserve this.size this.buttonScreen
+    member private this.tabAreaWidth = this.size.width-this.rowButtonWidth
+    member this.tabAreaHeight =
+        if this.reserveAddButton && this.isVertical then this.size.height-min this.rowStep (this.size.height/2)
+        else this.size.height
+    member this.columnContentHeight = TabMetrics.columnHeight this.lorder.count this.appearance.tabHeight
+    member this.scrollMaximum = max 0 (this.columnContentHeight-this.tabAreaHeight)
+    member this.scrollTrack = Rect(Pt(this.size.width-Dpi.scale 12,Dpi.scale 4),Sz(Dpi.scale 6,max 1 (this.tabAreaHeight-Dpi.scale 8)))
     member this.scrollThumb =
         if not this.isVertical || this.scrollMaximum=0 then None
         else
             let track = this.scrollTrack
-            let height = min track.height (max (Dpi.scale 24) (track.height*this.size.height/(this.size.height+this.scrollMaximum)))
+            let height = min track.height (max (Dpi.scale 24) (track.height*this.tabAreaHeight/(this.tabAreaHeight+this.scrollMaximum)))
             let y = track.y + (track.height-height)*this.scrollOffset/this.scrollMaximum
             Some(Rect(Pt(track.x,y),Sz(track.width,height)))
 
@@ -965,16 +1026,18 @@ type TabStripSprite<'id> when 'id : equality = {
                 | None -> false
             roundRight =
                 match this.placeOf tab with
-                | Some(index) -> this.isSpaced || index = this.lorder.length - 1
+                | Some(index) when index=this.lorder.length-1 ->
+                    this.isVertical || not (this.buttonPlacement |> Option.exists(fun (edge,_) -> edge=DockStyle.Right))
+                | Some _ -> this.isSpaced
                 | None -> false
             hover = 
                 match this.hover with
-                | Some(id, part) when id = tab -> Some(part)
+                | Some(id, part) when id = tab && part<>TabNew -> Some(part)
                 | _ -> None
             // The tab being dragged is held up as a pressed one is, though it may not be the one chosen.
             captured =
                 match this.captured,this.slide with
-                | Some(id, part), _ when id = tab -> Some(part)
+                | Some(id, part), _ when id = tab && part<>TabNew -> Some(part)
                 | _, Some(slid, _) when slid = tab -> Some TabBackground
                 | _ -> None
         }
@@ -983,9 +1046,9 @@ type TabStripSprite<'id> when 'id : equality = {
 
     member private this.count = this.lorder.length
 
-    member private this.columnOutline =
+    member private this.columnOutline(frame:Rectangle) =
         let path = new GraphicsPath()
-        let w,h = float32(max 1 this.size.width),float32(max 1 this.size.height)
+        let w,h = float32(max 1 frame.Width),float32(max 1 frame.Height)
         let radius = min (float32(Dpi.scale 8)) (min w (h/2.0f))
         let diameter = radius*2.0f
         let roundLeft = (this.dock=TabDockRight) <> (this.direction=TabUp)
@@ -1003,6 +1066,10 @@ type TabStripSprite<'id> when 'id : equality = {
             path.AddArc(w-diameter,h-diameter,diameter,diameter,0.0f,90.0f)
             path.AddLine(w-radius,h,0.0f,h)
         path.CloseFigure()
+        if frame.Location<>Point.Empty then
+            use shift = new Matrix()
+            shift.Translate(float32 frame.X,float32 frame.Y)
+            path.Transform(shift)
         path
 
     /// A column whose tabs are all filled with one colour is that colour's bar, as a row of them
@@ -1025,12 +1092,13 @@ type TabStripSprite<'id> when 'id : equality = {
             gr.SmoothingMode <- SmoothingMode.AntiAlias
             // Cover the attached edge's whole pixel, so the app cannot bleed through the seam.
             gr.PixelOffsetMode <- PixelOffsetMode.Half
-            use outline = this.columnOutline
+            use outline = this.columnOutline(this.columnFrame)
             gr.FillPath(brush,outline)
             // Tabs of different colours: each row's band, half the gap above and below it, in its
             // tab's own bar colour, as a row of tabs fills each tab's slot. Neighbours of one
             // colour join into one block, and the colour changes only where the tabs do.
             gr.SetClip(outline)
+            gr.IntersectClip(Rectangle(0,0,this.size.width,this.tabAreaHeight))
             let gap = this.rowStep-this.rowHeight
             let half = gap/2
             let ids = this.lorder.list
@@ -1066,7 +1134,7 @@ type TabStripSprite<'id> when 'id : equality = {
     /// window's middle even when they fill the row.
     member private this.leftReserveOf alignment =
         match alignment with
-        | TabCenter -> min (2.0 * this.centerShift) (float this.size.width)
+        | TabCenter -> min (2.0 * this.centerShift) (float this.tabAreaWidth)
         | _ -> 0.0
 
     /// A dragged row takes its share of the whole width, so it can reach the left edge.
@@ -1081,7 +1149,7 @@ type TabStripSprite<'id> when 'id : equality = {
         this.lorder.list |> List.takeWhile(fun tab -> (this.tabs.find tab).isPinned) |> List.length
 
     member private this.fittedLength =
-        let tsWidth = float(this.size.width) - this.leftReserve
+        let tsWidth = float this.tabAreaWidth - this.leftReserve
         let tsWidth =
             if this.count < 2 then tsWidth 
             else 
@@ -1094,7 +1162,7 @@ type TabStripSprite<'id> when 'id : equality = {
 
     /// A held layout lasts only while the remaining tabs still fit inside it.
     member private this.heldLayout =
-        this.held |> Option.filter(fun (length,offset) -> this.rightOf length offset <= float this.size.width + 0.5)
+        this.held |> Option.filter(fun (length,offset) -> this.rightOf length offset <= float this.tabAreaWidth + 0.5)
 
     member private this.tabLength =
         match this.heldLayout with
@@ -1112,7 +1180,7 @@ type TabStripSprite<'id> when 'id : equality = {
     /// first one stays in view.
     member this.offsetOf alignment =
         let reserve = this.leftReserveOf alignment
-        let widthOfEmptySpace = float(this.size.width) - reserve - this.rightOf this.tabLength 0.0
+        let widthOfEmptySpace = float this.tabAreaWidth - reserve - this.rightOf this.tabLength 0.0
         let offset =
             match alignment with
             | TabLeft -> 0.0
@@ -1121,7 +1189,7 @@ type TabStripSprite<'id> when 'id : equality = {
         reserve + max 0.0 offset
 
     /// How far the row can move along the strip: the width left beside it.
-    member this.rowSpan = max 0.0 (float(this.size.width) - this.rightOf this.tabLength 0.0)
+    member this.rowSpan = max 0.0 (float this.tabAreaWidth - this.rightOf this.tabLength 0.0)
 
     member private this.alignmentOffset =
         match this.rowSlide, this.heldLayout with
@@ -1133,7 +1201,7 @@ type TabStripSprite<'id> when 'id : equality = {
                 | Some fraction when not this.isVertical -> fraction * this.rowSpan
                 | _ -> this.offsetOf this.alignment
             if this.blocked.IsEmpty || this.isVertical then wanted
-            else StripRoom.place this.blocked (float this.size.width) (this.rightOf this.tabLength 0.0) wanted
+            else StripRoom.place this.blocked (float this.size.width) (this.rightOf this.tabLength 0.0 + float this.rowButtonWidth) wanted
 
     /// The current tab length and left offset, for holding while tabs are closed.
     member this.layout = this.tabLength,this.alignmentOffset
@@ -1144,14 +1212,14 @@ type TabStripSprite<'id> when 'id : equality = {
     member private this.tabSpan tab =
         match this.slide with
         | Some(slideTab, x) when tab = slideTab->
-            let bounds = (0, this.size.width - int(this.tabLength))
+            let bounds = (0, max 0 (this.tabAreaWidth - int(this.tabLength)))
             let x = between bounds x
             x, x + int(this.tabLength)
         | _ ->
             let x = this.tabOffset (this.adjustedLorder.findIndex((=)tab)) + this.alignmentOffset
             int(x), int(x + this.tabLength)
 
-    member this.tabBounds tab =
+    member this.tabBounds tab : Rectangle =
         let location,size = this.tabLocation tab,this.tabSizeOf tab
         Rectangle(location.x,location.y,size.width,size.height)
 
@@ -1159,7 +1227,7 @@ type TabStripSprite<'id> when 'id : equality = {
         if this.isVertical then
             let y =
                 match this.slide with
-                | Some(id,y) when id=tab -> between (0,max 0 (this.size.height-this.rowHeight)) y
+                | Some(id,y) when id=tab -> between (0,max 0 (this.tabAreaHeight-this.rowHeight)) y
                 | _ -> this.adjustedLorder.findIndex((=)tab)*this.rowStep + Dpi.scale 4 - this.scrollOffset
             Pt(Dpi.scale 4,y)
         else
@@ -1170,7 +1238,7 @@ type TabStripSprite<'id> when 'id : equality = {
     /// half to each, and the column's margins. The gap only parts the tabs to the eye; over no
     /// tab, the pointer put a tab's tip away and a click there chose nothing. Not on the scroll track.
     member this.rowAt(pt:Pt) =
-        if not this.isVertical || pt.x<0 || pt.x>=this.size.width || pt.y<0 || pt.y>=this.size.height then None
+        if not this.isVertical || pt.x<0 || pt.x>=this.size.width || pt.y<0 || pt.y>=this.tabAreaHeight then None
         elif this.scrollMaximum>0 && pt.x>=this.scrollTrack.x-Dpi.scale 2 then None
         else
             // Rows lie rowStep apart from the column's padding down; a gap goes half to the row
@@ -1281,7 +1349,106 @@ type TabStripSprite<'id> when 'id : equality = {
                         [Pt(seam-side.width/2,y),button side :> ISprite]
                 | _ -> [])
 
-    member this.sprite =
+    /// A permanent button stays in the strip. A hover button can extend its surface to reach free screen space.
+    member this.buttonPlacement : (DockStyle * Rectangle) option =
+        if not this.showAddButton || this.slide.IsSome || this.lorder.isEmpty || this.addButtonSide<2 then None else
+        let side = this.addButtonSide
+        let last = this.tabBounds (List.last this.lorder.list)
+        let right,bottom = min this.tabAreaWidth last.Right,min this.tabAreaHeight last.Bottom
+        let fitsScreen (r:Rectangle) = this.buttonScreen |> Option.forall(fun area -> area.Contains r)
+        let candidates =
+            if this.isVertical && this.reserveAddButton then
+                let top = min this.columnContentHeight this.tabAreaHeight
+                let height = min this.rowHeight (this.size.height-top)
+                [DockStyle.Fill,Rectangle(last.Left,top,last.Width,height)]
+            elif this.isVertical then
+                let y = max 0 (bottom-side)
+                let rightSide = DockStyle.Right,Rectangle(this.size.width,y,side,side)
+                let leftSide = DockStyle.Left,Rectangle(-side,y,side,side)
+                let padding = this.rowStep-this.rowHeight
+                [yield DockStyle.Fill,Rectangle(0,bottom,this.size.width,this.rowStep+padding)
+                 yield DockStyle.Fill,Rectangle(0,-this.rowStep,this.size.width,this.rowStep)
+                 if this.dock=TabDockRight then yield leftSide; yield rightSide
+                 else yield rightSide; yield leftSide]
+            else
+                [DockStyle.Right,Rectangle(right,last.Top,side,last.Height)]
+        candidates |> List.tryFind(fun (edge,r) ->
+            fitsScreen r && (edge<>DockStyle.Right || this.isVertical ||
+                (this.blocked |> List.forall(fun (left,right) -> float r.Right<=left || float r.Left>=right))))
+
+    member this.renderBounds =
+        let viewport = Rectangle(Point.Empty,this.size.Size)
+        match this.buttonPlacement with
+        | Some(_,button) -> Rectangle.Union(viewport,button)
+        | None -> viewport
+
+    /// The hover row and tabs share one silhouette; a small side button stays outside it.
+    member private this.columnFrame =
+        let viewport = Rectangle(Point.Empty,this.size.Size)
+        if not this.reserveAddButton && this.showAddButton then
+            match this.buttonPlacement with
+            | Some(DockStyle.Fill,button) -> Rectangle.Union(viewport,button)
+            | _ -> viewport
+        else viewport
+
+    member private this.addButtons =
+        match this.buttonPlacement,this.zorder.tryHead with
+        | Some(edge,bounds),Some top ->
+            let hovered = this.hover=Some(top,TabNew)
+            let pressed = this.captured=Some(top,TabNew)
+            let last = List.last this.lorder.list
+            let tab = this.tabSpriteOf last
+            let bar = if this.isVertical then this.columnColor else tab.barColor
+            let afterTab = not this.isVertical && edge=DockStyle.Right
+            let slot =
+                { tab with size=bounds.Size.Sz; isTop=false; roundLeft=false; roundRight=true
+                           displayInfo={tab.displayInfo with tint=(if not this.isVertical && tab.filled then tab.displayInfo.tint else None); bgColor=None}
+                           appearance={tab.appearance with tabNormalBgColor=bar}
+                           showLeftSeparator=afterTab && not this.isSpaced && this.isPlain last
+                           hover=(if this.isVertical && edge=DockStyle.Fill && hovered then Some TabNew else None)
+                           captured=(if this.isVertical && edge=DockStyle.Fill && pressed then Some TabNew else None) }
+            let ink =
+                if not (hovered || pressed) then slot.textColor
+                elif SystemInformation.HighContrast then SystemColors.HotTrack
+                elif TextContrast.ratio Color.White slot.fillColor >= TextContrast.ratio Color.Black slot.fillColor then Color.White
+                else Color.Black
+            let drawSurface (g:Graphics) =
+                if this.isVertical && not this.reserveAddButton && edge=DockStyle.Fill then
+                    let frame = this.columnFrame
+                    use outline = this.columnOutline(Rectangle(frame.X-bounds.X,frame.Y-bounds.Y,frame.Width,frame.Height))
+                    use fill = new SolidBrush(bar)
+                    let state = g.Save()
+                    g.PixelOffsetMode <- PixelOffsetMode.Half
+                    g.FillPath(fill,outline)
+                    g.Restore(state)
+                    if hovered || pressed then
+                        let row = { slot with size=tab.size }
+                        let state = g.Save()
+                        g.TranslateTransform(float32 (this.tabLocation last).x,float32 ((bounds.Height-tab.size.height)/2))
+                        row.drawSurface g
+                        g.Restore(state)
+                elif edge=DockStyle.Left || (edge=DockStyle.Right && (this.isVertical || this.windowRight |> Option.exists(fun right -> bounds.Right>right))) then
+                    let w,h = float32 bounds.Width,float32 bounds.Height
+                    let r = min (float32 (Dpi.scale 8)) (min w h / 2.0f)
+                    // Extend the rounded path across the joined edge so only the free end curves.
+                    let shape =
+                        if edge=DockStyle.Right then RectangleF(-r,0.0f,w+r,h)
+                        else RectangleF(0.0f,0.0f,w+r,h)
+                    use outline = DrawingPaths.rounded shape r
+                    use fill = new SolidBrush(slot.fillColor)
+                    let state = g.Save()
+                    g.PixelOffsetMode <- PixelOffsetMode.Half
+                    g.FillPath(fill,outline)
+                    g.Restore(state)
+                    slot.drawSeparator(g)
+                else
+                    // Keep the rounded button's corners reachable on a layered window.
+                    g.Clear(Color.FromArgb(1,0,0,0))
+                    slot.drawSurface g
+            [bounds.Location.Pt,({drawSurface=drawSurface; size=slot.size; background=slot.fillColor; foreground=ink} :> ISprite)]
+        | _ -> []
+
+    member private this.bodySprite =
         {
             new ISprite with
             member x.image = this.bgImage
@@ -1301,18 +1468,39 @@ type TabStripSprite<'id> when 'id : equality = {
                 List2(this.junction @ this.feet @ (tabs |> List.map(fun (location,tab) -> location,tab :> ISprite)))
         }
 
+    member this.sprite =
+        let body = this.bodySprite
+        { new ISprite with
+            member _.image = body.image
+            member _.children = List2(this.addButtons @ body.children.list) }
+
     member this.renderTab tab = this.tabSprite(tab).render
 
     member this.render =
-        let image = this.sprite.render
+        let clip = if this.reserveAddButton || this.rowButtonWidth>0 then Some(Rectangle(0,0,this.tabAreaWidth,this.tabAreaHeight)) else None
+        let image = this.bodySprite.renderWithin(clip)
         if this.isVertical then
             use graphics = image.graphics
-            use outline = this.columnOutline
+            use outline = this.columnOutline(this.columnFrame)
             graphics.SetClip(outline,CombineMode.Exclude)
             graphics.CompositingMode <- CompositingMode.SourceCopy
             use clear = new SolidBrush(Color.Transparent)
             graphics.FillRectangle(clear,Rectangle(Point.Empty,image.size.Size))
-        image
+        match this.addButtons with
+        | (point,button)::_ ->
+            use glyph = button.image.bitmap
+            let bounds = Rectangle.Union(Rectangle(Point.Empty,image.size.Size),Rectangle(point.Point,glyph.Size))
+            let surface =
+                if bounds.Size=image.size.Size then image else
+                use original = image.bitmap
+                let expanded = Img(bounds.Size.Sz)
+                use g = expanded.graphics
+                g.DrawImageUnscaled(original,-bounds.X,-bounds.Y)
+                expanded
+            use g = surface.graphics
+            g.DrawImageUnscaled(glyph,point.x-bounds.X,point.y-bounds.Y)
+            surface
+        | [] -> image
 
     member this.collapsedHeight = max 1 (min this.size.height (Dpi.scale 4))
 
@@ -1326,7 +1514,7 @@ type TabStripSprite<'id> when 'id : equality = {
             use graphics = image.graphics
             graphics.SmoothingMode <- SmoothingMode.AntiAlias
             graphics.PixelOffsetMode <- PixelOffsetMode.Half
-            use outline = {this with size=image.size}.columnOutline
+            use outline = this.columnOutline(Rectangle(Point.Empty,image.size.Size))
             use background = new SolidBrush(this.appearance.tabNormalBgColor)
             graphics.FillPath(background,outline)
             for location,tab in this.tabSprites.list do
@@ -1393,8 +1581,11 @@ type TabStripSprite<'id> when 'id : equality = {
                         fillSegment ink x markWidth true true
         image
 
-    member this.tryHit pt =
-        let path = if Rect(Pt(),this.size).containsPoint(pt) then this.sprite.hit(pt) else List2()
+    member this.tryHit(pt:Pt) =
+        if this.buttonPlacement |> Option.exists(fun (_,button) -> button.Contains(pt.Point)) then
+            this.zorder.tryHead |> Option.map(fun tab -> tab,TabNew)
+        else
+        let path = if Rectangle(0,0,this.tabAreaWidth,this.tabAreaHeight).Contains(pt.Point) then this.bodySprite.hit(pt) else List2()
         match path.tryHead with
         | Some(:? SplitJunctionSprite as junction) -> Some(unbox<'id> junction.owner,TabSplit)
         | _ ->

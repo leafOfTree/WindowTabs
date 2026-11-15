@@ -8,6 +8,7 @@ open System.Windows.Forms
 type TreeListColumnKind =
     | TextColumn
     | CheckColumn
+    | SelectionMarkColumn
     /// Holds the RowActions buttons of the row under the pointer.
     | ActionColumn
 
@@ -196,6 +197,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member val ShowExpanders = true with get,set
     /// When false, double-clicking a row raises ItemActivated instead of expanding it; the
     /// arrow and the Left/Right keys still expand.
+    member val RowSelection : (TreeListItem -> bool) option = None with get,set
     member val ExpandOnDoubleClick = true with get,set
     /// Raised on Enter, and on double-click when ExpandOnDoubleClick is false.
     member _.ItemActivated = itemActivated.Publish
@@ -864,7 +866,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             let item,level = rows.[index]
             let top = this.rowTop index
             let row = Rectangle(Dpi.scale 2,top+1,this.contentWidth-Dpi.scale 4,this.rowSpan index-2)
-            let isSelected = Object.ReferenceEquals(item,selected)
+            let isSelected = match this.RowSelection with Some marked -> marked item | None -> Object.ReferenceEquals(item,selected)
             if isSelected || Object.ReferenceEquals(item,hovered) then
                 use shape = SettingsShapes.rounded (RectangleF(float32 row.X,float32 row.Y,float32 row.Width,float32 row.Height)) (SettingsShapes.controlRadius())
                 use fill = new SolidBrush(this.highlight(isSelected,p))
@@ -883,7 +885,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 else p.text
             for column in 0..columns.Length-1 do
                 let cell = bounds.[column]
-                match columns.[column].Kind with
+                let kind = columns.[column].Kind
+                let drawnKind = if kind=SelectionMarkColumn && (this.RowSelection.IsNone || not isSelected) then TextColumn else kind
+                match drawnKind with
                 | TextColumn when column=0 ->
                     if this.ShowExpanders && item.Children.Count>0 then
                         let box = this.expanderBounds(level,top)
@@ -1106,10 +1110,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         if not (UiFace.glyph g 0xE70D (RectangleF(cx-em/2.0f,cy-em/2.0f,em,em)) color) then
                             use pen = new Pen(color,1.5f)
                             g.DrawLines(pen,[|PointF(cx-s,cy-s/2.0f);PointF(cx,cy+s/2.0f);PointF(cx+s,cy-s/2.0f)|])
-                | CheckColumn ->
-                    match item.check column with
+                | CheckColumn | SelectionMarkColumn ->
+                    let indicator = kind=SelectionMarkColumn
+                    match (if indicator then Some true else item.check column) with
                     | Some isChecked ->
                         let box = this.checkBounds(cell,top)
+                        let box = if indicator then Rectangle(cell.Right-Dpi.scale 10-box.Width,box.Y,box.Width,box.Height) else box
                         let r = RectangleF(float32 box.X+0.5f,float32 box.Y+0.5f,float32 box.Width-1.0f,float32 box.Height-1.0f)
                         use shape = SettingsShapes.rounded r (float32(Dpi.scale 4))
                         let enabled = item.checkEnabled column
@@ -1132,7 +1138,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         else
                             use border = new Pen((if enabled then p.muted else Color.FromArgb(90,p.muted)),1.3f)
                             g.DrawPath(border,shape)
-                    | None -> ()
+                    | _ -> ()
         if rows.Length=0 && this.EmptyText<>"" then
             TextRenderer.DrawText(g,this.EmptyText,this.Font,
                                   Rectangle(Dpi.scale 14,this.headerHeight,max 1 (this.contentWidth-Dpi.scale 28),this.viewport),

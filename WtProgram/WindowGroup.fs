@@ -467,8 +467,64 @@ type TabCaptures() =
                 state.notify <- None
             entries.Clear())
 
+/// One transparent surface for the whole group, retained by Windows between repaints.
+module PinnedFrameDrawing =
+    let margin maximized highContrast = if maximized || highContrast then 0 else Dpi.scale 12
+
+    let render (size:Size) (accent:Color) maximized highContrast =
+        let pad = margin maximized highContrast
+        let bitmap = new Bitmap(size.Width+2*pad,size.Height+2*pad,PixelFormat.Format32bppPArgb)
+        use graphics = Graphics.FromImage(bitmap)
+        graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        let stroke = float32(max 1 (Dpi.scale 1))
+        let inset = (stroke-1.0f)/2.0f
+        let rect = RectangleF(float32 pad+inset,float32 pad+inset,float32 size.Width-stroke,float32 size.Height-stroke)
+        let radius = if maximized then 0.0f else max 0.0f (float32(Dpi.scale 8) - inset)
+        for distance in pad .. -1 .. 1 do
+            let offset = float32 distance
+            let glow = RectangleF.Inflate(rect,offset,offset)
+            use path = DrawingPaths.rounded glow (radius+offset)
+            let falloff = 1.0 - float(distance-1)/float pad
+            use pen = new Pen(Color.FromArgb(int(124.0*falloff*falloff),accent),1.5f)
+            graphics.DrawPath(pen,path)
+        use edge = DrawingPaths.rounded rect radius
+        use ink = new Pen(accent,stroke)
+        graphics.DrawPath(ink,edge)
+        bitmap
+
+type PinnedGroupFrame() =
+    inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
+                 AutoScaleMode=AutoScaleMode.None)
+    let mutable appearance = (SettingsColors.current()).accent
+    let mutable highContrast = SystemInformation.HighContrast
+    let mutable drawn = None
+    override _.ShowWithoutActivation = true
+    override _.CreateParams =
+        let cp = base.CreateParams
+        cp.ExStyle <- cp.ExStyle ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW ||| WindowsExtendedStyles.WS_EX_NOACTIVATE |||
+                      WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TRANSPARENT
+        cp
+    member _.refreshTheme() =
+        appearance <- (SettingsColors.current()).accent
+        highContrast <- SystemInformation.HighContrast
+
+    member this.place(owner:IntPtr,frame:Rectangle,maximized:bool) =
+        let state = frame.Size,Dpi.value(),appearance,maximized,highContrast
+        let pad = PinnedFrameDrawing.margin maximized highContrast
+        let outer = Rectangle.Inflate(frame,pad,pad)
+        if min frame.Width frame.Height<=Dpi.scale 4 then this.Hide()
+        else
+            if Some state<>drawn then
+                use image = PinnedFrameDrawing.render frame.Size appearance maximized highContrast
+                Win32Helper.UpdateLayeredWindow(this.Handle,outer.Location,image,255uy)
+                drawn <- Some state
+            elif this.Location<>outer.Location then
+                Win32Helper.UpdateLayeredWindow(this.Handle,outer.Location)
+            if not this.Visible then this.Show({new IWin32Window with member _.Handle = owner})
+
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
+    alwaysOnTop: bool
     iconOnly: bool
     transparentMode: bool
     keepWindowSizes: bool
@@ -485,6 +541,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let _os = OS()
     let mutable hasSavedTabLayout = false
     let mutable transparentModeChosen = false
+    let mutable topmostChosen = false
+    let mutable pinnedFrame : PinnedGroupFrame option = None
     let mutable keepWindowSizesChosen = false
     let mutable token = WindowGroupToken.fresh()
     let addedEvent = Event<_>()
@@ -819,6 +877,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         isDraggingExport.init()
         zorderExport.init()
         boundsExport.init()
+        let refreshFrame() = if topmostChosen then this.updatePinnedFrame()
+        boundsExport.changed.Add refreshFrame
+        isMaximizedExport.changed.Add refreshFrame
         previewBoundsExport.init()
         isForegroundExport.init()
 
@@ -841,6 +902,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let textBoldSubscription = Services.settings.notifyValue "tabTextWeight" (fun value ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.textWeight <- unbox value))
         exitedEvent.Publish.Add(fun _ -> textBoldSubscription.Dispose())
+        let addButtonSubscription = Services.settings.notifyValue "tabAddButton" (fun value ->
+            this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.addButtonMode <- unbox value))
+        exitedEvent.Publish.Add(fun _ -> addButtonSubscription.Dispose())
         let closeButtonSubscription = Services.settings.notifyValue "tabCloseButton" (fun value ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.closeButton <- unbox value))
         exitedEvent.Publish.Add(fun _ -> closeButtonSubscription.Dispose())
@@ -858,7 +922,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         appearanceSnapshot <- next
                         this.ts.setTabAppearance(next)
                         this.updateSplitChrome()
-                        if geometryChanged then geometryChangedEvent.Trigger()))
+                        if geometryChanged then geometryChangedEvent.Trigger()
+                    pinnedFrame |> Option.iter(fun frame -> frame.refreshTheme(); this.updatePinnedFrame())))
 
         Cell.listen <| fun() ->
             this.ts.zorder <- zorderCell.value.map(Tab)
@@ -970,7 +1035,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.updateIsVisible() =
         isVisibleCell.value <-
             this.isEmpty.not &&
-            zorderCell.value.where(isMinimized >> not).tryHead.exists(fun hwnd -> not(WindowCloaking.IsCloaked hwnd)) &&
+            zorderCell.value.tryFind(isMinimized >> not).exists(fun hwnd -> not(WindowCloaking.IsCloaked hwnd)) &&
             // Moved by its title bar, the window keeps its tabs on it; a split hides them until
             // the move ends, as its panes follow the one moved.
             (inMoveSize.value.not || moveFrameCell.value.IsSome)
@@ -982,7 +1047,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.updatePlacements()
         
     member private this.makeTopWindowForeground() =
-        match zorderCell.value.where(isMinimized >> not).tryHead with
+        match zorderCell.value.tryFind(isMinimized >> not) with
         | Some(top) -> 
             let window = this.os.windowFromHwnd(top)
             window.setForeground(false)
@@ -1303,6 +1368,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let previous = parent.prevZorder
             if previous.hwnd<>strip.hwnd then strip.insertAfter(previous)
         this.keepPanesBelowStrip(parentHwnd)
+        this.syncPinnedFrameOrder()
         this.ts.refreshShadow()
 
     /// In a split the strip covers both panes but belongs to the focused one. The other pane,
@@ -1415,6 +1481,52 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 if not this.parkInactive then this.windows.items.iter IndependentWindowParking.restore
                 this.applyLayout()
 
+    /// An owned WinForms popup can still be in the ordinary z-order band while its owner is pinned.
+    member private this.syncPinnedFrameOrder() =
+        match pinnedFrame with
+        | Some frame when frame.Visible && topmostChosen && not this.isEmpty ->
+            let outline = this.os.windowFromHwnd(frame.Handle)
+            let strip = this.os.windowFromHwnd(this.ts.hwnd)
+            if not outline.isTopMost || not(this.isAbove(outline.hwnd,strip.hwnd)) then
+                let above = strip.prevZorder
+                if above.hwnd=IntPtr.Zero || above.hwnd=outline.hwnd then outline.makeTopMost()
+                else outline.insertAfter(above)
+        | _ -> ()
+
+    member private this.clearPinnedFrame() =
+        pinnedFrame |> Option.iter(fun frame -> frame.Dispose())
+        pinnedFrame <- None
+
+    member private this.updatePinnedFrame() =
+        if not isDestroyed.value then
+            match boundsExport.value with
+            | Some bounds when not this.isEmpty ->
+                let frame =
+                    match pinnedFrame with
+                    | Some frame -> frame
+                    | None ->
+                        let frame = new PinnedGroupFrame()
+                        pinnedFrame <- Some frame
+                        frame
+                let wasVisible = frame.Visible
+                frame.place(this.ts.hwnd,bounds.Rectangle,isMaximizedExport.value)
+                if not wasVisible then this.syncPinnedFrameOrder()
+            | _ -> pinnedFrame |> Option.iter(fun frame -> frame.Hide())
+
+    member this.alwaysOnTop
+        with get() = topmostChosen
+        and set(value) =
+            if topmostChosen<>value then
+                topmostChosen <- value
+                let members = List.rev zorderCell.value.list |> List.map this.os.windowFromHwnd
+                if value then GroupTopmost.pinAll members else this.clearPinnedFrame()
+                if not this.isEmpty then
+                    let strip = this.os.windowFromHwnd this.ts.hwnd
+                    if value then strip.makeTopMost() else strip.makeNotTopMost()
+                    if not value then members |> List.iter GroupTopmost.release
+                    this.setTsParent(this.topWindow)
+                if value then this.updatePinnedFrame()
+
     member this.transparentMode
         with get() = transparentModeChosen
         and set(value) = this.setWindowModes(value,keepWindowSizesChosen)
@@ -1447,6 +1559,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.appPathOf hwnd |> Option.iter AppTabPositions.forget
 
     member this.menuChoices = {
+        alwaysOnTop = topmostChosen
         transparentMode = transparentModeChosen
         keepWindowSizes = keepWindowSizesChosen
         iconOnly = this.isIconOnly
@@ -1456,6 +1569,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         autoHideMode = Option.ofObj(this.bb.read<string>("autoHideMode", null)) }
 
     member this.applyMenuChoices(choices:GroupMenuChoices) =
+        this.alwaysOnTop <- choices.alwaysOnTop
         this.setWindowModes(choices.transparentMode,choices.keepWindowSizes)
         this.ts.dock <- choices.dock
         this.ts.columnWidth <- choices.columnWidth
@@ -1629,7 +1743,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         let created : EmptySplitPane option ref = ref None
                         let at() = created.Value |> Option.bind this.emptyPanePath
                         let actions = {
-                            candidates = (fun () -> Services.program.paneCandidates())
+                            candidates = (fun () -> Services.program.windowCandidates None)
                             choose = (fun hwnd -> this.fromChrome(fun () -> at() |> Option.iter(fun path -> this.fillEmptyPane(path,hwnd))))
                             close = (fun () -> this.fromChrome(fun () -> at() |> Option.iter(fun path -> this.execute(ClosePane(Some path)))))
                             resizeStarted = (fun () -> this.fromChrome(fun () -> at() |> Option.iter this.beginEmptyPaneResize))
@@ -1755,7 +1869,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     /// What the list for a split offers: every window on this desktop but the tab it goes beside.
     member this.splitCandidates(beside:IntPtr) =
-        Services.program.paneCandidates() |> List.filter(fun (hwnd,_,_) -> hwnd<>beside)
+        Services.program.windowCandidates None |> List.filter(fun (hwnd,_,_) -> hwnd<>beside)
 
     /// For the strip, once it has moved: the empty panes depend on where the tabs are.
     member this.refreshSplitChrome() = if this.isSplit && not isDestroyed.value then this.updateSplitChrome()
@@ -1848,7 +1962,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.updateSplitChrome()
             this.saveSplitProps()
         | Split _ -> ()
-        | _ -> zorderCell.value.tail.iter(this.adjustWindowPlacement)
+        | _ ->
+            let followers = zorderCell.value.tail
+            if not followers.isEmpty then
+                let park,keep = this.parkInactive,this.keepSizes
+                followers.iter(fun hwnd -> this.placeWindow(hwnd,park,keep))
 
     /// A drag of a pane, the empty pane or the divider: the other tabs go off screen, as a
     /// single window's followers do while it moves, and come back when it ends.
@@ -2180,6 +2298,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             | SetTabOrder wanted ->
                 StripOrder.arrange PinnedTabs.contains this.lorder.list wanted
                 |> List.iteri(fun index hwnd -> if this.lorder.list.[index]<>hwnd then this.ts.moveTab(Tab(hwnd),index))
+            | ToggleGroupTopmost -> this.alwaysOnTop <- not topmostChosen
             | ToggleIconsOnly -> this.isIconOnly <- not this.isIconOnly
             | ToggleKeepWindowSizes -> if this.canChangeWindowBehavior then this.keepWindowSizes <- not this.keepWindowSizes
             | ToggleInactiveOffScreen -> if this.canChangeWindowBehavior then this.transparentMode <- not this.transparentMode
@@ -2187,7 +2306,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // The tabs' direction in view, as the tab menu's alignment items set.
             | SetTabAlignment alignment -> this.chooseAlignment(alignment,zorderCell.value.tryHead |> Option.defaultValue IntPtr.Zero)
             | SetAutoHide mode -> this.bb.write("autoHideMode",mode)
-            | RenameTab _ | CloseOtherTabs _ | CloseTabsAfter _ | CloseAppTabs _ | CloseAllTabs | SortTabs -> commandRequestedEvent.Trigger(command)
+            | RenameTab _ | CloseOtherTabs _ | CloseTabsAfter _ | CloseAppTabs _ | CloseAllTabs | SortTabs | AddExistingWindow -> commandRequestedEvent.Trigger(command)
     member _.commandRequested = commandRequestedEvent.Publish
 
     /// A pane window coming to the front focuses its side; another tab parks the pair.
@@ -2335,7 +2454,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if window.isMinimized then window.placement.rcNormalPosition else window.bounds
         | _ -> saved
 
-    member private this.isTop(hwnd) = zorderCell.value.where(isMinimized >> not).tryHead = Some(hwnd)
+    member private this.isTop(hwnd) = zorderCell.value.tryFind(isMinimized >> not) = Some(hwnd)
 
     member private this.saveTopWindowPlacement() = this.saveWindowPlacement zorderCell.value.head
 
@@ -2375,6 +2494,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.finishPlacementReconciliation()
            
     member private this.adjustWindowPlacement(hwnd) =
+        this.placeWindow(hwnd,this.parkInactive,this.keepSizes)
+
+    member private this.placeWindow(hwnd,park,keep) =
         let changingMinimizeState =
             match requestedMinimizeStates.TryGetValue(hwnd) with
             | true,expected -> this.os.windowFromHwnd(hwnd).isMinimized<>expected && FollowerPlacement.isChangingMinimizeState placementOwner hwnd
@@ -2382,7 +2504,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // A tab carried in is placed once it is let go.
         if heldByDrag=Some hwnd then ()
         elif this.isSplit then this.applyLayout()
-        elif this.parkInactive && not this.isEmpty && hwnd<>this.topWindow then
+        elif park && not this.isEmpty && hwnd<>this.topWindow then
             let front = this.os.windowFromHwnd this.topWindow
             if not front.isMinimized then
                 FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) -> match request with AlignWindow _ -> true | _ -> false))
@@ -2391,7 +2513,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 else
                     let stripAbove = if this.ts.isVertical then 0 else max 0 (this.tabAppearance.tabHeight - this.tabAppearance.tabHeightOffset)
                     IndependentWindowParking.returnPoint stripAbove front follower |> Option.iter (IndependentWindowParking.park follower)
-        elif this.keepSizes then
+        elif keep then
             FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) -> match request with AlignWindow _ -> true | _ -> false))
         elif placement.value.IsSome && not changingMinimizeState then
             let bounds,wp,visible = placement.value.Value
@@ -2494,6 +2616,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.adjustChildWindows()
         if this.windows.contains(this.os.foreground.hwnd) then this.makeTopWindowForeground()
         this.updateIsVisible()
+        this.syncPinnedFrameOrder()
 
     member this.main(hwnd, evt) =
         let location = evt = WinEvent.EVENT_OBJECT_LOCATIONCHANGE
@@ -2696,6 +2819,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // An app raised by a click comes over the divider and the empty pane, which are
                 // owned by nothing: its invisible resize border then took their edges.
                 this.keepPanesBelowStrip(this.topWindow)
+                this.syncPinnedFrameOrder()
             this.ts.refreshShadow()
         | WinEvent.EVENT_OBJECT_HIDE | WinEvent.EVENT_OBJECT_DESTROY ->
             if evt=WinEvent.EVENT_OBJECT_HIDE && this.windows.contains hwnd then
@@ -2719,6 +2843,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 | Some layout -> this.applyTabLayout layout
                 // The app's tabs were dragged along their row before: its next group starts there.
                 | None -> this.appPathOf hwnd |> Option.bind AppTabPositions.tryFind |> Option.iter(fun fraction -> this.ts.position <- Some fraction)
+            if this.windows.isEmpty && GroupTopmost.marked hwnd then topmostChosen <- true
+            if topmostChosen then GroupTopmost.pinAll [window]
+            elif GroupTopmost.marked hwnd then GroupTopmost.release window
             this.setWindows(this.windows.add hwnd)
             WindowGroupToken.save hwnd this.groupToken
             WindowGroupToken.saveMadeByHand hwnd isMadeByHand
@@ -2843,6 +2970,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         hiddenCloseTimer.Start()
                     else this.activateSuccessor(target,force))
             if settlingSuccessor |> Option.forall(fun (closed,_,_) -> closed<>hwnd) then hiddenAt.Remove hwnd |> ignore
+            this.releaseGroupTopmost hwnd
+
+    /// Taskbar owner changes can restack a leaving window. Restore it after those changes,
+    /// while it still belongs to us rather than a group that has already taken it over.
+    member private this.releaseGroupTopmost hwnd =
+        if topmostChosen && WindowGroupToken.read hwnd=Some this.groupToken then
+            GroupTopmost.release (this.os.windowFromHwnd hwnd)
 
     /// The tab shown before `hwnd`, the one the foreground left for it, comes to the front, once
     /// `hwnd` has left the group by a drag. Nothing else is known to have been shown: a tab
@@ -2947,6 +3081,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.ts.destroy()
         shellHookWindow.value.iter <| fun d -> d.Dispose()
         winEventHandler.value.iter <| fun d -> d.Dispose()
+        this.windows.items.iter this.releaseGroupTopmost
         exitedEvent.Trigger()
         (iconCache :> IDisposable).Dispose()
         (invoker :> IDisposable).Dispose()
@@ -2965,6 +3100,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
+            this.clearPinnedFrame()
             this.windows.items.iter IndependentWindowParking.restore
             splitSettleTimer.Dispose()
             captureTimer.Dispose()
@@ -3040,7 +3176,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         
     member this.restoreAll = fun() ->
         // Each tab goes back below the one restored first, which stays in front.
-        let top = zorderCell.value.where(isMinimized >> not).tryHead
+        let top = zorderCell.value.tryFind(isMinimized >> not)
         zorderCell.value.where(this.needsMinimizeState false).iter <| fun hwnd ->
             requestedMinimizeStates.[hwnd] <- false
             let request =

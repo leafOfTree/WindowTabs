@@ -476,6 +476,7 @@ module Commands =
         plain "clear-tab-color" Strings.Commands.clearTabColor TabCommands hasGroup clearTabColor
         plain "move-tab-left" Strings.Commands.moveTabLeft TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,-1))))
         plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))
+        plain "add-existing-window" Strings.Commands.addExisting GroupCommands hasGroup (onGroup(fun g -> g.run AddExistingWindow))
         plain "sort-tabs" Strings.Commands.sortTabs TabCommands hasOtherTabs (onGroup(fun g -> g.run SortTabs))
         plain "close-other-tabs" Strings.Commands.closeOtherTabs TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(CloseOtherTabs hwnd)))
         plain "close-tabs-after" Strings.Commands.closeTabsAfter TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(CloseTabsAfter hwnd)))
@@ -537,6 +538,10 @@ module Commands =
                         | None,Some layout -> Some layout.iconOnly
                         | None,None -> Some(Services.settings.getValue("showIconsOnly") :?> bool) }
         { choosing "group-tab-position" Strings.Commands.groupTabPosition GroupCommands hasGroup (snd positionChoice) with current=fst positionChoice }
+        { plain "group-always-on-top" Strings.Commands.groupTopmost GroupCommands hasGroup (onGroup(fun g ->
+              g.run ToggleGroupTopmost
+              readAgain g))
+          with state=fun hwnd -> if hasGroup hwnd then Some(shownChoices hwnd |> Option.exists(fun shown -> shown.alwaysOnTop)) else None }
         windowBehavior "group-keep-window-sizes" Strings.Commands.keepWindowSizes ToggleKeepWindowSizes
             (fun shown -> shown.keepWindowSizes)
         windowBehavior "group-inactive-off-screen" Strings.Commands.inactiveOffScreen ToggleInactiveOffScreen

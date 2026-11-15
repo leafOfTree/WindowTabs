@@ -51,8 +51,9 @@ module SplitMenu =
 type ISplitPanePicker =
     /// Opens below `anchor`, on screen; `choose` receives the window picked.
     abstract member show : owner:Control * anchor:Rectangle * windows:(IntPtr * string * string) list * choose:(IntPtr -> unit) -> unit
+    abstract member showForMerge : prompt:string * windows:(IntPtr * string * string) list * choose:(IntPtr -> unit) -> unit
     /// Opens over `within`, on screen, as for a group about to split.
-    abstract member showWithin : within:Rectangle * windows:(IntPtr * string * string) list * choose:(IntPtr -> unit) -> unit
+    abstract member showWithin : within:Rectangle * prompt:string * windows:(IntPtr * string * string) list * choose:(IntPtr -> unit) -> unit
 
 /// The bar between the panes: dragged for the ratio, double-clicked to equalize, right-clicked
 /// for the split's menu. It only produces commands.

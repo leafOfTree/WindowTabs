@@ -31,13 +31,12 @@ type WindowDecorator = {
         )
 
     member this.shouldShowInside = 
-        use decoratorOutsideRegion = new Rgn(this.outsideBounds)
-        use decoratorInsideRegion = new Rgn(this.insideBounds)
-        this.monitorBounds.any <| fun monitorBounds ->
-            use monitorRegion = new Rgn(monitorBounds)
-            use onMonitorInsideRegion = monitorRegion.intersect(decoratorInsideRegion)
-            use onMonitorOutsideRegion = monitorRegion.intersect(decoratorOutsideRegion)
-            onMonitorInsideRegion.box.height > onMonitorOutsideRegion.box.height
+        let inside,outside = this.insideBounds,this.outsideBounds
+        let heightOn (area:Rect) (row:Rect) =
+            // CreateRectRgn also normalizes reversed edges on very narrow windows.
+            if max area.left (min row.left row.right) >= min area.right (max row.left row.right) then 0
+            else max 0 (min area.bottom row.bottom - max area.top row.top)
+        this.monitorBounds.any(fun area -> heightOn area inside > heightOn area outside)
 
     /// A row wide enough to reach both upper corners sits on the straight part of the frame.
     member this.topPlacement(contentWidth:int) : TabStripPlacment =

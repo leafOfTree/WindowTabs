@@ -482,7 +482,7 @@ let main() =
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
-            member _.paneCandidates() = []
+            member _.windowCandidates _ = []
             member _.toggleSearch _ = ()
             member _.saveWorkspace() = ()
             member _.restoreWorkspace() = ()
@@ -1466,6 +1466,20 @@ let main() =
                     let subset = List2([handles.Head])
                     let selected = invoke "inZorder" group [|box subset|] :?> List2<IntPtr>
                     check (selected.list=[handles.Head]) "Ordering ignored its requested subset")
+                onGroup(fun group ->
+                    let strip = group.ts
+                    check (strip.rowTabs=List.map strip.rowTab strip.lorder.list) "Carried and target tab placement disagree"
+                    let order = group.zorder.value
+                    let visible hwnd = not (WinUserApi.IsIconic hwnd)
+                    let top = order.tryFind visible
+                    let measure lookup =
+                        let timer = Stopwatch.StartNew()
+                        for _ in 1..2000 do
+                            check (lookup()=top) "Wrong top window during a title-bar move"
+                        timer.Elapsed.TotalMilliseconds
+                    let before = measure (fun () -> order.where(visible).tryHead)
+                    let after = measure (fun () -> order.tryFind visible)
+                    printfn "PERF %dtabs-titlebar-top-2000 before=%.3fms after=%.3fms" count before after)
                 samples (sprintf "%dtabs-legacy-order-control" count) 100 (fun group _ ->
                     group.windows.items.sortBy(fun hwnd -> referenceOS.windowFromHwnd(hwnd).zorder) |> ignore)
                 samples (sprintf "%dtabs-order" count) 100 (fun group _ -> invoke "inZorder" group [|box group.windows.items|] |> ignore)

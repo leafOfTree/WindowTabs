@@ -607,8 +607,93 @@ let main() =
                 let button,_,part,action,point = clicks.[0]
                 check (button=MouseLeft && part=TabBackground && action=MouseDown && point=background) "Drag-start callback changed"
 
+                let buttons() =
+                    strip.sprite.children.list |> List.choose(fun (pt,sprite) ->
+                        match sprite with
+                        | :? AddButtonSprite as button -> Some(TabNew,pt.add(Pt(button.size.width/2,button.size.height/2)))
+                        | _ -> None)
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                let restingTabs = strip.rowTabs
+                strip.addButtonMode <- "Always"
+                check (buttons().Length=1 && (strip.tryHit(snd (buttons().Head)) |> Option.exists(fun (_,part) -> part=TabNew)))
+                      "The permanent button was not clickable with the pointer away"
+                strip.addButtonMode <- "Never"
                 hover 60
-                let tabPosition,tabSprite = strip.sprite.children.head
+                check (buttons().IsEmpty && strip.rowTabs=restingTabs) "Never show displayed the button on hover"
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                strip.addButtonMode <- "Hover"
+                check (buttons().IsEmpty) "The add button was visible after the pointer left"
+                hover 60
+                let parts = buttons()
+                check (parts |> List.map fst = [TabNew]) "Hovering a tab did not reveal exactly one add button"
+                check (strip.rowTabs=restingTabs) "Revealing the add button moved a tab"
+                for part,pt in parts do
+                    send WindowMessages.WM_MOUSEMOVE pt
+                    check (buttons()=parts) "Moving onto the add button hid or moved it"
+                    let flags = BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public
+                    let showTip() = typeof<TabStrip>.GetMethod("showTitle",flags).Invoke(strip,[||]) |> ignore
+                    let foreground,focus = WinUserApi.GetForegroundWindow(),WinUserApi.GetFocus()
+                    showTip()
+                    let tip = (typeof<TabStrip>.GetField("titleTip",flags).GetValue(strip) :?> TabTitleTip option).Value
+                    check (tip.Visible) "Resting on the add button did not show its mouse instructions"
+                    let wrapped = typeof<TabTitleTip>.GetField("wrapped",flags).GetValue(tip) :?> string
+                    check (wrapped=tr (Strings.TabMenu.addTabHint true) && wrapped.Split('\n').Length=2)
+                          "The add button tip did not put each mouse action on its own line"
+                    let inset = Dpi.scale 6
+                    check (isNull tip.Region || tip.Region.IsVisible(Point(inset,2)))
+                          "The add button tip kept an arrow strip above its two lines"
+                    check (WinUserApi.GetWindow(tip.Handle,GetWindowConstants.GW_OWNER)=strip.hwnd)
+                          "The hover tip did not belong to the strip whose app could cover it"
+                    let aboveTip hwnd =
+                        let rec walk h = h<>IntPtr.Zero && (h=hwnd || walk (WinUserApi.GetWindow(h,GetWindowConstants.GW_HWNDPREV)))
+                        walk (WinUserApi.GetWindow(tip.Handle,GetWindowConstants.GW_HWNDPREV))
+                    use cover = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
+                                         Bounds=tip.Bounds)
+                    WinUserApi.ShowWindow(cover.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+                    let os = OS()
+                    os.windowFromHwnd(cover.Handle).makeTopMost()
+                    check (aboveTip cover.Handle) "The fixture failed to put a topmost window over the tip"
+                    showTip()
+                    check (not (aboveTip cover.Handle) && not (aboveTip strip.hwnd)) "The reused tip stayed behind an overlapping window"
+                    check (WinUserApi.GetForegroundWindow()=foreground && WinUserApi.GetFocus()=focus) "A hover tip took focus or raised its app"
+                    cover.Hide()
+                    for down,up,button in [WindowMessages.WM_LBUTTONDOWN,WindowMessages.WM_LBUTTONUP,MouseLeft
+                                           WindowMessages.WM_RBUTTONDOWN,WindowMessages.WM_RBUTTONUP,MouseRight] do
+                        send down pt
+                        send up pt
+                        let actual,_,hit,action,_ = clicks.[clicks.Count-1]
+                        check (actual=button && hit=part && action=MouseUp) "An add button click reached the wrong action"
+                // The screenshot case: the native strip is full before hover. Its layered
+                // window must grow beyond that viewport for the button to actually receive input.
+                let packed = Dpi.scaleSize(Sz(300,28))
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                strip.setPlacement(placement start packed false)
+                let originalRow = strip.rowTabs
+                hover 60
+                let _,outside = buttons() |> List.exactlyOne
+                check (outside.x>=packed.width && outside.x<strip.bounds.width && strip.rowTabs=originalRow)
+                      "A full native strip placed the add button on a tab or outside its window"
+                send WindowMessages.WM_MOUSEMOVE outside
+                send WindowMessages.WM_RBUTTONDOWN outside
+                send WindowMessages.WM_RBUTTONUP outside
+                let mouse,_,hit,released,_ = clicks.[clicks.Count-1]
+                check (mouse=MouseRight && hit=TabNew && released=MouseUp) "The extended surface lost the add button click"
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                check (strip.bounds.size=packed) "The floating surface stayed after hover ended"
+                // Inside a title bar the strip ends where the caption-button margin begins.
+                let work = Screen.PrimaryScreen.WorkingArea
+                let titleBar = Pt(work.Left+Dpi.scale 20,work.Top+Dpi.scale 20)
+                strip.setPlacement(placement titleBar packed true)
+                let insideRow = strip.rowTabs
+                hover 60
+                let _,inlineButton = buttons() |> List.exactlyOne
+                check (inlineButton.y>=0 && inlineButton.y<packed.height && inlineButton.x<packed.width &&
+                       inlineButton.x+titleBar.x >= (List.last insideRow).right && strip.bounds.size=packed && strip.rowTabs=insideRow)
+                      "The title bar add button dropped below the row, covered a caption button or moved a tab"
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                strip.setPlacement(placement start size false)
+                hover 60
+                let tabPosition,tabSprite = strip.sprite.children.list |> List.find(fun (_,sprite) -> sprite :? TabSprite<Tab>)
                 let closePosition,closeSprite = tabSprite.children.list |> List.find(fun (_,sprite) -> sprite :? CloseButtonSprite)
                 let close = closeSprite :?> CloseButtonSprite
                 let closePoint = tabPosition.add(closePosition).add(Pt(close.size.width/2,close.size.height/2))
@@ -772,6 +857,18 @@ let main() =
                         let tip = (typeof<TabStrip>.GetField("titleTip",flags).GetValue(strip) :?> TabTitleTip option).Value
                         let least = 10.0f*float32(Dpi.value())/float32(Dpi.system())
                         check (tip.Font.SizeInPoints>=least-0.01f) (sprintf "A title tip read at %.1fpt, under %.1fpt" tip.Font.SizeInPoints least)
+                        let _,add = buttons() |> List.exactlyOne
+                        send WindowMessages.WM_MOUSEMOVE add
+                        hover 100
+                        let entered = tip.Location
+                        for x in 99.. -1 ..60 do hover x
+                        let centeredOn tab =
+                            let r = strip.rowTab tab
+                            abs(tip.Left+tip.Width/2-r.x-r.width/2)<=1 && tip.Top=r.bottom+Dpi.scale 4
+                        check (tip.Visible && tip.Location=entered && centeredOn (Tab(IntPtr 101)))
+                              "The title tip followed the pointer instead of staying centered under its tab"
+                        hover 460
+                        check (tip.Visible && centeredOn (Tab(IntPtr 103))) "The title tip did not move under the next tab"
                     hover 460
                     check (shown()) "Moving between cut-short titles did not show the next one at once"
                     hover 260
@@ -825,7 +922,7 @@ let main() =
                     for id in [101;102;103] do titled id ""
 
                 let os = OS()
-                let shadow = os.windowsInZorder.list |> List.find(fun window -> window.parent.hwnd=strip.hwnd)
+                let shadow = os.windowsInZorder.list |> List.find(fun window -> window.parent.hwnd=strip.hwnd && window.hasStyleEx WindowsExtendedStyles.WS_EX_LAYERED)
                 let count = frames strip
                 for x in 1..20 do
                     strip.setPlacement(placement (start.add(Pt(x*3,x*2))) size false)
@@ -989,6 +1086,14 @@ let main() =
                         let fullContentHeight = strip.columnContentHeight
                         let mutable placementChanges = 0
                         use placementWatch = strip.dockChanged.Subscribe(fun () -> placementChanges <- placementChanges+1)
+                        strip.addButtonMode <- "Always"
+                        let rowStep = (strip.tabLocation (strip.lorder.at 1)).y - (strip.tabLocation strip.lorder.head).y
+                        check (strip.columnContentHeight=fullContentHeight+rowStep && placementChanges=1)
+                              "Always did not request one extra row in the side column"
+                        strip.addButtonMode <- "Hover"
+                        check (strip.columnContentHeight=fullContentHeight && placementChanges=2)
+                              "Switching to hover did not release the reserved row"
+                        placementChanges <- 0
                         strip.removeTab last
                         check (strip.columnContentHeight<fullContentHeight && placementChanges>0) "Removing a vertical tab did not request a shorter column"
                         strip.addTab last
@@ -1067,7 +1172,11 @@ let main() =
                                 Threading.Thread.Sleep(2)
                                 widths.Add(strip.bounds.width)
                                 let bounds = strip.bounds
-                                check (bounds.y=start.y && bounds.height=columnSize.height) "Side animation moved or resized its rows vertically"
+                                let buttonBottom =
+                                    strip.sprite.children.list |> List.tryPick(fun (pt,child) ->
+                                        match child with :? AddButtonSprite as button -> Some(pt.y+button.size.height) | _ -> None)
+                                let expectedHeight = max columnSize.height (defaultArg buttonBottom 0)
+                                check (bounds.y=start.y && bounds.height=expectedHeight) "Side animation moved or resized its rows vertically"
                                 check ((if anchorRight then bounds.right=start.x+columnSize.width else bounds.left=start.x)) "Side animation drifted away from the attached edge"
                             List.ofSeq widths
                         strip.isShrunk <- true

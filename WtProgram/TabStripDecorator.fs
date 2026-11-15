@@ -148,6 +148,8 @@ type TabStripDecorator(group:WindowGroup) as this =
     let mutable dragStartIndex : int option = None
     let mutable dragStartFrame : (IntPtr * OSWindowPlacement * Pt) option = None
 
+    let mutable dragWorkAreas : List2<Rect> option = None
+
     do this.init()
 
     member this.ts = _ts
@@ -178,6 +180,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             | CloseTabsAfter hwnd -> this.onCloseWindowsAfter hwnd
             | CloseAppTabs hwnd -> this.onCloseAllExeWindows (os.windowFromHwnd(hwnd).pid.exeName)
             | CloseAllTabs -> this.onCloseAllWindows()
+            | AddExistingWindow -> this.pickExistingWindow()
             | SortTabs -> this.sortTabs()
             | _ -> ())
         group.emptyPaneChanged.Add(fun (previous,current) ->
@@ -201,7 +204,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 group.isIconOnly <- false
                 this.beginRename(hwnd)
             | MouseUp, MouseRight ->
-                let ptScreen = os.windowFromHwnd(group.hwnd).ptToScreen(pt)
+                let ptScreen = this.ts.toScreen(pt)
                 group.bb.write("contextMenuVisible", true)
                 let images = ResizeArray<Img>()
                 try
@@ -233,6 +236,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         
         this.ts.dockChanged.Add(fun () -> this.updateTsPlacement())
 
+        group.isMoving.changed.Add(fun () -> dragWorkAreas <- None)
         group.bounds.changed.Add <| fun() ->
             this.updateTsPlacement()
 
@@ -281,13 +285,14 @@ type TabStripDecorator(group:WindowGroup) as this =
         this.ts.slide <- this.tabSlide
 
     member private this.updateTsPlacement() =
-        if group.bounds.value.IsNone then
+        match group.bounds.value with
+        | None ->
             this.ts.visible <- false
-        else
-            let placement,span = this.placementAndSpan
+        | Some frame ->
+            let placement,span = this.placementFor(frame,group.isMaximized.value)
             // A column dragged along the side needs its room to know where it is let go.
             span |> Option.iter(fun span -> this.ts.columnSpan <- span)
-            this.ts.setPlacement(placement, ?owner=(group.zorder.value.tryHead |> Option.map Tab))
+            this.ts.setPlacement(placement, ?owner=(group.zorder.value.tryHead |> Option.map Tab), ownerRight=frame.right)
             this.ts.visible <- not shownElsewhere
         // An empty pane keeps clear of tabs shown inside the title bars, wherever they now are.
         group.refreshSplitChrome()
@@ -303,9 +308,19 @@ type TabStripDecorator(group:WindowGroup) as this =
         this.placementFor(group.bounds.value.def(Rect()),group.isMaximized.value)
 
     member private this.placementFor(frame:Rect,maximized:bool) =
+        let readAreas() = Mon.all.map(fun m -> m.workRect)
+        let areas =
+            if not group.isMoving.value then readAreas()
+            else
+                match dragWorkAreas with
+                | Some areas -> areas
+                | None ->
+                    let areas = readAreas()
+                    dragWorkAreas <- Some areas
+                    areas
         let decorator =  {
             windowBounds = frame
-            monitorBounds = Mon.all.map(fun m -> m.workRect)
+            monitorBounds = areas
             decoratorHeight = group.tabAppearance.tabHeight
             decoratorHeightOffset = group.tabAppearance.tabHeightOffset
             decoratorIndentFlipped = group.tabAppearance.tabIndentFlipped
@@ -454,8 +469,18 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.pickBeside(beside:IntPtr, entries, axis:SplitAxis, side:Side) =
         match Services.tryGet<ISplitPanePicker>() with
         | Some picker when not(List.isEmpty entries) ->
-            picker.showWithin(group.layoutFrame.Rectangle,entries,fun chosen -> group.placeBeside(beside,chosen,axis,side))
+            picker.showWithin(group.layoutFrame.Rectangle,tr Strings.TabMenu.splitSearch,entries,fun chosen -> group.placeBeside(beside,chosen,axis,side))
         | Some _ -> Notice.show (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitNoWindows)
+        | None -> ()
+
+    member private this.pickExistingWindow() =
+        let prompt = tr Strings.TabMenu.addExisting
+        let entries = Services.program.windowCandidates (Some this.ts.hwnd)
+        match Services.tryGet<ISplitPanePicker>() with
+        | Some picker when not entries.IsEmpty ->
+            let target = this.ts.hwnd
+            picker.showForMerge(prompt,entries,fun hwnd -> Services.desktop.addExistingWindow(target,hwnd))
+        | Some _ -> Notice.show prompt (tr Strings.TabMenu.splitNoWindows)
         | None -> ()
 
     member private this.showSplitMenu(ptScreen:Pt, button:IntPtr option) =
@@ -722,7 +747,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         let pinned = PinnedTabs.contains hwnd
         let pinTabItem =
             CmiRegular({
-                text = tr (if pinned then Strings.TabMenu.unpinTab else Strings.TabMenu.pinTab)
+                text = tr (if pinned then Strings.Commands.unpinTab.caption else Strings.Commands.pinTab.caption)
                 image = None
                 click = fun() -> group.setTabPinned(hwnd, not pinned)
                 flags = List2()
@@ -817,6 +842,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(renameTabItem)
             (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
             Some(pinTabItem)
+            Some(CmiRegular({ text=tr Strings.TabMenu.groupTopmost; image=None; flags=checkedFlag group.alwaysOnTop
+                              click=fun () -> group.run ToggleGroupTopmost }))
             Some(colorMenu)
             Some(splitMenu)
             Some(CmiSeparator)
@@ -930,9 +957,15 @@ type TabStripDecorator(group:WindowGroup) as this =
     interface ITabStripMonitor with
         member x.tabClick((btn, tab, part, action, pt)) =
             let (Tab(hwnd)) = tab
-            let ptScreen = os.windowFromHwnd(this.ts.hwnd).ptToScreen(pt)
+            let ptScreen = this.ts.toScreen(pt)
             // The button between a split's tabs is not its tab: no activation, drag, rename or tab menu.
-            if part=TabSplit then
+            if part.isAddButton then
+                if action=MouseUp then
+                    match btn with
+                    | MouseLeft -> Services.program.newTab hwnd
+                    | MouseRight -> this.pickExistingWindow()
+                    | _ -> ()
+            elif part=TabSplit then
                 if action=MouseDown && (btn=MouseLeft || btn=MouseRight) then this.showSplitMenu(ptScreen,Some hwnd)
             else
             mouseEvent.Trigger(hwnd, btn, action, pt)
@@ -1073,8 +1106,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.nearTabs(pt:Pt) =
         let sprites = this.ts.tabSprites.list
         if not sprites.IsEmpty && this.ts.visible && WinUserApi.IsWindowVisible this.ts.hwnd then
-            let strip = os.windowFromHwnd(this.ts.hwnd)
-            let rects = sprites |> List.map(fun (location:Pt,sprite) -> Rect(strip.ptToScreen(location),sprite.size))
+            let rects = sprites |> List.map(fun (location:Pt,sprite) -> Rect(this.ts.toScreen(location),sprite.size))
             let margin,reach = Dpi.scale DragRouting.stripMargin,Dpi.scale DragRouting.stripReach
             // Along a row only: down a column, past its last tab is where a tab is dragged out.
             let dx,dy = if this.ts.isVertical then margin,margin else reach,margin
@@ -1111,9 +1143,9 @@ type TabStripDecorator(group:WindowGroup) as this =
                     // The middle of the window's tab from the frame's top left, as its row stands.
                     let middle =
                         match group.bounds.value,List.tryFindIndex ((=) (Tab hwnd)) this.ts.lorder.list with
-                        | Some frame,Some index ->
-                            this.ts.rowTabs |> List.tryItem index |> Option.map(fun r ->
-                                Pt(r.left+r.width/2-frame.left,r.top+r.height/2-frame.top))
+                        | Some frame,Some _ ->
+                            let r = this.ts.rowTab(Tab hwnd)
+                            Some(Pt(r.left+r.width/2-frame.left,r.top+r.height/2-frame.top))
                         | _ -> None
                     report(infos,middle)
 
@@ -1280,7 +1312,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 // Let go in this strip: the window it carried in comes into place, in front.
                 dragInfoCell.value |> Option.iter(fun drag ->
                     let (Tab hwnd) = drag.tab
-                    let pointer = os.windowFromHwnd(this.ts.hwnd).ptToScreen(dragPtCell.value)
+                    let pointer = this.ts.toScreen(dragPtCell.value)
                     group.releaseDrag(hwnd,true,landing=(fun window -> this.tabLanding(drag,pointer,window))))
                 joinedByDrag <- false
                 dragInfoCell.set(None)

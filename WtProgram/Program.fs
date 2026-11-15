@@ -1638,13 +1638,21 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
         member x.llMouse = llMouseEvent.Publish
 
-        member x.paneCandidates() =
+        member x.windowCandidates target =
             let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
-            let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
-            // The most recently used first, as Switch windows lists them.
+            let liveGroups = this.desktop.groups.list
+            let groups = liveGroups |> List.map(fun group -> group.windows.list)
+            let eligible =
+                match target with
+                | None -> fun _ -> true
+                | Some strip ->
+                    let grouped = groups |> List.concat |> Set.ofList
+                    let own = liveGroups |> List.tryFind(fun group -> group.hwnd=strip)
+                    fun hwnd -> own |> Option.exists(fun group ->
+                        not (group.windows.contains((=) hwnd)) && (grouped.Contains hwnd || Services.filter.isTabbableWindow hwnd))
             TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups
-            |> List.filter(fun entry -> entry.desktop="")
-            |> List.sortBy(fun entry -> entry.recency)
+            |> List.filter(fun entry -> entry.desktop="" && eligible entry.hwnd)
+            |> fun entries -> if target.IsSome then entries else List.sortBy(fun entry -> entry.recency) entries
             |> List.map(fun entry -> entry.hwnd,entry.title,entry.program)
 
         member x.toggleSearch scope = this.togglePalette scope

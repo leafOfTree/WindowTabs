@@ -113,7 +113,7 @@ let main() =
             let ids = [0..count-1]
             let strip : TabStripSprite<int> = {
                 tabs=Map2(List2(ids |> List.map(fun i -> i,info i))); lorder=List2(ids); zorder=List2(ids); size=Sz(900,27)
-                slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; transparent=true; held=None; position=None; rowSlide=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0
+                slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; transparent=true; held=None; position=None; rowSlide=None; showAddButton=false; reserveAddButton=false; buttonScreen=None; windowRight=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0
                 appearance=appearance; hover=None; captured=None }
             let fills = strip.tabSprites.list |> List.filter(fun (_,sprite) -> not sprite.isTop) |> List.map(fun (_,sprite) -> sprite.fillColor)
             let spread (colors:Color list) =
@@ -376,6 +376,14 @@ let main() =
         check (api.root.["tabDarkColors"].["tabHeight"] = null) "Geometry duplicated into colour palette"
         settings.clearCaches()
         check (settings.settings.appearance.mode=LightTheme && settings.settings.appearance.geometry.height=31) "Settings round-trip failed"
+        check (api.getValue "tabAddButton"=box "Hover") "Existing settings must keep hover-only + buttons"
+        for mode in ["Always";"Never";"Hover"] do
+            api.setValue("tabAddButton",box mode)
+            settings.clearCaches()
+            check (api.getValue "tabAddButton"=box mode && string api.root.["tabAddButton"]=mode)
+                  "The add button visibility did not survive reloading settings"
+        api.setValue("tabAddButton",box "invalid")
+        check (api.getValue "tabAddButton"=box "Hover") "Unknown add button visibility did not fall back to hover"
         // Bold tab text and the tabs' opacity are written and read back, the opacity within its range.
         check (api.getValue "tabTextWeight"=box "Active") "Tab text is not bold on the active tab by default"
         api.setValue("tabTextWeight",box "All")
@@ -523,6 +531,7 @@ let main() =
             member _.groupChanged = Event<IGroup>().Publish
             member _.foregroundGroup = None
             member _.adoptIntoPane(_,_,_) = ()
+            member _.addExistingWindow(_,_) = ()
             member _.adoptBeside(_,_,_,_) = () })
         // Closing a diagnostics page must not dispose the process-wide cached font.
         for _ in 1..3 do

@@ -105,7 +105,7 @@ let main() =
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
-            member _.paneCandidates() = []
+            member _.windowCandidates _ = []
             member _.toggleSearch _ = ()
             member _.saveWorkspace() = ()
             member _.restoreWorkspace() = ()
@@ -435,6 +435,16 @@ let main() =
                   "Repeated incompatible-group notifications kept adding already-visible taskbar buttons"
             onGroup permissionProbe (fun _ -> compatible <- true;permissionPlugin.onZorderChanged())
             check (permissionHandles |> List.forall TaskbarProxies.ownsWindow) "Compatible input queues did not resume taskbar combining"
+            onGroup permissionProbe (fun group -> group.alwaysOnTop <- true)
+            check (permissionHandles |> List.forall(fun hwnd -> GroupTopmost.marked hwnd && (OS().windowFromHwnd hwnd).isTopMost))
+                  "Pinning a combined group missed a member"
+            let leaving = permissionFirst.Handle
+            onGroup permissionProbe (fun group ->
+                // A final native restack while detaching the taskbar owner can raise the window.
+                group.removed.Add(fun hwnd -> (OS().windowFromHwnd hwnd).makeTopMost())
+                group.removeDraggedWindow leaving)
+            check (not(GroupTopmost.marked leaving || (OS().windowFromHwnd leaving).isTopMost))
+                  "Dragging a window out left it pinned after its taskbar owner was released"
         finally
             (permissionProbe :> IGroup).destroy()
             pumpUntil "Permission probe did not exit" (fun () -> permissionProbe.isExited)
@@ -1331,6 +1341,7 @@ let main() =
             let mutable preparations = 0
             let mutable exits = 0
             onGroup deferredExit (fun group ->
+                group.alwaysOnTop <- true
                 group.addExitPreparation(fun complete -> preparations <- preparations+1;exitContinuation <- Some complete)
                 group.addExitPreparation(fun complete -> preparations <- preparations+1;secondExitContinuation <- Some complete)
                 group.exited.Add(fun () -> exits <- exits+1))
@@ -1349,10 +1360,13 @@ let main() =
             exitContinuation.Value()
             pumpUntil "Second exit preparation did not start once" (fun () -> secondExitContinuation.IsSome && preparations=2)
             check (not deferredExit.isExited && WinUserApi.IsWindow retainedHwnd) "Repeated completion bypassed another pending exit preparation"
+            (OS().windowFromHwnd retainedMember).makeTopMost()
             secondExitContinuation.Value()
             secondExitContinuation.Value()
             pumpUntil "Prepared group did not finish exiting" (fun () -> deferredExit.isExited && exits=1 && not(WinUserApi.IsWindow retainedHwnd))
             check (exits=1 && not(WinUserApi.IsWindow retainedHwnd)) "Exit completion destroyed the group twice or retained native windows"
+            check (not(GroupTopmost.marked retainedMember || (OS().windowFromHwnd retainedMember).isTopMost))
+                  "A window raised during deferred group teardown stayed pinned after exit"
             let mutable captured : GroupTabLayout option option = None
             let mutable captures = 0
             (closing :> IGroup).destroy()
@@ -1435,7 +1449,7 @@ let main() =
             (following :> IGroup).addWindow(a,false)
             (chosen :> IGroup).addWindow(b,false)
             pumpUntil "Groups did not acquire their windows" (fun () -> nativeOrder following = [a] && nativeOrder chosen = [b])
-            let choices = { transparentMode=true;keepWindowSizes=true; iconOnly=true; dock=TabDockLeft; columnWidth=280; alignments=[TabUp,TabRight]; autoHideMode=Some "Always" }
+            let choices = { alwaysOnTop=true; transparentMode=true;keepWindowSizes=true; iconOnly=true; dock=TabDockLeft; columnWidth=280; alignments=[TabUp,TabRight]; autoHideMode=Some "Always" }
             let savedChoices = onGroup following (fun group -> group.applyMenuChoices choices; group.menuChoices)
             desktopApi.restartGroup(chosen.hwnd, true)
             pumpUntil "Tab menu did not combine its group's taskbar icons" (fun () -> (soleGroup b true).IsSome)

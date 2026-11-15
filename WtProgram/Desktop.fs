@@ -40,7 +40,7 @@ module AutoGroup =
 /// `placed`: the tabs were dragged to a place of their own, so no alignment is theirs.
 type GroupChoicesShown = {
     dock:TabDock; alignment:Bemo.TabAlignment; placed:bool; autoHide:string option; iconOnly:bool
-    keepWindowSizes:bool; transparentMode:bool }
+    alwaysOnTop:bool; keepWindowSizes:bool; transparentMode:bool }
 
 type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =
     let Cell = CellScope(true, true)
@@ -93,6 +93,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                            placed=ts.position.IsSome
                            autoHide=Option.ofObj(_group.bb.read<string>("autoHideMode",null))
                            iconOnly=ts.isIconOnly
+                           alwaysOnTop=_group.alwaysOnTop
                            keepWindowSizes=_group.keepWindowSizes
                            transparentMode=_group.transparentMode }
                 with _ -> None
@@ -351,6 +352,10 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 let foregroundWindow = os.foreground
                 this.findGroupContainingHwnd(foregroundWindow.hwnd)
         member x.adoptIntoPane(groupHwnd,hwnd,path) = this.adoptIntoPane(groupHwnd,hwnd,path)
+        member x.addExistingWindow(groupHwnd,hwnd) =
+            this.groups.tryFind(fun g -> g.hwnd=groupHwnd && not ((g :> IGroup).windows.contains((=) hwnd)))
+            |> Option.iter(fun group -> this.handToPane(group,hwnd,fun () ->
+                if group.group.windows.contains hwnd then group.group.tabActivate(Tab hwnd,false)))
         member x.adoptBeside(groupHwnd,hwnd,drop,partner) =
             this.groups.tryFind(fun g -> g.hwnd=groupHwnd) |> Option.iter(fun group ->
                 this.handToPane(group,hwnd,fun () -> group.group.dropTab(hwnd,drop,partner)))
