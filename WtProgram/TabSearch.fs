@@ -513,13 +513,14 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         let placed =
             pickerHints count |> List.map(fun (caption,keys) ->
                 let labelWidth = TextRenderer.MeasureText(g,caption,keyFont,Size(Int32.MaxValue,hintRowHeight),captionFlags).Width
-                let width = if keys="" then labelWidth else labelWidth+KeyCaps.widthWithJoinPadding hintJoinPadding keyFont (keyHeight()) keys
+                let capOffset = labelWidth+Dpi.scale 3
+                let width = if keys="" then labelWidth else capOffset+KeyCaps.widthWithJoinPadding hintJoinPadding keyFont (keyHeight()) keys
                 if x>Dpi.scale 4 && x+width>available then
                     x <- Dpi.scale 4
                     y <- y+hintRowHeight
                 let bounds = Rectangle(x,y,labelWidth,hintRowHeight)
-                x <- x+width+Dpi.scale 16
-                caption,keys,bounds,bounds.Right)
+                x <- x+width+Dpi.scale 24
+                caption,keys,bounds,bounds.Left+capOffset)
         placed,y+hintRowHeight
     let footerHeight =
         if pickMany.IsSome then
