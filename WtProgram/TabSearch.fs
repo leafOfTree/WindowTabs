@@ -507,24 +507,25 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let confirmWidth = Dpi.scale 88
     /// Keep each gesture beside its caption when the footer needs another line.
     let hintJoinPadding = 2
-    let layoutHints count available =
+    let captionFlags = TextFormatFlags.NoPrefix ||| TextFormatFlags.NoPadding ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.SingleLine
+    let layoutHints (g:Graphics) count available =
         let mutable x,y = Dpi.scale 4,0
         let placed =
             pickerHints count |> List.map(fun (caption,keys) ->
-                let labelWidth = TextRenderer.MeasureText(caption,keyFont,Size.Empty,TextFormatFlags.NoPadding).Width
-                let capOffset = labelWidth+Dpi.scale 1
-                let width = if keys="" then labelWidth else capOffset+KeyCaps.widthWithJoinPadding hintJoinPadding keyFont (keyHeight()) keys
+                let labelWidth = TextRenderer.MeasureText(g,caption,keyFont,Size(Int32.MaxValue,hintRowHeight),captionFlags).Width
+                let width = if keys="" then labelWidth else labelWidth+KeyCaps.widthWithJoinPadding hintJoinPadding keyFont (keyHeight()) keys
                 if x>Dpi.scale 4 && x+width>available then
                     x <- Dpi.scale 4
                     y <- y+hintRowHeight
                 let bounds = Rectangle(x,y,labelWidth,hintRowHeight)
                 x <- x+width+Dpi.scale 16
-                caption,keys,bounds,bounds.Left+capOffset)
+                caption,keys,bounds,bounds.Right)
         placed,y+hintRowHeight
     let footerHeight =
         if pickMany.IsSome then
             let width = min (Dpi.scale (defaultArg width 640)) (area.Width-Dpi.scale 32)-2*padding
-            max (layoutHints None width |> snd) (layoutHints (Some tabs.Length) (width-confirmWidth) |> snd)
+            use g = Graphics.FromHwnd(IntPtr.Zero)
+            max (layoutHints g None width |> snd) (layoutHints g (Some tabs.Length) (width-confirmWidth) |> snd)
         elif pages.IsEmpty && (tabs |> List.forall(fun entry -> (windowShortcut entry).IsNone)) then 0
         else hintRowHeight
     let mutable footerNote : (string * bool) option = pickMany |> Option.map(fun _ -> pickerHintText None,false)
@@ -552,11 +553,11 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                                           TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter)
                 match footerNote with
                 | Some _ when pickMany.IsSome ->
-                    let hints,height = layoutHints (marked |> Option.map Set.count) hintLeft
+                    let hints,height = layoutHints g (marked |> Option.map Set.count) hintLeft
                     let top = (this.ClientSize.Height-height)/2
                     for caption,keys,bounds,capLeft in hints do
                         let label = Rectangle(bounds.X,bounds.Y+top,bounds.Width,bounds.Height)
-                        TextRenderer.DrawText(g,caption,keyFont,label,p.text,TextFormatFlags.NoPrefix ||| TextFormatFlags.NoPadding ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.SingleLine)
+                        TextRenderer.DrawText(g,caption,keyFont,label,p.text,captionFlags)
                         if keys<>"" then KeyCaps.drawWithJoinPadding hintJoinPadding g keyFont capLeft (label.Top+(hintRowHeight-keyHeight())/2) (keyHeight()) keys p |> ignore
                 | Some(text,refused) ->
                     // Red only for a refusal; where a key came from is just news.
