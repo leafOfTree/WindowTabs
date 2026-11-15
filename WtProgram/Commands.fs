@@ -81,11 +81,11 @@ type ShortcutHolder = { name:string; key:string; release:unit -> unit; restore:u
 /// to pick from, a value typed, a colour picked, or its page opened.
 module SettingRows =
     /// A choice setting's values with what each is called, the alignment's after the tabs' side.
+    let choiceLabels (item:SettingDefinition) =
+        if item.id="tab-alignment" then SettingsCatalog.alignmentLabels (Services.settings.getValue "tabPosition" :?> string<>"Horizontal")
+        else SettingsCatalog.choiceLabels item.id
     let choiceOptions (item:SettingDefinition) (values:string list) =
-        let labels =
-            if item.id="tab-alignment" then SettingsCatalog.alignmentLabels (Services.settings.getValue "tabPosition" :?> string<>"Horizontal")
-            else SettingsCatalog.choiceLabels item.id
-        List.zip values (labels |> List.map tr)
+        List.zip values (choiceLabels item |> List.map tr)
     /// What a choice setting is set to now, by name.
     let choiceNow (item:SettingDefinition) key values =
         let current = Services.settings.getValue key :?> string
@@ -96,12 +96,13 @@ module SettingRows =
         let turn on (modifier:string option) = fun () ->
             modifier |> Option.iter(fun key -> Services.settings.setValue("numberHotKeyModifier",box key))
             Services.settings.setValue("enableCtrlNumberHotKey",box on)
-        [ tr Strings.Settings.numberShortcutOff,turn false None
-          tr (Strings.Settings.numberShortcutWith (tr Strings.Settings.numberShortcutCtrl)),turn true (Some "Ctrl")
-          tr (Strings.Settings.numberShortcutWith (tr Strings.Settings.numberShortcutAlt)),turn true (Some "Alt") ]
+        [ Strings.Settings.numberShortcutOff,turn false None
+          Strings.Settings.numberShortcutWith (tr Strings.Settings.numberShortcutCtrl),turn true (Some "Ctrl")
+          Strings.Settings.numberShortcutWith (tr Strings.Settings.numberShortcutAlt),turn true (Some "Alt") ]
     let numberKeysNow() =
         if not (Services.settings.getValue "enableCtrlNumberHotKey" :?> bool) then 0
         elif (Services.settings.getValue "numberHotKeyModifier" :?> string)="Alt" then 2 else 1
+    let numberKeyLabel() = numberKeyOptions() |> List.item (numberKeysNow()) |> fst |> tr
     /// The Support page's settings file buttons, which the palette runs itself rather than open the page on.
     let runsInPlace = set ["settings-location";"settings-backup";"settings-reset"]
     let private colorField id = PaletteEditing.colorFields |> List.find(fun (key,_,_) -> key=id)
@@ -193,7 +194,7 @@ module SettingRows =
             let now = numberKeysNow()
             let options = numberKeyOptions()
             Choose [ for index,(label,apply) in List.indexed options ->
-                       { label=label; detail=(if index=now then "✓" else ""); swatch=None; windows=[]
+                       { label=tr label; detail=(if index=now then "✓" else ""); swatch=None; windows=[]
                          run=(fun () -> apply(); Done); preview=Some apply; undo=Some(snd options.[now]); concealed=true } ]
         // Its values to pick from, the one it has now ticked.
         | Choice(key,values,_) ->
@@ -247,6 +248,15 @@ module Commands =
     let private shownChoices hwnd =
         groupOf hwnd |> Option.bind(fun group -> match group with :? GroupInfo as info -> info.shownChoices | _ -> None)
     let private readAgain (group:IGroup) = match group with :? GroupInfo as info -> info.readShownChoices ignore | _ -> ()
+    let private windowBehavior id text command (selected:GroupChoicesShown -> bool) =
+        let enabled hwnd = groupOf hwnd |> Option.exists(function :? GroupInfo as info -> info.group.canChangeWindowBehavior | _ -> false)
+        { plain id text GroupCommands enabled (onGroup(fun g ->
+              match g with
+              | :? GroupInfo as info when info.group.canChangeWindowBehavior ->
+                  g.run command
+                  readAgain g
+              | _ -> ()))
+          with state=fun hwnd -> if hasGroup hwnd then Some(shownChoices hwnd |> Option.exists selected) else None }
     /// A group setting's choices, the one it has now ticked as a setting's are, and its name now.
     /// `now`: the group's own value, or none when no option is its value.
     let private groupChoice (options:(LocalizedText * 'value) list) (now:GroupChoicesShown -> 'value option) (set:'value -> GroupCommand) =
@@ -466,6 +476,7 @@ module Commands =
         plain "clear-tab-color" Strings.Commands.clearTabColor TabCommands hasGroup clearTabColor
         plain "move-tab-left" Strings.Commands.moveTabLeft TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,-1))))
         plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))
+        plain "add-existing-window" Strings.Commands.addExisting GroupCommands hasGroup (onGroup(fun g -> g.run AddExistingWindow))
         plain "sort-tabs" Strings.Commands.sortTabs TabCommands hasOtherTabs (onGroup(fun g -> g.run SortTabs))
         plain "close-other-tabs" Strings.Commands.closeOtherTabs TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(CloseOtherTabs hwnd)))
         plain "close-tabs-after" Strings.Commands.closeTabsAfter TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(CloseTabsAfter hwnd)))
@@ -527,6 +538,14 @@ module Commands =
                         | None,Some layout -> Some layout.iconOnly
                         | None,None -> Some(Services.settings.getValue("showIconsOnly") :?> bool) }
         { choosing "group-tab-position" Strings.Commands.groupTabPosition GroupCommands hasGroup (snd positionChoice) with current=fst positionChoice }
+        { plain "group-always-on-top" Strings.Commands.groupTopmost GroupCommands hasGroup (onGroup(fun g ->
+              g.run ToggleGroupTopmost
+              readAgain g))
+          with state=fun hwnd -> if hasGroup hwnd then Some(shownChoices hwnd |> Option.exists(fun shown -> shown.alwaysOnTop)) else None }
+        windowBehavior "group-keep-window-sizes" Strings.Commands.keepWindowSizes ToggleKeepWindowSizes
+            (fun shown -> shown.keepWindowSizes)
+        windowBehavior "group-inactive-off-screen" Strings.Commands.inactiveOffScreen ToggleInactiveOffScreen
+            (fun shown -> shown.transparentMode)
         { choosing "group-tab-alignment" Strings.Commands.groupTabAlignment GroupCommands hasGroup (snd alignmentChoice) with current=fst alignmentChoice }
         { choosing "group-auto-hide" Strings.Commands.groupAutoHide GroupCommands hasGroup (snd autoHideChoice) with current=fst autoHideChoice }
         { plain "combine-group-taskbar-icons" Strings.Commands.combineGroupIcons GroupCommands hasGroup (onGroup(fun g ->

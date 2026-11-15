@@ -56,6 +56,7 @@ type TabPreview() as this =
         this.ResizeRedraw <- true
     member val Position = TabDockTop with get,set
     member val ColumnWidth = 220 with get,set
+    member val ReserveAddButton = false with get,set
     member this.TabBounds(tabHeight:int) =
         let inset = Dpi.scale 16
         let width = max 1 (this.ClientSize.Width-inset*2)
@@ -63,7 +64,7 @@ type TabPreview() as this =
         else
             let column = min (Dpi.scale this.ColumnWidth) (max 1 (width-Dpi.scale 64))
             let x = if this.Position=TabDockLeft then inset else inset+width-column
-            Rectangle(x,Dpi.scale 14,column,3*(max (Dpi.scale 32) tabHeight+Dpi.scale 4)+Dpi.scale 4)
+            Rectangle(x,Dpi.scale 14,column,TabMetrics.columnHeight (if this.ReserveAddButton then 4 else 3) tabHeight)
 
 type AppearanceView(?settings:ISettings) =
     let settings = defaultArg settings Services.settings
@@ -89,6 +90,8 @@ type AppearanceView(?settings:ISettings) =
     let preview = new TabPreview(Name="tab-preview",Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
                                  AccessibleName=tr Strings.Appearance.explorerPreview)
     /// Where the preview draws its tabs: all that a colour edit changes.
+    let mutable previewHovered = false
+    let mutable previewButton = Rectangle.Empty
     let previewTabs() =
         preview.TabBounds(ThemeService.currentAppearance().scaled.tabHeight)
     /// What the rest of the preview is drawn from besides its size, so it is redrawn only when one changes.
@@ -151,6 +154,8 @@ type AppearanceView(?settings:ISettings) =
             editingDark <- ThemeService.currentIsDark()
             preview.Position <- match settings.getValue("tabPosition") :?> string with "Left" -> TabDockLeft | "Right" -> TabDockRight | _ -> TabDockTop
             preview.ColumnWidth <- settings.getValue("tabColumnWidth") :?> int
+            let buttonMode = settings.getValue("tabAddButton") :?> string
+            preview.ReserveAddButton <- (buttonMode="Always")
             columnWidth.Value <- decimal preview.ColumnWidth
             let settings = settings.appearance
             let palette = activePalette settings
@@ -176,7 +181,9 @@ type AppearanceView(?settings:ISettings) =
             // Only tabs too tall to leave its toolbar visible make the panel grow.
             let tabHeight = ThemeService.currentAppearance().scaled.tabHeight
             preview.Height <- if preview.Position=TabDockTop then max (Dpi.scale 145) (tabHeight+Dpi.scale 56+2)
-                              else max (Dpi.scale 145) ((preview.TabBounds tabHeight).Bottom+Dpi.scale 14)
+                              else
+                                  let hoverRoom = if buttonMode="Hover" then TabMetrics.rowStep tabHeight else 0
+                                  max (Dpi.scale 145) ((preview.TabBounds tabHeight).Bottom+hoverRoom+Dpi.scale 14)
             // A reset with nothing to undo would do nothing visible, so it is not offered.
             resetColorsButton.Offered <- PaletteEditing.canReset editingDark settings
             resetLayoutButton.Offered <- not (Theme.isDefaultLayout geometry) || preview.ColumnWidth<>SettingsCatalog.columnWidthDefault
@@ -191,6 +198,12 @@ type AppearanceView(?settings:ISettings) =
         SettingsUi.section table (tr Strings.Settings.theme.caption)
         SettingsUi.add table (SettingsBindings.themeTiles())
         SettingsUi.add table preview
+        let hoverPreview hovered =
+            if previewHovered<>hovered then
+                previewHovered <- hovered
+                preview.Invalidate()
+        preview.MouseMove.Add(fun e -> hoverPreview ((previewTabs()).Contains(e.Location) || previewButton.Contains(e.Location)))
+        preview.MouseLeave.Add(fun _ -> hoverPreview false)
         preview.Paint.Add(fun e ->
             let p = SettingsColors.current()
             let dark = ThemeService.currentIsDark()
@@ -249,10 +262,14 @@ type AppearanceView(?settings:ISettings) =
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info 1 (tr Strings.Settings.tabActiveBgColor.caption);2,info 2 (tr Strings.Settings.tabHighlightBgColor.caption);3,info 4 (tr Strings.Settings.tabNormalBgColor.caption)]))
                 lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(tabs.Width,tabs.Height)
-                slide=None;direction=(if vertical then TabDown else TabUp);alignment=TabLeft;onlyIcons=(vertical && preview.ColumnWidth=fst SettingsCatalog.columnWidthRange);transparent=true;held=None;position=None;rowSlide=None;centerShift=0.0;blocked=[]; dock=preview.Position; scrollOffset=0
+                slide=None;direction=(if vertical then TabDown else TabUp);alignment=TabLeft;onlyIcons=(vertical && preview.ColumnWidth=fst SettingsCatalog.columnWidthRange);transparent=true;held=None;position=None;rowSlide=None;showAddButton=TabAddButton.visible (settings.getValue("tabAddButton") :?> string) previewHovered; reserveAddButton=preview.ReserveAddButton; buttonScreen=None; windowRight=None; centerShift=0.0;blocked=[]; dock=preview.Position; scrollOffset=0
                 appearance=appearance;hover=Some(2,TabBackground);captured=None }
             use bitmap = ts.render.bitmap
-            e.Graphics.DrawImageUnscaled(bitmap,tabs.Left,tabs.Top))
+            previewButton <-
+                match ts.buttonPlacement with
+                | Some(_,r) -> Rectangle(tabs.X+r.X,tabs.Y+r.Y,r.Width,r.Height)
+                | None -> Rectangle.Empty
+            e.Graphics.DrawImageUnscaled(bitmap,tabs.Left+ts.renderBounds.X,tabs.Top+ts.renderBounds.Y))
         // Beside the preview, which shows the change at once.
         let styleCard = new SettingsCard()
         SettingsUi.add table styleCard
@@ -313,10 +330,11 @@ type AppearanceView(?settings:ISettings) =
         let closeButton = SettingsBindings.choice "tab-close-button"
         closeButton.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
         SettingsUi.settingRow textCard "tab-close-button" closeButton
-        // The two lists offer the same kind of choice, so they line up at one width, and the preset
-        // list in the heading above them does too.
-        let listWidth = [textBold;closeButton;preset] |> List.map(fun list -> list.Width) |> List.max
-        for list in [textBold;closeButton;preset] do list.Width <- listWidth
+        let addButton = SettingsBindings.choiceRow textCard "tab-add-button"
+        addButton.SelectedIndexChanged.Add(fun _ -> refresh())
+        let lists = [textBold;closeButton;addButton;preset]
+        let listWidth = lists |> List.map(fun list -> list.Width) |> List.max
+        for list in lists do list.Width <- listWidth
         let opacityLow,opacityHigh = SettingsCatalog.opacityRange
         let opacity = new SettingsNumberInput(Minimum=decimal opacityLow,Maximum=decimal opacityHigh,Font=SettingsUi.bodyFont(),
                                               Value=decimal (match settings.getValue("tabOpacity") with :? int as value -> value | _ -> SettingsCatalog.opacityDefault))

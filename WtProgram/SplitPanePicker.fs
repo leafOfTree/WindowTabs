@@ -12,16 +12,19 @@ module SplitPaneList =
 /// The window list for a pane: the tab search's box, over the pane or the group about to split;
 /// type to filter, and Enter or a click puts the window there.
 type SplitPanePicker() =
-    let open' (within:Rectangle) windows choose =
+    let open' (within:Rectangle) prompt windows choose =
         let entries = SplitPaneList.entries windows
         // Half the screen wide and most of its height, so most windows can be picked without
         // scrolling; the box and scope line above the rows take about two rows.
         let area = Screen.FromRectangle(within).WorkingArea
         let rows = max TabSearchMetrics.visibleRows (area.Height*7/10/Dpi.scale TabSearchMetrics.rowHeight-2)
         let width = max 640 (int(float area.Width/2.0/Dpi.currentFactor()))
-        let search = TabSearchForm(entries,[],pick=choose,within=within,prompt=tr Strings.TabMenu.splitSearch,
+        let search = TabSearchForm(entries,[],pick=choose,within=within,prompt=prompt,
                                    rows=rows,width=width)
         search.Show()
     interface ISplitPanePicker with
-        member _.show(owner,_,windows,choose) = open' (owner.RectangleToScreen(owner.ClientRectangle)) windows choose
-        member _.showWithin(within,windows,choose) = open' within windows choose
+        member _.show(owner,_,windows,choose) = open' (owner.RectangleToScreen(owner.ClientRectangle)) (tr Strings.TabMenu.splitSearch) windows choose
+        member _.showForMerge(prompt,windows,choose) =
+            let search = TabSearchForm(SplitPaneList.entries windows,[],pickMany=List.iter choose,prompt=prompt)
+            search.Show()
+        member _.showWithin(within,prompt,windows,choose) = open' within prompt windows choose

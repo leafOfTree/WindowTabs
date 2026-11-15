@@ -54,6 +54,7 @@ module Strings =
     /// Tab context menu.
     module TabMenu =
         let windowBehavior = { en="Window behavior"; zh="窗口行为"; ja="ウィンドウの動作"; ar="سلوك النوافذ" }
+        let groupTopmost = { en="Pin group on top"; zh="分组置顶"; ja="グループを常に手前に表示"; ar="إبقاء المجموعة في المقدمة" }
         let keepWindowSizes = { en="Keep each window’s size and position"; zh="保留各窗口的大小和位置"; ja="各ウィンドウのサイズと位置を保持"; ar="الاحتفاظ بحجم كل نافذة وموضعها" }
         let transparentMode = { en="Keep inactive windows off-screen"; zh="将同组后台窗口移出屏幕"; ja="グループ内の非アクティブなウィンドウを画面外に置く"; ar="إبقاء النوافذ غير النشطة في المجموعة خارج الشاشة" }
         let transparentModeNote = { en="Useful for transparent windows."; zh="适合透明窗口。"; ja="半透明のウィンドウに便利です。"; ar="مفيد للنوافذ الشفافة." }
@@ -70,6 +71,19 @@ module Strings =
         let splitEmpty = { en="Drop a tab or window here"; zh="将标签或窗口拖到这里"; ja="ここにタブまたはウィンドウをドロップ"; ar="أفلت علامة تبويب أو نافذة هنا" }
         let splitChoose = { en="Choose a window…"; zh="选择窗口…"; ja="ウィンドウを選択…"; ar="اختر نافذة…" }
         let splitOr = { en="or"; zh="或"; ja="または"; ar="أو" }
+        let addTabHint multiline =
+            let gap = if multiline then "\n" else " "
+            { en="Left-click to open a new tab."+gap+"Right-click to add an existing window."
+              zh="左键新建标签。"+(if multiline then gap else "")+"右键添加已有窗口。"
+              ja="左クリックで新しいタブを開きます。"+(if multiline then gap else "")+"右クリックで既存のウィンドウを追加します。"
+              ar="انقر بزر الفأرة الأيسر لفتح علامة تبويب جديدة."+gap+"انقر بزر الفأرة الأيمن لإضافة نافذة موجودة." }
+        let click = { en="Click"; zh="单击"; ja="クリック"; ar="نقر" }
+        let pickAdd = { en="Add"; zh="添加"; ja="追加"; ar="إضافة" }
+        let pickToggle = { en="Toggle"; zh="增减选择"; ja="選択切替"; ar="تبديل" }
+        let pickMultiple = { en="Multi-select"; zh="多选"; ja="複数選択"; ar="تحديد متعدد" }
+        let pickRange = { en="Range"; zh="连续选择"; ja="範囲選択"; ar="تحديد نطاق" }
+        let confirmSelection = { en="Confirm"; zh="确认"; ja="確定"; ar="تأكيد" }
+        let addExisting = { en="Add an existing window"; zh="添加已有窗口"; ja="既存のウィンドウを追加"; ar="إضافة نافذة موجودة" }
         let splitSearch = { en="Type a title or app name to fill the pane"; zh="输入标题或应用名，放入这个窗格"; ja="タイトルやアプリ名を入力してペインに配置"; ar="اكتب عنوانًا أو اسم تطبيق لملء الجزء" }
         let splitShow = { en="Show split view"; zh="显示分屏"; ja="分割表示に戻す"; ar="إظهار العرض المقسّم" }
         let splitNoWindows = { en="No other windows"; zh="没有其他窗口"; ja="他のウィンドウはありません"; ar="لا توجد نوافذ أخرى" }
@@ -423,6 +437,10 @@ module Strings =
         let tabTextBold = { caption={ en="Bold tab text"; zh="标签文字加粗"; ja="タブの文字を太字にする"; ar="نص علامات التبويب بخط عريض" }
                             description={ en="Which tab titles show in a heavier weight."; zh="哪些标签的标题以粗体显示。"; ja="どのタブのタイトルを太字で表示するか。"; ar="عناوين علامات التبويب التي تظهر بخط أثقل." }
                             keywords=tabTextWords }
+        let tabAddButton = { caption={ en="Show new tab button (+)"; zh="显示新建标签按钮（+）"; ja="新しいタブボタン（+）を表示"; ar="إظهار زر علامة تبويب جديدة (+)" }
+                             description=TabMenu.addTabHint false
+                             keywords={ en="plus add existing window hover show hide"; zh="加号 添加已有窗口 悬停 隐藏"; ja="プラス 追加 ウィンドウ ホバー 表示 非表示"; ar="زائد إضافة نافذة إظهار إخفاء" } }
+        let addButtonHover = { en="On hover"; zh="悬停时"; ja="ホバー時"; ar="عند التمرير" }
         let tabCloseButton = { caption={ en="Show close buttons"; zh="显示关闭按钮"; ja="閉じるボタンを表示"; ar="إظهار أزرار الإغلاق" }
                                description={ en="Which tabs show the × that closes their window."
                                              zh="哪些标签显示用来关闭窗口的 × 按钮。"
@@ -768,6 +786,7 @@ module Strings =
                                        ja="手前のアプリのウィンドウを、ほかのグループにあるものも単独のものも、すべてこのグループに入れます。"
                                        ar="يضم كل نوافذ التطبيق الأمامي إلى هذه المجموعة، سواء كانت في مجموعات أخرى أو منفردة." }
                          keywords={ en="merge gather combine join windows"; zh="合并 归组 汇总 加入 窗口"; ja="結合 まとめる 集める ウィンドウ"; ar="دمج جمع ضم نوافذ" } }
+        let addExisting = { caption=TabMenu.addExisting; description=TabMenu.addExisting; keywords={ en="merge join window"; zh="合并窗口 加入分组"; ja="ウィンドウを結合"; ar="دمج نافذة" } }
         let moveTabToGroup = { caption={ en="Move tab to group…"; zh="移动标签到分组…"; ja="タブをグループへ移動…"; ar="نقل علامة التبويب إلى مجموعة…" }
                                description={ en="Lists the other groups by their first tab."; zh="按各分组的第一个标签列出其他分组。"; ja="他のグループを先頭のタブで一覧表示します。"; ar="يعرض المجموعات الأخرى بعلامة التبويب الأولى لكل منها." }
                                keywords={ en="join"; zh="加入 合并"; ja="参加 結合"; ar="انضمام" } }
@@ -777,6 +796,10 @@ module Strings =
         let private forThisGroup (setting:LocalizedText) (more:string) =
             { en=setting.en+" for this group"+more; zh=setting.zh+"（此分组）"+more; ja=setting.ja+"（このグループ）"+more; ar=setting.ar+" لهذه المجموعة"+more }
         let iconsOnly = { caption=forThisGroup TabMenu.showIconsOnly ""; description={ en="Again, and the titles come back."; zh="再次执行则恢复标题。"; ja="もう一度実行するとタイトルが戻ります。"; ar="مرة أخرى، وتعود العناوين." }; keywords={ en="titles compact"; zh="标题 紧凑"; ja="タイトル コンパクト"; ar="عناوين مضغوط" } }
+        let groupTopmost = { caption=TabMenu.groupTopmost; description=TabMenu.windowBehavior; keywords={ en="always on top"; zh="始终置顶"; ja="最前面"; ar="دائما في المقدمة" } }
+        let keepWindowSizes = { caption=TabMenu.keepWindowSizes; description=TabMenu.windowBehavior
+                                keywords={ en="independent windows"; zh="独立窗口"; ja="独立ウィンドウ"; ar="نوافذ مستقلة" } }
+        let inactiveOffScreen = { caption=TabMenu.transparentMode; description=TabMenu.transparentModeNote; keywords=TabMenu.windowBehavior }
         let groupTabPosition = { caption=forThisGroup Settings.tabPosition.caption "…"; description=groupNote; keywords={ en="move top left right side"; zh="移动 顶部 左侧 右侧"; ja="移動 上 左 右"; ar="نقل أعلى يسار يمين" } }
         let groupTabAlignment = { caption=forThisGroup Settings.tabAlignment.caption "…"; description=groupNote; keywords={ en="move alignment center"; zh="移动 对齐 居中"; ja="移動 配置 中央"; ar="نقل محاذاة وسط" } }
         let groupAutoHide = { caption=forThisGroup Settings.autoHide.caption "…"; description=groupNote; keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }

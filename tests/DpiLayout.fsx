@@ -36,6 +36,13 @@ let main() =
             let row = { windowBounds=frame; monitorBounds=List2([Rect(Pt(),Dpi.scaleSize(Sz(1920,1080)))])
                         decoratorHeight=Dpi.scale 25; decoratorHeightOffset=0
                         decoratorIndentNormal=Dpi.scale 3; decoratorIndentFlipped=Dpi.scale 80 }
+            let smallScreen = Rect(Pt(),Sz(1024,768))
+            let checkAt x y expected =
+                let placement = {row with windowBounds=Rect(Pt(x,y),Sz(600,400));monitorBounds=List2([smallScreen])}
+                check (placement.shouldShowInside=expected) "Wrong strip side on a small work area"
+            checkAt 0 (Dpi.scale 5) true
+            checkAt 0 (Dpi.scale 50) false
+            checkAt 1024 0 false
             let corners = Dpi.scale 8
             let room = frame.width-2*corners
             let outside = row.topPlacement(room+1)

@@ -53,8 +53,8 @@ type TitleBarDropOverlay() =
 /// nothing. `post` runs on the main thread's next turn.
 type TitleBarDrag(hwnd:IntPtr, strips:ITitleBarDropTarget list, ownStrip:IntPtr, own:ITitleBarDropTarget option, whole:bool, mode:string, size:Sz option, post:(unit -> unit) -> unit) =
     let clock = Diagnostics.Stopwatch.StartNew()
-    let targets = Collections.Generic.Dictionary<IntPtr,TitleBarTarget>()
-    let sources = Collections.Generic.Dictionary<IntPtr,ITitleBarDropTarget>()
+    let targets = Collections.Generic.Dictionary<IntPtr,TitleBarTarget * Rect option * ITitleBarDropTarget>()
+    let remember (t:TitleBarTarget) source = targets.[t.strip] <- (t,TitleBarDrop.tabBounds t,source)
     /// Each target's row drawn with the tabs brought in a gap, by group and gap.
     let pictures = Collections.Generic.Dictionary<IntPtr * int,Img * Pt>()
     let asked = Collections.Generic.HashSet<IntPtr * int>()
@@ -94,8 +94,7 @@ type TitleBarDrag(hwnd:IntPtr, strips:ITitleBarDropTarget list, ownStrip:IntPtr,
                 let report (t:TitleBarTarget) =
                     post(fun () ->
                         if not finished && t.strip<>ownStrip && inSight t then
-                            targets.[t.strip] <- t
-                            sources.[t.strip] <- strip)
+                            remember t strip)
                 try strip.titleBarDrag(show,report) with _ -> ()
 
     /// The group whose tabs or window are first under the point, past the window carried and
@@ -103,7 +102,7 @@ type TitleBarDrag(hwnd:IntPtr, strips:ITitleBarDropTarget list, ownStrip:IntPtr,
     let hitAt (pt:Pt) =
         let skip = [hwnd;ownStrip] @ (if overlay.IsValueCreated then [overlay.Value.Handle] else [])
         let windows = Win32Helper.GetWindowsInZOrder()
-        let byMember h = targets.Values |> Seq.tryFind(fun t -> List.contains h t.windows)
+        let byMember h = targets.Values |> Seq.tryPick(fun (t,_,_) -> if List.contains h t.windows then Some t else None)
         let rec walk i =
             if i>=windows.Length then None
             else
@@ -112,7 +111,7 @@ type TitleBarDrag(hwnd:IntPtr, strips:ITitleBarDropTarget list, ownStrip:IntPtr,
                 elif not((Win32Helper.GetVisibleWindowRectangle h).Rect.containsPoint pt) then walk (i+1)
                 else
                     match targets.TryGetValue h with
-                    | true,t -> Some t
+                    | true,(t,_,_) -> Some t
                     | _ when Win32Helper.GetWindowProcessId(h)=ownProcess || TitleBarDrag.clickThrough h -> walk (i+1)
                     | _ -> byMember h
         walk 0
@@ -135,15 +134,17 @@ type TitleBarDrag(hwnd:IntPtr, strips:ITitleBarDropTarget list, ownStrip:IntPtr,
 
     let aimAt (pt:Pt) =
         let tab = tabAt pt
-        TitleBarDrop.aim (metricsAt tab) (hitAt tab) (monitorAt pt) pt tab
+        let metrics = metricsAt tab
+        let nearTarget p = targets.Values |> Seq.exists(fun (t,bounds,_) -> TitleBarDrop.withinBar metrics t bounds p)
+        TitleBarDrop.aim metrics (monitorAt pt) pt tab nearTarget hitAt
 
     let mutable self : TitleBarDrag option = None
 
     /// The target draws its row with the tabs brought in the gap, once per group and gap, the
     /// first time that gap is aimed at: each tab shaped by its place there, as a tab drag shows it.
     let askPicture strip index =
-        match sources.TryGetValue strip with
-        | true,source when not brought.IsEmpty && asked.Add((strip,index)) ->
+        match targets.TryGetValue strip with
+        | true,(_,_,source) when not brought.IsEmpty && asked.Add((strip,index)) ->
             source.rowImage(brought,index,hwnd,fun (img,at,tabs) ->
                 post(fun () ->
                     match self with
@@ -241,7 +242,7 @@ type TitleBarDrag(hwnd:IntPtr, strips:ITitleBarDropTarget list, ownStrip:IntPtr,
         else
             pictures.[(strip,index)] <- picture
             match targets.TryGetValue strip with
-            | true,t -> targets.[strip] <- { t with tabs=tabs }
+            | true,(t,_,source) -> remember { t with tabs=tabs } source
             | _ -> ()
             shownKey <- ""
 
@@ -277,7 +278,7 @@ type TitleBarDrag(hwnd:IntPtr, strips:ITitleBarDropTarget list, ownStrip:IntPtr,
                 match (if held() then aimAt pt else OffTarget) with
                 | OnBar(strip,index) ->
                     match targets.TryGetValue strip with
-                    | true,t -> Some(index,t)
+                    | true,(t,_,_) -> Some(index,t)
                     | _ -> None
                 | OffTarget -> None
             this.close()

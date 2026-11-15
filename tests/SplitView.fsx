@@ -162,11 +162,14 @@ let main() =
         { strip=strip; tabs=[Rect(Pt(450,18),Sz(150,32));Rect(Pt(600,18),Sz(150,32))]; dock=TabDockTop; pinned=0
           frame=frame; shown=shown; windows=[shown] }
     let screen = Rect(Pt(0,0),Sz(1920,1080))
-    let aimAt (hit:TitleBarTarget option) pt = TitleBarDrop.aim metrics hit screen pt pt
+    let mutable scans = 0
+    let aim (hit:TitleBarTarget option) pt tab =
+        TitleBarDrop.aim metrics screen pt tab (TitleBarDrop.onBar metrics target) (fun _ -> scans <- scans+1; hit)
+    let aimAt hit pt = aim hit pt pt
     // The gap follows the window's own tab, carried on it, not the pointer on its title bar.
-    check (TitleBarDrop.aim metrics (Some target) screen (Pt(150,frame.y+20)) (Pt(740,30))=OnBar(strip,2))
+    check (aim (Some target) (Pt(150,frame.y+20)) (Pt(740,30))=OnBar(strip,2))
         "The gap followed the pointer, not the window's tab it carries"
-    check (TitleBarDrop.aim metrics (Some target) screen (Pt(500,30)) (Pt(1000,30))=OffTarget)
+    check (aim (Some target) (Pt(500,30)) (Pt(1000,30))=OffTarget)
         "The pointer offered a merge while the carried tab was far away"
     check (not(TitleBarDrop.onBar metrics target (Pt(150,30)))) "The bar reached far beyond the visible tabs"
     check (aimAt (Some target) (Pt(150,frame.y+20))=OffTarget) "A distant title bar point offered a merge"
@@ -183,6 +186,7 @@ let main() =
     check (aimAt (Some target) (Pt(frame.x+20,frame.y+300))=OffTarget && aimAt (Some target) (Pt(frame.x+500,frame.bottom-5))=OffTarget)
         "A window carried to another one's edge was aimed at a split"
     check (aimAt None (Pt(600,frame.y+20))=OffTarget) "Over another window covering the target, the window joined it"
+    check (scans=3) "A title bar drag scanned the desktop outside a drop target or skipped the occlusion check inside it"
     // Windows 11's snap bar host lies, click-through, over the top of the screen as a window moves.
     use solid = new System.Windows.Forms.Form()
     use clickThrough =
@@ -353,7 +357,7 @@ let main() =
               textFont=font; textBrush=Brushes.Black; splitTrail=Map.tryFind id sides; isPinned=false; closeButton="ActiveAndHover" })))
           lorder=List2([1;2;3]); zorder=List2([1;2;3]); size=Sz(630,Dpi.scale 28)
           slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false
-          transparent=true; held=None; position=None; rowSlide=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0; appearance=appearance; hover=None; captured=None }
+          transparent=true; held=None; position=None; rowSlide=None; showAddButton=false; reserveAddButton=false; buttonScreen=None; windowRight=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0; appearance=appearance; hover=None; captured=None }
     let paired = strip (Map.ofList [1,[SideBySide,First];2,[SideBySide,Second]])
     let seam = paired.tabLocation 2
     // Near the bottom edge, where the button sits clear of the icons; the middle of the seam stays the tabs'.

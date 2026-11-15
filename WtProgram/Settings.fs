@@ -200,6 +200,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         tabTextWeight =
                             settingsJson.getString("tabTextWeight").def(if settingsJson.getBool("tabTextBold").def(false) then "All" else SettingsCatalog.choiceDefault "tabTextWeight")
                             |> SettingsCatalog.normalizeChoice "tabTextWeight"
+                        tabAddButton = settingsJson.getString("tabAddButton").def(SettingsCatalog.choiceDefault "tabAddButton") |> SettingsCatalog.normalizeChoice "tabAddButton"
                         tabCloseButton = settingsJson.getString("tabCloseButton").def(SettingsCatalog.choiceDefault "tabCloseButton") |> SettingsCatalog.normalizeChoice "tabCloseButton"
                         // Older versions stored two toggles: minimalMode (every window) and autoHide (maximized only).
                         autoHideMode =
@@ -308,6 +309,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setString("sessionRestore", settings.sessionRestore)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
             settingsJson.setString("tabTextWeight", settings.tabTextWeight)
+            settingsJson.setString("tabAddButton", settings.tabAddButton)
             settingsJson.setString("tabCloseButton", settings.tabCloseButton)
             settingsJson.setString("autoHideMode", settings.autoHideMode)
             settingsJson.setString("titleBarDrop", settings.titleBarDrop)
@@ -371,7 +373,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             let api = x :> ISettings
             let value = if key="tabSearchScope" then box(SettingsCatalog.normalizeTabSearchScope (unbox value)) else value
             let value = if key="numberLeaderKeys" then box(NumberLeaderKeys.normalize (unbox value)) else value
-            let value = if key="alignment" || key="language" || key="autoHideMode" || key="titleBarDrop" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" || key="sessionRestore" || key="tabCloseButton" || key="tabTextWeight" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="alignment" || key="language" || key="autoHideMode" || key="titleBarDrop" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" || key="sessionRestore" || key="tabAddButton" || key="tabCloseButton" || key="tabTextWeight" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             let value = if key="tabColumnWidth" then box(between SettingsCatalog.columnWidthRange (unbox<int> value)) else value
             let value = if key="tabOpacity" then box(between SettingsCatalog.opacityRange (unbox<int> value)) else value
             match key with

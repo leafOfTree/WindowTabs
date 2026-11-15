@@ -107,6 +107,7 @@ module SettingsCatalog =
         // Kept with the tab sizes in the "tabAppearance" object, not at the top of the file.
         { id="tabStyle"; page=AppearanceSettings; text=Strings.Settings.tabStyle; binding=Choice("tabStyle",TabStyle.names,"joined") }
         { id="tab-text-bold"; page=AppearanceSettings; text=Strings.Settings.tabTextBold; binding=Choice("tabTextWeight",["Never";"Active";"All"],"Active") }
+        { id="tab-add-button"; page=AppearanceSettings; text=Strings.Settings.tabAddButton; binding=Choice("tabAddButton",["Never";"Hover";"Always"],"Hover") }
         { id="tab-close-button"; page=AppearanceSettings; text=Strings.Settings.tabCloseButton; binding=Choice("tabCloseButton",["Never";"Active";"ActiveAndHover"],"ActiveAndHover") }
         { id="tabOpacity"; page=AppearanceSettings; text=Strings.Settings.tabOpacity; binding=Number(opacityRange) }
         { id="tabHeight"; page=AppearanceSettings; text=Strings.Settings.tabHeight; binding=Number(12,120) }
@@ -159,6 +160,7 @@ module SettingsCatalog =
         | "number-shortcut" -> [Strings.Settings.numberShortcutCtrl;Strings.Settings.numberShortcutAlt]
         | "tabStyle" -> List.ofArray Strings.Appearance.tabStyles
         | "tab-text-bold" -> [Strings.Common.never;Strings.Settings.closeOnActive;Strings.Settings.boldAllTabs]
+        | "tab-add-button" -> [Strings.Common.never;Strings.Settings.addButtonHover;Strings.Common.always]
         | "tab-close-button" -> [Strings.Common.never;Strings.Settings.closeOnActive;Strings.Settings.closeOnActiveAndHover]
         | other -> invalidArg "id" (sprintf "No labels for the choice %s" other)
     /// Shown from an (i) button beside the caption.

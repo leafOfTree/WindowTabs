@@ -1133,7 +1133,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             this.wtGroup.dragReleased.Add(fun _ -> this.updateTaskbar())
             this.wtGroup.removed.Add this.onRemoved
             this.wtGroup.flash.Add this.onFlash
-            this.wtGroup.bounds.changed.Add this.onBoundsChanged
+            this.wtGroup.previewBoundsChanged.Add this.onBoundsChanged
             this.wtGroup.zorder.changed.Add this.onZorderChanged
             this.ts.tabMoved.Add this.onTabMoved
             this.wtGroup.exited.Add this.onGroupExited

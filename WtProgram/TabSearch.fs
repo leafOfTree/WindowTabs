@@ -312,7 +312,7 @@ module private TabSearchNative =
 /// width: how many rows show and how wide it is, in logical pixels; pages: the pages beside the
 /// windows, or in their place with windows false; scope: the one to open on.
 type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISettings,
-                   ?pick:IntPtr -> unit, ?within:Rectangle, ?prompt:string, ?rows:int, ?width:int,
+                   ?pick:IntPtr -> unit, ?pickMany:IntPtr list -> unit, ?within:Rectangle, ?prompt:string, ?rows:int, ?width:int,
                    ?pages:PalettePage list, ?scope:PaletteScope, ?windows:bool,
                    ?windowShortcut:TabSearchEntry -> ShortcutAssignment option, ?windowShortcutText:TabSearchEntry -> string) =
     let rowHeight = TabSearchMetrics.rowHeight
@@ -326,6 +326,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let pages = defaultArg pages []
     let requested = scope
     let pick = defaultArg pick (fun hwnd -> OS().windowFromHwnd(hwnd).setForegroundOrRestore(false))
+    let mutable marked : Set<IntPtr> option = None
+    let mutable rangeAnchor : IntPtr option = None
     let area =
         match within with
         | Some box -> Screen.FromRectangle(box).WorkingArea
@@ -348,6 +350,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             | Some icon -> item.Icon <- icon
             | None -> item.Glyph <- WindowGlyph
             item,entry) |> Array.ofList
+    let pickIds = lazy (items |> Array.map(fun (row,entry) -> row,entry.hwnd) |> dict)
     // An icon changed since shows the next time.
     do if not tabs.IsEmpty then ImgHelper.refreshWindowIcons (tabs |> List.map(fun entry -> entry.hwnd))
     let groupItems = items |> Array.filter(fun (_,entry) -> List.contains entry.hwnd group)
@@ -490,17 +493,52 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                             else p.muted
                         TextRenderer.DrawText(g,caption target,SettingsUi.bodyFont(),bounds,color,centred)
                     key |> Option.iter(fun cap -> drawKey cap "Tab") }
-    /// Under the rows, at the right: the key that sets a row's shortcut, named, as editors put it.
-    let footerHeight = if pages.IsEmpty && (tabs |> List.forall(fun entry -> (windowShortcut entry).IsNone)) then 0 else Dpi.scale 28
-    /// A note on a key being set, and whether it is a refusal: at the footer's left.
-    let mutable footerNote : (string * bool) option = None
+    let pickerHints multiSelect =
+        let click = tr Strings.TabMenu.click
+        [ (if multiSelect then tr Strings.TabMenu.pickToggle else tr Strings.TabMenu.pickAdd),click
+          tr Strings.TabMenu.pickMultiple,"Ctrl+"+click
+          tr Strings.TabMenu.pickRange,"Shift+"+click ]
+    let pickerHintText multiSelect =
+        pickerHints multiSelect |> List.map(fun (label,keys) -> label+" "+keys) |> String.concat " · "
+    let hintRowHeight = Dpi.scale 28
+    let confirmWidth = Dpi.scale 88
+    /// Keep each gesture beside its caption when the footer needs another line.
+    let hintJoinPadding = 2
+    let captionFlags = TextFormatFlags.NoPrefix ||| TextFormatFlags.NoPadding ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.SingleLine
+    let layoutHints (g:Graphics) multiSelect available =
+        let mutable x,y = Dpi.scale 4,0
+        let measure (label:string) = TextRenderer.MeasureText(g,label,keyFont,Size(Int32.MaxValue,hintRowHeight),captionFlags).Width
+        let firstWidth = max (measure (tr Strings.TabMenu.pickToggle)) (measure (tr Strings.TabMenu.pickAdd))
+        let placed =
+            pickerHints multiSelect |> List.mapi(fun index (caption,keys) ->
+                let labelWidth = measure caption
+                let slot = if index=0 then firstWidth else labelWidth
+                let width = slot+Dpi.scale 3+KeyCaps.widthWithJoinPadding hintJoinPadding keyFont (keyHeight()) keys
+                if x>Dpi.scale 4 && x+width>available then
+                    x <- Dpi.scale 4
+                    y <- y+hintRowHeight
+                let bounds = Rectangle(x+slot-labelWidth,y,labelWidth,hintRowHeight)
+                x <- x+width+Dpi.scale 24
+                caption,keys,bounds,bounds.Right+Dpi.scale 3)
+        placed,y+hintRowHeight
+    let footerHeight =
+        if pickMany.IsSome then
+            let width = min (Dpi.scale (defaultArg width 640)) (area.Width-Dpi.scale 32)-2*padding
+            use g = Graphics.FromHwnd(IntPtr.Zero)
+            layoutHints g false (width-confirmWidth) |> snd
+        elif pages.IsEmpty && (tabs |> List.forall(fun entry -> (windowShortcut entry).IsNone)) then 0
+        else hintRowHeight
+    let mutable footerNote : (string * bool) option = pickMany |> Option.map(fun _ -> pickerHintText false,false)
+    let confirm = pickMany |> Option.map(fun _ ->
+        new SettingsActionButton(Text=tr Strings.TabMenu.confirmSelection,Kind=SettingsButtonKind.Primary,
+                                 Dock=DockStyle.Right,Width=confirmWidth,Enabled=false,Visible=false))
     let footer =
         { new Panel(Dock=DockStyle.Bottom,Height=footerHeight,BackColor=palette.surface) with
             override this.OnPaint(e) =
                 base.OnPaint(e)
                 let p = palette
                 let g = e.Graphics
-                let mutable hintLeft = this.ClientSize.Width
+                let mutable hintLeft = this.ClientSize.Width - (confirm |> Option.map(fun button -> button.Width) |> Option.defaultValue 0)
                 if canAssign() then
                     g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     let label = tr Strings.TabSearch.setShortcut
@@ -514,6 +552,13 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                                           (if SystemInformation.HighContrast then SystemColors.WindowText else p.accentText),
                                           TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter)
                 match footerNote with
+                | Some _ when pickMany.IsSome ->
+                    let hints,height = layoutHints g marked.IsSome hintLeft
+                    let top = (this.ClientSize.Height-height)/2
+                    for caption,keys,bounds,capLeft in hints do
+                        let label = Rectangle(bounds.X,bounds.Y+top,bounds.Width,bounds.Height)
+                        TextRenderer.DrawText(g,caption,keyFont,label,p.text,captionFlags)
+                        KeyCaps.drawWithJoinPadding hintJoinPadding g keyFont capLeft (label.Top+(hintRowHeight-keyHeight())/2) (keyHeight()) keys p |> ignore
                 | Some(text,refused) ->
                     // Red only for a refusal; where a key came from is just news.
                     let color =
@@ -524,13 +569,17 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     TextRenderer.DrawText(g,text,keyFont,Rectangle(left,0,max 0 (hintLeft-Dpi.scale 16-left),this.ClientSize.Height),color,
                                           TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
                 | None -> () }
+    do confirm |> Option.iter(fun button ->
+        footer.Controls.Add button
+        footer.AccessibleName <- pickerHintText false)
     let setFooterNote note =
         footerNote <- note
         footer.Invalidate()
-    let programColumn = TreeListColumn("",160,TextColumn,RightAligned=true)
+    let programColumn = TreeListColumn("",160,(if pickMany.IsSome then SelectionMarkColumn else TextColumn),RightAligned=true)
     /// Each right-end text's width, measured once: the rows are measured again at every keystroke.
     let asideWidths = Collections.Generic.Dictionary<string,int>()
-    let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);programColumn],
+    let columns = [TreeListColumn("",0,TextColumn);programColumn]
+    let list = new SettingsTreeList(columns,
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
                                     RowHeight=rowHeight,IconSize=TabSearchMetrics.iconSize,TabStop=false,KeepScrollRoom=true,
                                     ScrollBarWidth=padding-1,
@@ -745,7 +794,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             restorePreview()
             closed <- true
             endAssign()
-            chosen |> Option.iter pick
+            match chosen,pickMany,marked with
+            | Some _,Some choose,Some selected -> items |> Array.choose(fun (_,entry) -> if selected.Contains entry.hwnd then Some entry.hwnd else None) |> List.ofArray |> choose
+            | Some hwnd,Some choose,None -> choose [hwnd]
+            | _ -> chosen |> Option.iter pick
             shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
             shadow <- None
             ended.Trigger()
@@ -786,7 +838,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 item,entry)
             |> Array.ofList
         choiceItems.AddRange(Array.map fst rows)
-        // An icon changed since shows the next time.
+        let pickIds = lazy (items |> Array.map(fun (row,entry) -> row,entry.hwnd) |> dict)
+    // An icon changed since shows the next time.
         match options |> List.collect(fun option -> option.windows) with
         | [] -> ()
         | windows -> ImgHelper.refreshWindowIcons windows
@@ -976,8 +1029,34 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let mutable assignChosen = fun () -> ()
     /// Enter or a click on a row: switches to the window, or runs the command and shows what it
     /// leaves to choose. A dimmed row does nothing.
+    let selectWindow (target:TreeListItem) (keys:Keys) =
+        let hwnd = pickIds.Value.[target]
+        let ctrl = keys.HasFlag Keys.Control
+        let selected = defaultArg marked Set.empty
+        let next =
+            if keys.HasFlag Keys.Shift then
+                let rows = list.Roots |> Seq.map(fun item -> pickIds.Value.[item]) |> Seq.toArray
+                let a = rangeAnchor |> Option.bind(fun id -> Array.tryFindIndex ((=) id) rows) |> Option.defaultValue 0
+                let b = Array.findIndex ((=) hwnd) rows
+                rangeAnchor <- Some rows.[a]
+                Set.union (if ctrl then selected else Set.empty) (Set.ofArray rows.[min a b..max a b])
+            else
+                rangeAnchor <- Some hwnd
+                if not ctrl then Set.singleton hwnd
+                elif selected.Contains hwnd then selected.Remove hwnd else selected.Add hwnd
+        marked <- Some next
+        list.RowSelection <- Some(fun row -> next.Contains(pickIds.Value.[row]))
+        confirm |> Option.iter(fun button ->
+            button.Visible <- true
+            button.Enabled <- not next.IsEmpty)
+        let hint = pickerHintText true
+        footer.AccessibleName <- hint
+        setFooterNote (Some(hint,false))
+        list.Invalidate()
     let activate (target:TreeListItem) =
-        if not closed && not (isNull target) && not target.Dimmed then
+        if not closed && pickMany.IsSome && marked.IsSome then
+            marked.Value |> Seq.tryHead |> Option.iter(fun hwnd -> finish (Some hwnd))
+        elif not closed && not (isNull target) && not target.Dimmed then
             scoped() |> Array.tryFind(fun (row,_) -> obj.ReferenceEquals(row,target)) |> Option.iter(fun (_,entry) ->
                 match choices,page() with
                 | (_,_,chosen,_)::_,_ ->
@@ -1123,13 +1202,16 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         else None
     /// The box's keys, from typing or a host pressing them.
     let keyDown (e:KeyEventArgs) =
+        let moveSelection delta =
+            move delta
+            if pickMany.IsSome && e.Shift && not (isNull list.SelectedItem) then selectWindow list.SelectedItem e.Modifiers
         let handled =
             match e.KeyCode,listStep e.KeyData with
             | _,Some step -> move step; true
             | key,None ->
             match key with
-            | Keys.Down -> move 1; true
-            | Keys.Up -> move -1; true
+            | Keys.Down -> moveSelection 1; true
+            | Keys.Up -> moveSelection -1; true
             | Keys.PageDown -> move visibleRows; true
             | Keys.PageUp -> move -visibleRows; true
             | Keys.Enter when e.Alt -> beginAssign(); true
@@ -1180,7 +1262,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         input.KeyDown.Add(fun e -> keyDown e)
         // Clicking a row focuses the list; keep the keys working there and go back to typing.
         list.KeyDown.Add(fun e ->
-            if e.KeyCode=Keys.Escape then (if choices.IsEmpty then finish None else pop())
+            if pickMany.IsSome && (e.KeyCode=Keys.Down || e.KeyCode=Keys.Up || e.KeyCode=Keys.Enter) then keyDown e
+            elif e.KeyCode=Keys.Escape then (if choices.IsEmpty then finish None else pop())
             elif e.KeyCode=Keys.Enter && e.Alt then beginAssign())
         list.PreviewKeyDown.Add(fun e ->
             if e.KeyCode=Keys.Tab then
@@ -1193,7 +1276,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 input.Focus() |> ignore
                 input.AppendText(string e.KeyChar)
                 e.Handled <- true)
-        list.ItemActivated.Add activate
+        if pickMany.IsNone then list.ItemActivated.Add activate
+        confirm |> Option.iter(fun button -> button.Click.Add(fun _ -> activate list.SelectedItem))
         list.SelectionChanged.Add(fun _ -> footer.Invalidate())
         // A setting's value shown as the choice moves onto it with the keys; Esc puts it back.
         list.SelectionChanged.Add(fun _ ->
@@ -1206,7 +1290,11 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     |> Option.bind(fun option -> option.preview)
                     |> Option.iter(fun show -> show(); previewed <- true))
         list.MouseClick.Add(fun e ->
-            if e.Button=MouseButtons.Left then list.ItemAt(e.Location) |> Option.iter activate)
+            if e.Button=MouseButtons.Left && not closed then
+                list.ItemAt(e.Location) |> Option.iter(fun row ->
+                    if pickMany.IsSome && (Control.ModifierKeys &&& (Keys.Control ||| Keys.Shift))<>Keys.None then selectWindow row Control.ModifierKeys
+                    elif marked.IsSome then selectWindow row Keys.Control
+                    else activate row))
         // Going out of the way for a command is no closing.
         // The colour picker's popup takes the keys from the palette without leaving it.
         form.Deactivate.Add(fun _ ->
@@ -1250,6 +1338,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.ChooseRow(hwnd:IntPtr) =
         keptRow <- Some hwnd
         try apply() finally keptRow <- None
+    member _.SelectWindow(hwnd,keys) =
+        list.Roots |> Seq.tryFind(fun row -> (entryOf row).hwnd=hwnd) |> Option.iter(fun row -> selectWindow row keys)
     member _.SelectNext() = move 1
     /// A key pressed in the box, as typing it would.
     member _.Press(keys:Keys) = keyDown (KeyEventArgs(keys))

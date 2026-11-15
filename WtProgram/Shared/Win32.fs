@@ -786,6 +786,26 @@ module WindowExtensions =
         member this.size = Sz(this.hiword.int32, this.loword.int32)
         member this.location = Pt(this.loword.int32, this.hiword.int32)
 
+/// The marker distinguishes our topmost windows during discovery and survives an interrupted session.
+module GroupTopmost =
+    let private key = "WindowTabs.GroupTopmost.v1"
+    let marked hwnd = WinUserApi.GetProp(hwnd,key)<>IntPtr.Zero
+    let private remember (window:Window) =
+        marked window.hwnd || WinUserApi.SetProp(window.hwnd,key,IntPtr(if window.isTopMost then 2 else 1))
+    /// Raising an owner can also raise another member before its turn.
+    let pinAll windows =
+        let remembered = List.filter remember windows
+        for window in remembered do window.makeTopMost()
+    let release (window:Window) =
+        match WinUserApi.GetProp(window.hwnd,key).ToInt32() with
+        | 1 ->
+            window.makeNotTopMost()
+            if not window.isTopMost then WinUserApi.RemoveProp(window.hwnd,key) |> ignore
+        | 2 ->
+            if not window.isTopMost then window.makeTopMost()
+            if window.isTopMost then WinUserApi.RemoveProp(window.hwnd,key) |> ignore
+        | _ -> ()
+
 /// Store the return point on the foreign window so a replacement instance can recover it.
 module IndependentWindowParking =
     let private xKey = "WindowTabs.ParkedX.v1"

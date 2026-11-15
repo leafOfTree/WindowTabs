@@ -29,8 +29,9 @@ module TabPreviewPicture =
 /// A cut-short tab title in full, under the strip while the pointer rests on its tab, with a
 /// picture of the tab's window under it for a tab behind. Themed like the settings window's
 /// help, as the system tooltip stays light in a dark theme.
-type TabTitleTip() =
+type TabTitleTip(owner:IntPtr) =
     inherit Form()
+    let os = OS()
     let mutable wrapped = ""
     let mutable font : Font = null
     /// Owned: replaced, or let go with the tip.
@@ -52,6 +53,8 @@ type TabTitleTip() =
     let mutable styled = false
 
     /// Above the strip and every window, never taking focus or the pointer.
+    new() = new TabTitleTip(IntPtr.Zero)
+
     override _.CreateParams =
         let cp = base.CreateParams
         cp.ExStyle <- cp.ExStyle ||| 0x08000000 ||| 0x00000080 ||| 0x00000008 ||| 0x00000020
@@ -80,7 +83,7 @@ type TabTitleTip() =
 
     /// Below the strip at the pointer, or above it where the screen ends; wrapped past 470px, or
     /// past the picture's width, which the tip takes.
-    member this.show(text:string,tabFont:Font,strip:Rectangle,pointerX:int,?side:TabDock,?pointerY:int,?image:Bitmap) =
+    member this.show(text:string,tabFont:Font,strip:Rectangle,?pointerX:int,?side:TabDock,?pointerY:int,?image:Bitmap) =
         picture |> Option.iter(fun previous -> if not (image |> Option.exists(fun image -> obj.ReferenceEquals(image,previous))) then previous.Dispose())
         picture <- image
         if not styled then
@@ -119,7 +122,8 @@ type TabTitleTip() =
                 let x = if preferred>=area.Left && preferred+width<=area.Right then preferred else alternate
                 max area.Left (min x (area.Right-width)),max area.Top (min (defaultArg pointerY strip.Top) (area.Bottom-height))
             | _ ->
-                max area.Left (min (pointerX-Dpi.scale 12) (area.Right-width)),
+                let left = match pointerX with Some x -> x-Dpi.scale 12 | None -> strip.Left+(strip.Width-width)/2
+                max area.Left (min left (area.Right-width)),
                 (if below+height<=area.Bottom then below else max area.Top (strip.Top-gap-height))
         this.Bounds <- Rectangle(x,y,width,height)
         if not (SystemCorners.round this.Handle (SettingsColors.current()).border) then
@@ -128,7 +132,10 @@ type TabTitleTip() =
             this.Region <- new Region(shape)
             if not (isNull previousRegion) then previousRegion.Dispose()
         this.Invalidate()
-        if not this.Visible then this.Show()
+        if not this.Visible then
+            if owner=IntPtr.Zero then this.Show()
+            else this.Show({new IWin32Window with member _.Handle = owner})
+        os.windowFromHwnd(this.Handle).makeTopMost()
 
     member this.hide() = if this.Visible then this.Hide()
 

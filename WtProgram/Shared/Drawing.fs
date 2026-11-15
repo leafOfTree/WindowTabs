@@ -4,6 +4,20 @@ open System.Drawing
 open System.Drawing.Drawing2D
 open System.Drawing.Imaging
 
+module DrawingPaths =
+    let rounded (rect:RectangleF) radius =
+        let path = new Drawing2D.GraphicsPath()
+        if rect.Width>0.0f && rect.Height>0.0f then
+            let d = min (radius*2.0f) (min rect.Width rect.Height)
+            if d<=0.0f then path.AddRectangle(rect)
+            else
+                path.AddArc(rect.Left,rect.Top,d,d,180.0f,90.0f)
+                path.AddArc(rect.Right-d,rect.Top,d,d,270.0f,90.0f)
+                path.AddArc(rect.Right-d,rect.Bottom-d,d,d,0.0f,90.0f)
+                path.AddArc(rect.Left,rect.Bottom-d,d,d,90.0f,90.0f)
+                path.CloseFigure()
+        path
+
 type Pt(x, y) =
     new() = Pt(0, 0)
     member this.record = this.x, this.y
