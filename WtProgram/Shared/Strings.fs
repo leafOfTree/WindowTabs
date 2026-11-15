@@ -82,7 +82,6 @@ module Strings =
         let pickToggle = { en="Toggle"; zh="增减选择"; ja="選択切替"; ar="تبديل" }
         let pickMultiple = { en="Multi-select"; zh="多选"; ja="複数選択"; ar="تحديد متعدد" }
         let pickRange = { en="Range"; zh="连续选择"; ja="範囲選択"; ar="تحديد نطاق" }
-        let multiPickCount = { en="{0} selected"; zh="已选 {0} 个"; ja="{0} 件選択中"; ar="تم تحديد {0}" }
         let confirmSelection = { en="Confirm"; zh="确认"; ja="確定"; ar="تأكيد" }
         let addExisting = { en="Add an existing window"; zh="添加已有窗口"; ja="既存のウィンドウを追加"; ar="إضافة نافذة موجودة" }
         let splitSearch = { en="Type a title or app name to fill the pane"; zh="输入标题或应用名，放入这个窗格"; ja="タイトルやアプリ名を入力してペインに配置"; ar="اكتب عنوانًا أو اسم تطبيق لملء الجزء" }

@@ -493,43 +493,42 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                             else p.muted
                         TextRenderer.DrawText(g,caption target,SettingsUi.bodyFont(),bounds,color,centred)
                     key |> Option.iter(fun cap -> drawKey cap "Tab") }
-    let pickerHints (count:int option) =
+    let pickerHints multiSelect =
         let click = tr Strings.TabMenu.click
-        [ match count with
-          | Some n -> yield String.Format(tr Strings.TabMenu.multiPickCount,n),""
-          | None -> ()
-          yield (if count.IsSome then tr Strings.TabMenu.pickToggle else tr Strings.TabMenu.pickAdd),click
-          yield tr Strings.TabMenu.pickMultiple,"Ctrl+"+click
-          yield tr Strings.TabMenu.pickRange,"Shift+"+click ]
-    let pickerHintText count =
-        pickerHints count |> List.map(fun (label,keys) -> (label+" "+keys).TrimEnd()) |> String.concat " · "
+        [ (if multiSelect then tr Strings.TabMenu.pickToggle else tr Strings.TabMenu.pickAdd),click
+          tr Strings.TabMenu.pickMultiple,"Ctrl+"+click
+          tr Strings.TabMenu.pickRange,"Shift+"+click ]
+    let pickerHintText multiSelect =
+        pickerHints multiSelect |> List.map(fun (label,keys) -> label+" "+keys) |> String.concat " · "
     let hintRowHeight = Dpi.scale 28
     let confirmWidth = Dpi.scale 88
     /// Keep each gesture beside its caption when the footer needs another line.
     let hintJoinPadding = 2
     let captionFlags = TextFormatFlags.NoPrefix ||| TextFormatFlags.NoPadding ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.SingleLine
-    let layoutHints (g:Graphics) count available =
+    let layoutHints (g:Graphics) multiSelect available =
         let mutable x,y = Dpi.scale 4,0
+        let measure (label:string) = TextRenderer.MeasureText(g,label,keyFont,Size(Int32.MaxValue,hintRowHeight),captionFlags).Width
+        let firstWidth = max (measure (tr Strings.TabMenu.pickToggle)) (measure (tr Strings.TabMenu.pickAdd))
         let placed =
-            pickerHints count |> List.map(fun (caption,keys) ->
-                let labelWidth = TextRenderer.MeasureText(g,caption,keyFont,Size(Int32.MaxValue,hintRowHeight),captionFlags).Width
-                let capOffset = labelWidth+Dpi.scale 3
-                let width = if keys="" then labelWidth else capOffset+KeyCaps.widthWithJoinPadding hintJoinPadding keyFont (keyHeight()) keys
+            pickerHints multiSelect |> List.mapi(fun index (caption,keys) ->
+                let labelWidth = measure caption
+                let slot = if index=0 then firstWidth else labelWidth
+                let width = slot+Dpi.scale 3+KeyCaps.widthWithJoinPadding hintJoinPadding keyFont (keyHeight()) keys
                 if x>Dpi.scale 4 && x+width>available then
                     x <- Dpi.scale 4
                     y <- y+hintRowHeight
-                let bounds = Rectangle(x,y,labelWidth,hintRowHeight)
+                let bounds = Rectangle(x+slot-labelWidth,y,labelWidth,hintRowHeight)
                 x <- x+width+Dpi.scale 24
-                caption,keys,bounds,bounds.Left+capOffset)
+                caption,keys,bounds,bounds.Right+Dpi.scale 3)
         placed,y+hintRowHeight
     let footerHeight =
         if pickMany.IsSome then
             let width = min (Dpi.scale (defaultArg width 640)) (area.Width-Dpi.scale 32)-2*padding
             use g = Graphics.FromHwnd(IntPtr.Zero)
-            max (layoutHints g None width |> snd) (layoutHints g (Some tabs.Length) (width-confirmWidth) |> snd)
+            layoutHints g false (width-confirmWidth) |> snd
         elif pages.IsEmpty && (tabs |> List.forall(fun entry -> (windowShortcut entry).IsNone)) then 0
         else hintRowHeight
-    let mutable footerNote : (string * bool) option = pickMany |> Option.map(fun _ -> pickerHintText None,false)
+    let mutable footerNote : (string * bool) option = pickMany |> Option.map(fun _ -> pickerHintText false,false)
     let confirm = pickMany |> Option.map(fun _ ->
         new SettingsActionButton(Text=tr Strings.TabMenu.confirmSelection,Kind=SettingsButtonKind.Primary,
                                  Dock=DockStyle.Right,Width=confirmWidth,Enabled=false,Visible=false))
@@ -539,7 +538,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 base.OnPaint(e)
                 let p = palette
                 let g = e.Graphics
-                let mutable hintLeft = this.ClientSize.Width - (confirm |> Option.filter(fun button -> button.Visible) |> Option.map(fun button -> button.Width) |> Option.defaultValue 0)
+                let mutable hintLeft = this.ClientSize.Width - (confirm |> Option.map(fun button -> button.Width) |> Option.defaultValue 0)
                 if canAssign() then
                     g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     let label = tr Strings.TabSearch.setShortcut
@@ -554,12 +553,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                                           TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter)
                 match footerNote with
                 | Some _ when pickMany.IsSome ->
-                    let hints,height = layoutHints g (marked |> Option.map Set.count) hintLeft
+                    let hints,height = layoutHints g marked.IsSome hintLeft
                     let top = (this.ClientSize.Height-height)/2
                     for caption,keys,bounds,capLeft in hints do
                         let label = Rectangle(bounds.X,bounds.Y+top,bounds.Width,bounds.Height)
                         TextRenderer.DrawText(g,caption,keyFont,label,p.text,captionFlags)
-                        if keys<>"" then KeyCaps.drawWithJoinPadding hintJoinPadding g keyFont capLeft (label.Top+(hintRowHeight-keyHeight())/2) (keyHeight()) keys p |> ignore
+                        KeyCaps.drawWithJoinPadding hintJoinPadding g keyFont capLeft (label.Top+(hintRowHeight-keyHeight())/2) (keyHeight()) keys p |> ignore
                 | Some(text,refused) ->
                     // Red only for a refusal; where a key came from is just news.
                     let color =
@@ -572,7 +571,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 | None -> () }
     do confirm |> Option.iter(fun button ->
         footer.Controls.Add button
-        footer.AccessibleName <- pickerHintText None)
+        footer.AccessibleName <- pickerHintText false)
     let setFooterNote note =
         footerNote <- note
         footer.Invalidate()
@@ -1050,7 +1049,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         confirm |> Option.iter(fun button ->
             button.Visible <- true
             button.Enabled <- not next.IsEmpty)
-        let hint = pickerHintText (Some next.Count)
+        let hint = pickerHintText true
         footer.AccessibleName <- hint
         setFooterNote (Some(hint,false))
         list.Invalidate()

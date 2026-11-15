@@ -1232,7 +1232,9 @@ let main() =
         checkGestureHints()
         merge.SelectWindow(2n,Keys.None)
         checkGestureHints()
+        let oneSelectedHint = merge.FooterNote
         merge.SelectWindow(4n,Keys.Shift)
+        check (merge.FooterNote=oneSelectedHint) "Changing the selected count should leave the gesture hints stable"
         merge.SelectWindow(3n,Keys.Control)
         merge.SelectWindow(6n,Keys.Control)
         merge.Accept()
