@@ -197,6 +197,11 @@ module TabSearch =
         |> List.rev
         |> List.map(fun (start,stop) -> start,stop-start)
 
+    let switcherResults (entries:TabSearchEntry list) =
+        let rows = entries |> List.map(fun entry -> TaskWindowItem(entry.hwnd,None),entry)
+        fun query -> shown query rows |> List.map(fun (window,entry) ->
+            { window=window; title=entry.title; highlights=highlights query entry.title })
+
     let create hwnd title original program =
         { hwnd=hwnd; title=title; program=program
           keywords=[title;original;program] |> List.filter((<>) "") |> List.distinct |> List.map(fun text -> text.ToLowerInvariant())

@@ -594,7 +594,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     /// A text with its matching runs in the accent colour, as the settings search shows them,
     /// the colour changing mid-word; cut with an ellipsis where it does not fit.
-    member private this.drawMarked(g:Graphics, text:string, runs:(int * int) list, bounds:Rectangle, flags:TextFormatFlags, font:Font, color:Color, p:SettingsPalette, ?dimmed:bool) =
+    static member drawMarked(g:Graphics, text:string, runs:(int * int) list, bounds:Rectangle, flags:TextFormatFlags, font:Font, color:Color, p:SettingsPalette, ?dimmed:bool) =
         if runs.IsEmpty || text="" then TextRenderer.DrawText(g,text,font,bounds,color,flags)
         else
             let pieces = flags &&& ~~~(TextFormatFlags.EndEllipsis ||| TextFormatFlags.HorizontalCenter) ||| TextFormatFlags.NoPadding
@@ -628,7 +628,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 // The whole text in one go, as it stands with nothing matched, once in each colour
                 // through its own part of the row: drawn in pieces, the letters either side of a
                 // cut lost their kerning and moved as a match came and went.
-                let left = bounds.Left+pad
+                let left = if flags.HasFlag TextFormatFlags.HorizontalCenter then bounds.Left+(bounds.Width-width text)/2 else bounds.Left+pad
                 use lit = new Region(Rectangle.Empty)
                 let mutable start = 0
                 while start<text.Length do
@@ -919,13 +919,13 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         g.DrawEllipse(edge,dot)
                     if not editing then
                         let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
-                        if item.Suffix="" && item.NameSwatch.IsNone then this.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p,item.Dimmed)
+                        if item.Suffix="" && item.NameSwatch.IsNone then SettingsTreeList.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p,item.Dimmed)
                         elif item.Suffix="" then
                             // The dot right after the name, which gives way to it when room is short.
                             let side,gap = Dpi.scale 8,Dpi.scale 6
                             let measured = TextRenderer.MeasureText(g,item.Text,this.Font,Size(Int32.MaxValue,rowHeight),flags).Width
                             let nameWidth = min (measured+Dpi.scale 2) (max 0 (nameBounds.Width-side-gap))
-                            this.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p,item.Dimmed)
+                            SettingsTreeList.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p,item.Dimmed)
                             let dot = Rectangle(nameBounds.X+nameWidth+gap,nameBounds.Y+(nameBounds.Height-side)/2,side,side)
                             let state = g.Save()
                             g.SmoothingMode <- SmoothingMode.AntiAlias
@@ -944,12 +944,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             let gap = Dpi.scale 6
                             let suffixWidth = measureIn suffixFont item.Suffix
                             let nameWidth = min (measure item.Text+Dpi.scale 2) (max 0 (nameBounds.Width-suffixWidth-gap))
-                            this.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p,item.Dimmed)
+                            SettingsTreeList.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p,item.Dimmed)
                             let left = nameBounds.X+nameWidth+gap
                             // On the chosen row in the name's own colour, as the value at its right
                             // end is: the muted grey sank into the highlight. Smaller, it still leads less.
                             let muted = if isSelected || item.Dimmed then text else p.muted
-                            this.drawMarked(g,item.Suffix,item.SuffixHighlights,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),flags,suffixFont,muted,p,item.Dimmed)
+                            SettingsTreeList.drawMarked(g,item.Suffix,item.SuffixHighlights,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),flags,suffixFont,muted,p,item.Dimmed)
                         // Chips: a shade of the text over the row, so they show on any highlight.
                         let chipFill = if SystemInformation.HighContrast then SystemColors.Window else Color.FromArgb(26,p.text)
                         for chipIndex,box,closeBox in laid do
@@ -1090,7 +1090,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             Rectangle(bounds.Right+trailing-width,bounds.Y,width,bounds.Height)
                         else bounds
                     let color = if isSelected then text else p.muted
-                    this.drawMarked(g,item.value column,item.highlights column,bounds,flags,font,color,p)
+                    SettingsTreeList.drawMarked(g,item.value column,item.highlights column,bounds,flags,font,color,p)
                     // The colour's dot before its code, with a faint rim, as the settings pages' colour box draws it.
                     if column=columns.Length-1 && item.ValueSwatch.IsSome then
                         let side = Dpi.scale 16

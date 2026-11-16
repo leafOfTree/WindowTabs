@@ -1035,6 +1035,9 @@ let main() =
                         let firstFrames = ResizeArray<int option>()
                         let mutable selected = None
                         let view = {new ITaskSwitchView with
+                            member _.beginSearch(_,_) = ()
+                            member _.navigationSteps = 1,1
+                            member _.replaceRows _ = ()
                             member _.show() = firstFrames.Add(selected)
                             member _.hide() = ()
                             member _.select index = selected <- Some index; selections.Add(index)
@@ -1060,7 +1063,11 @@ let main() =
             // click brings it, its other pane with it, rather than being set in front on its own.
             do
                 use input = new Control()
+                let mutable filterRows = ignore
                 let view = {new ITaskSwitchView with
+                    member _.beginSearch(changed,_) = filterRows <- changed
+                    member _.navigationSteps = 1,1
+                    member _.replaceRows _ = ()
                     member _.show() = ()
                     member _.hide() = ()
                     member _.select _ = ()
@@ -1072,6 +1079,20 @@ let main() =
                 let action = TaskSwitchAction(List2([TaskWindowItem(IntPtr 1,None);TaskWindowItem(IntPtr 2,None)]),"List",view=view,activate=activated.Add)
                 action.switchEnd(false)
                 check (Seq.toList activated=[IntPtr 2]) (sprintf "The switcher did not hand the window chosen to the desktop: %A" (Seq.toList activated))
+                let browse = TaskSwitchAction(List2([TaskWindowItem(1n,None);TaskWindowItem(2n,None)]),"List",view=view,activate=activated.Add,search=(fun () -> fun _ -> [{window=TaskWindowItem(3n,None);title="Matched";highlights=[]}]))
+                let chord = SwitchSearchChord()
+                let key message vk alt = chord.Handle(message,int vk,alt,browse.enterSearch)
+                let down,up = Bemo.WindowMessages.WM_KEYDOWN,Bemo.WindowMessages.WM_KEYUP
+                check ((key down Keys.Q false).IsNone && (key down Keys.Space true).IsNone) "Search intercepted an unrelated key"
+                check (key down Keys.Q true=Some 1 && key down Keys.Q true=Some 1 && key up Keys.Q false=Some 1)
+                      "A competing hotkey could receive the mapped Q press, repeat or release"
+                check (not chord.Held && (key down Keys.Q false).IsNone) "Typing Q after the shortcut remained intercepted"
+                browse.releaseAlt()
+                check (Seq.toList activated=[2n]) "Releasing Alt after entering search activated the browsing selection"
+                filterRows "match"
+                check (browse.selectedHwnd=3n) "Inline search did not select the matching group member"
+                browse.switchEnd(false)
+                check (Seq.toList activated=[2n;3n]) "Enter activated a stale browsing selection"
             do
                 let control = TaskSwitchListControl(List2())
                 let tree = (control :> ITaskSwitchListControl).control :?> SettingsTreeList
@@ -1090,6 +1111,46 @@ let main() =
                               new Form(Text=title,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false) ]
             try
                 let items count = List2([ for index in 0..count-1 -> TaskWindowItem(windows.[index%windows.Length].Handle,(if index=1 then Some(GroupOfApps []) else None)) ])
+                for style in ["Icons";"List"] do
+                    let browsing = items 2
+                    let view =
+                        if style="List" then TaskSwitchForm(TaskSwitchListControl(browsing),search=ignore) :> ITaskSwitchView
+                        else TaskSwitchIconView(browsing,search=ignore) :> ITaskSwitchView
+                    let entries = windows |> List.map(fun w -> { TabSearch.create w.Handle w.Text w.Text "" with group=1 })
+                    let search() = TabSearch.switcherResults entries
+                    check ((search() "Studio" |> List.map(fun row -> row.title))=[windows.[2].Text]) "Alt+Tab appended a group label to a window title"
+                    check ((search() "Studio").Head.highlights=[windows.[2].Text.IndexOf("Studio"),6]) "Switcher results lost the title match"
+                    let accepted = ResizeArray<IntPtr>()
+                    let action = TaskSwitchAction(browsing,style,view=view,activate=accepted.Add,search=search)
+                    try
+                        use host = view.inputControl.FindForm()
+                        let before = host.Handle,host.Bounds
+                        check (action.moveArrow Keys.Left && action.selectedHwnd=windows.[0].Handle) "Left did not select the preceding window while browsing"
+                        action.enterSearch()
+                        action.releaseAlt()
+                        Application.DoEvents()
+                        let input = controls host |> Seq.pick(function :? TextBox as t -> Some t | _ -> None)
+                        check (host.PointToClient(input.PointToScreen(Point.Empty)).Y < host.ClientSize.Height/2) "The search field was not above the windows"
+                        let field = input.Parent
+                        let left = host.PointToClient(field.PointToScreen(Point.Empty)).X
+                        check (left>0 && left=host.ClientSize.Width-left-field.Width) "The search divider must have equal insets"
+                        if style="List" then
+                            let list = view.inputControl :?> SettingsTreeList
+                            let row = (list.RowBounds list.Roots.[0]).Value
+                            check (left=list.Left+row.Left+Dpi.scale 2 && abs (field.Width-(row.Width-Dpi.scale 4))<=1)
+                                  (sprintf "Search divider (%d,%d) should align with row (%d,%d)" left field.Width (list.Left+row.Left+Dpi.scale 2) (row.Width-Dpi.scale 4))
+                        for key,index in [Keys.Down,1;Keys.Up,0;Keys.Right,1;Keys.Left,0] do
+                            let args = KeyEventArgs(key)
+                            typeof<Control>.GetMethod("OnKeyDown",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(input,[|box args|]) |> ignore
+                            check (args.SuppressKeyPress && action.selectedHwnd=windows.[index].Handle) "An arrow in the search box did not move the selection"
+                        check (action.selectedHwnd=windows.[0].Handle) "An empty search should keep the browsing selection"
+                        input.Text <- "absent"
+                        input.Text <- "Studio"
+                        check (host.Visible && (host.Handle,host.Bounds)=before && action.selectedHwnd=windows.[2].Handle)
+                              "Search did not filter in the original Alt+Tab window"
+                        action.switchEnd(false)
+                        check (Seq.toList accepted=[windows.[2].Handle]) "Inline search activated a different window"
+                    finally action.switchEnd(true)
                 let plain = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,None)]))
                 let grouped = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,Some(GroupOfApps []))]))
                 try
@@ -1118,6 +1179,22 @@ let main() =
                     (badged :> ITaskSwitchView).hide()
                 let three = TaskSwitchIconView(items 3)
                 let crowd = TaskSwitchIconView(items 60)
+                let wide = TaskSwitchIconView(items 12,search=ignore) :> ITaskSwitchView
+                try
+                    wide.show()
+                    let host = wide.inputControl.FindForm()
+                    let before = host.Bounds
+                    wide.beginSearch(ignore,ignore)
+                    host.PerformLayout()
+                    let field = controls host |> Seq.pick(function :? SettingsSearchBox as box -> Some box | _ -> None)
+                    let left = host.PointToClient(field.PointToScreen(Point.Empty)).X
+                    let expected = min (Dpi.scale 768) (host.ClientSize.Width-2*Dpi.scale 20)
+                    check (host.Bounds=before && abs(field.Width-expected)<=1 && left=host.ClientSize.Width-left-field.Width)
+                          (sprintf "Search layout: before %A after %A field %d expected %d left %d" before host.Bounds field.Width expected left)
+                    let area = Screen.FromHandle(host.Handle).WorkingArea
+                    if area.Width*9/10>=Dpi.scale 1050 then
+                        check (host.Width>Dpi.scale 768) "The search field width limited the icon grid"
+                finally wide.hide()
                 do
                     let columns = TaskSwitchListControl(items 60)
                     let listControl = columns :> ITaskSwitchListControl
