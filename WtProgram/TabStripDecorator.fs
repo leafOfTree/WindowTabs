@@ -479,7 +479,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         match Services.tryGet<ISplitPanePicker>() with
         | Some picker when not entries.IsEmpty ->
             let target = this.ts.hwnd
-            picker.showForMerge(prompt,entries,fun hwnd -> Services.desktop.addExistingWindow(target,hwnd))
+            picker.showForMerge(target,prompt,entries,fun hwnd -> Services.desktop.addExistingWindow(target,hwnd))
         | Some _ -> Notice.show prompt (tr Strings.TabMenu.splitNoWindows)
         | None -> ()
 
