@@ -230,21 +230,20 @@ static class DesktopLatency
             await Until("Final group restore failed",()=>HelperWindows.All(h=>!IsZoomed(h) && !IsIconic(h))); await Task.Delay(350);
             if(count==20) {
                 var area=Screen.PrimaryScreen.WorkingArea;
-                // Either edge drives the same native restore path; use left so the test stays
-                // independent of the user's right-side Snap Layout configuration.
-                foreach(var side in new[]{Tuple.Create((byte)0x25,true)}) {
-                    phase="20 windows snap "+(side.Item2?"left":"right");
-                    Snap(side.Item1);
-                    await Until("Snapped leader did not reach the requested screen edge",()=>{
-                        var bounds=Bounds(top); return side.Item2 ? bounds.Left<=area.Left+5 : bounds.Right>=area.Right-5;
-                    });
-                    await Until("Snap changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
-                    await Until("Snapped leader content not visible",()=>VisibleColor(top,Colors[HelperWindows.IndexOf(top)%3]));
-                    PostMessage(top,0x112,new IntPtr(0xF120),IntPtr.Zero);
-                    await Until("Snapped group did not restore",()=>HelperWindows.All(h=>!IsZoomed(h) && !IsIconic(h)));
-                    await Until("Restored snap changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
-                    await Task.Delay(350);
-                }
+                phase="20 windows snap left"; Snap(0x25);
+                await Until("Left snap did not reach the screen edge",()=>Bounds(top).Left<=area.Left+5);
+                await Until("Left snap changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
+                phase="20 windows maximize"; Snap(0x26);
+                await Until("Up snap did not maximize every tab",()=>HelperWindows.All(IsZoomed));
+                await Until("Maximize changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
+                phase="20 windows snap right"; Snap(0x27);
+                await Until("Right snap did not reach the screen edge",()=>Bounds(top).Right>=area.Right-5);
+                await Until("Right snap changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
+                await Until("Right snapped leader content not visible",()=>VisibleColor(top,Colors[HelperWindows.IndexOf(top)%3]));
+                PostMessage(top,0x112,new IntPtr(0xF120),IntPtr.Zero);
+                await Until("Right snapped group did not restore",()=>HelperWindows.All(h=>!IsZoomed(h) && !IsIconic(h)));
+                await Until("Restored right snap changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
+                await Task.Delay(350);
             }
         }
     }
