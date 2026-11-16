@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 
@@ -19,6 +19,7 @@ and TabInfo = {
 }
 
 and TabDragInfo = {
+    sourceInFront: bool
     tab: Tab
     tabOffset: Pt
     tabSize: Sz

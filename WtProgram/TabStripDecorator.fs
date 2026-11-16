@@ -963,7 +963,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                             DragOutPlacement.monitorAt ptScreen
                             |> Option.map(fun mon -> DragOutPlacement.size window.visibleBounds.size mon.workRect)
                             |> Option.defaultValue window.visibleBounds.size
-                        let info = { tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab); tabShift = 0
+                        let info = { sourceInFront = inFront; tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab); tabShift = 0
                                      tabAlignment = this.ts.dragAlignment; column = this.ts.dragColumn tab }
                         let shift = info.shiftFor landing.width
                         // The tab at full size by its window shown small: the pointer keeps the
@@ -1186,8 +1186,6 @@ type TabStripDecorator(group:WindowGroup) as this =
                         // can outlive the source group's membership and cache.
                         if not(group.windows.contains hwnd) then
                             group.holdForDrag hwnd
-                            // Shown in front while held, as letting it go puts it.
-                            this.ts.carriedIn <- Some dragInfo.tab
                         group.addWindow(hwnd, false)
                         joinedByDrag <- true
                         true
@@ -1207,7 +1205,6 @@ type TabStripDecorator(group:WindowGroup) as this =
         member this.dragExit() =
             this.invokeSync <| fun() ->
                 this.ts.dragScrollPoint <- None
-                this.ts.carriedIn <- None
                 match dragInfoCell.value with
                 | Some(dragInfo) ->
                     let tab = dragInfo.tab
@@ -1244,7 +1241,6 @@ type TabStripDecorator(group:WindowGroup) as this =
                 let (Tab hwnd) = drag.tab
                 dragInfoCell.set(None)
                 this.ts.dragScrollPoint <- None
-                this.ts.carriedIn <- None
                 group.releaseDrag(hwnd,true)
                 if WinUserApi.IsWindow hwnd then
                     // Dragging out temporarily moves even an independent window to a screen corner.
@@ -1267,7 +1263,6 @@ type TabStripDecorator(group:WindowGroup) as this =
                 dragStartIndex <- None
                 dragStartFrame <- None
                 this.ts.dragScrollPoint <- None
-                this.ts.carriedIn <- None
                 isDraggingCell.value <- false
                 this.ts.transparent <- true
                 match this.ts.movedTab with

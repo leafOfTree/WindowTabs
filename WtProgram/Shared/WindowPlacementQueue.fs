@@ -147,6 +147,14 @@ module FollowerPlacement =
         let tid = WinUserApi.GetWindowThreadProcessId(hwnd,&pid)
         pid,tid
 
+    /// A superseded placement can leave a follower at the correct size but above its source.
+    let private isAbove hwnd source =
+        let mutable above = false
+        WinUserApi.EnumWindows(WNDENUMPROC(fun window _ ->
+            above <- window=hwnd
+            not above && window<>source),IntPtr.Zero) |> ignore
+        above
+
     let private apply hwnd (expected,request) current =
         let valid() = current() && identity hwnd=expected && WinUserApi.IsWindow(hwnd)
         if valid() then
@@ -228,8 +236,8 @@ module FollowerPlacement =
                 // after every native phase, using the source captured by the request. A window
                 // already there is left alone: during a split's divider drag every step would
                 // otherwise wait on the app twice, once for the size and once for the stacking.
-                if positioned && valid() && not window.isMinimized && previous<>IntPtr.Zero && WinUserApi.IsWindow(previous) &&
-                   window.prevZorder.hwnd<>previous then
+                if valid() && not window.isMinimized && previous<>IntPtr.Zero && WinUserApi.IsWindow(previous) &&
+                   window.prevZorder.hwnd<>previous && (positioned || (below.IsSome && isAbove hwnd previous)) && valid() then
                     window.insertAfter(previous)
 
     /// A group's windows usually each have a thread of their own and change state together, so a

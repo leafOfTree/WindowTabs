@@ -671,7 +671,7 @@ let main() =
                         let a = paneRect group First
                         let point = Pt(a.x+a.width/2,a.y+a.height/2)
                         let decorator = decoratorOf group
-                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft;column=None}
+                        let drag = box {sourceInFront=true; tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft;column=None}
                         check (previewed decorator (drag,point)) "The centre of an empty pane rejected a tab"
                         decorator.clearPreview()
                         check (group.splitLayout=Some s) "Cancelling an empty-pane preview changed the layout"
@@ -908,7 +908,7 @@ let main() =
                         let decorator = decoratorOf group
                         let before = group.splitLayout.Value
                         let order = group.lorder.list
-                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft;column=None}
+                        let drag = box {sourceInFront=true; tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft;column=None}
                         let frame = group.layoutFrame
                         let point = Pt(frame.left+2,frame.y+frame.height/2)
                         check (previewed decorator (drag,point)) "Own edge did not accept a split preview"
@@ -929,7 +929,7 @@ let main() =
                             | null -> false
                             | value -> (value.GetType().GetProperty("Value").GetValue(value) :?> Form).Visible)
                         onGroup(fun group ->
-                            let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft;column=None}
+                            let drag = box {sourceInFront=true; tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft;column=None}
                             let frame = group.layoutFrame
                             check (previewed (decoratorOf group) (drag,Pt(frame.left+2,frame.y+frame.height/2))) "A drop preview did not show")
                         check (previewShown()) "A drop preview was not visible"
@@ -1155,7 +1155,7 @@ let main() =
                             onHelper(fun () -> form.MinimumSize <- Size(0,0))
                             onGroup(fun group -> if group.splitLayout.IsSome then group.execute(EndSplit(Some shown)))
                             waitOperation()
-                    let dragOf (group:WindowGroup) hwnd = box {tab=Tab(hwnd);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(source));tabShift=0;tabAlignment=TabLeft;column=None}
+                    let dragOf (group:WindowGroup) hwnd = box {sourceInFront=true; tab=Tab(hwnd);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(source));tabShift=0;tabAlignment=TabLeft;column=None}
                     // A tab from another group splits at an edge too, beside the tab shown.
                     let foreign = handles.[2]
                     onHelper(fun () -> forms.[2].Pinned <- false; forms.[2].Show())
@@ -1348,6 +1348,12 @@ let main() =
                         OS().windowFromHwnd(group.hwnd).hide()
                         invoke "handleWindowEvent" group [|box joining; box WinEvent.EVENT_SYSTEM_FOREGROUND|] |> ignore)
                     check (onGroup(fun group -> OS().windowFromHwnd(group.hwnd).isVisible)) "Foreground reconciliation left an externally hidden tab strip invisible"
+                    // Snapping and maximizing can hide an owned strip without a foreground event.
+                    // Its location event must restore the strip even though the desired state stayed visible.
+                    onGroup(fun group ->
+                        OS().windowFromHwnd(group.hwnd).hide()
+                        invoke "handleWindowEvent" group [|box joining; box WinEvent.EVENT_OBJECT_LOCATIONCHANGE|] |> ignore)
+                    check (onGroup(fun group -> OS().windowFromHwnd(group.hwnd).isVisible)) "Location reconciliation left an externally hidden tab strip invisible"
                     onGroup(fun group -> group.removeWindow joining)
                     check (onGroup(fun group -> group.ts.visible)) "Closing the joined window minimized its group again"
                     onGroup(fun group -> group.addWindow(joining,false))

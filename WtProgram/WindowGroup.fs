@@ -119,6 +119,11 @@ module TabNavigation =
     let currentForeground (order:IntPtr list) event actual =
         if actual<>event && List.contains actual order then actual else event
 
+    /// A late reorder from a follower can arrive after the placement queue has gone idle.
+    let focusedOrder (order:List2<IntPtr>) focused =
+        if order.tryHead<>Some focused && order.contains((=) focused) then order.where((<>) focused).prepend focused
+        else order
+
     /// Foreground events are asynchronous. Prefer current OS focus when it is in
     /// this group; a background group can still navigate from its last top tab.
     let targetIndex (order:IntPtr list) foreground previousTop next =
@@ -757,7 +762,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // One window fills the group now: the images that covered the change can go.
                 if not this.isSplit then this.settleTransition()
                 this.withUpdate(fun () -> this.updateIsVisible())
-                if not this.isEmpty then this.setTsParent(this.topWindow)
+                this.restoreTabStrip()
             if splitPending && FollowerPlacement.queue.isIdle(placementOwner) then this.checkSplitSettled()
             if pendingMinimizeStates.Count=0 then minimizeStateTimer.Stop()
 
@@ -971,18 +976,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             (inMoveSize.value.not || moveFrameCell.value.IsSome)
         this.updateSplitChrome()
 
+    /// A snap or maximize can hide the owned strip after its desired visibility stayed true.
+    /// Ask the strip to reconcile its native HWND and put it back over the selected window.
+    member private this.restoreTabStrip() =
+        this.ts.visible <- isVisibleCell.value
+        if isVisibleCell.value && not this.isEmpty then this.setTsParent(this.topWindow)
+
     member private this.updatePlacements() = this.applyLayout()
 
     member private this.adjustChildWindows = fun() ->
         this.updatePlacements()
         
-    member private this.makeTopWindowForeground() =
-        match zorderCell.value.where(isMinimized >> not).tryHead with
-        | Some(top) -> 
-            let window = this.os.windowFromHwnd(top)
-            window.setForeground(false)
-        | None -> ()
-
     member private this.hasFixedWindow =
         this.windows.items.any(fun hwnd -> IndependentWindowParking.fixedSize(this.os.windowFromHwnd hwnd))
 
@@ -1059,7 +1063,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // actual foreground change may select another tab while that work is pending.
             if not reconcilePlacementState || selected then
                 let order = this.inZorder(this.windows.items)
-                this.setZorder(if reconcilePlacementState then order.where((<>) focused).prepend focused else order)
+                let preferFocus = reconcilePlacementState || (groupLayout=GroupLayout.Single && not(isMinimized focused))
+                this.setZorder(if preferFocus then TabNavigation.focusedOrder order focused else order)
 
     member private this.setWindows(newWindows) =
         windowsCell.set(newWindows)
@@ -2483,7 +2488,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         liveResize <- false
         this.saveTopWindowPlacement()
         this.adjustChildWindows()
-        if this.windows.contains(this.os.foreground.hwnd) then this.makeTopWindowForeground()
         this.updateIsVisible()
 
     member this.main(hwnd, evt) =
@@ -2646,15 +2650,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 if window.isInMoveSize then
                     this.onEnterMoveSize()
                 else
-                    let isForeground = this.os.foreground.hwnd = hwnd
                     this.saveTopWindowPlacement()
                     this.adjustChildWindows()
-                    if isForeground then
-                        this.makeTopWindowForeground()
                     this.foreground <- this.os.foreground.hwnd
                     isMaximizedExport.update()
                     // Maximized or restored, a window rises over a strip it does not own.
                     this.liftUnownedStrip hwnd
+                    this.restoreTabStrip()
             | _ -> ()
         // The command palette in front over the group: none of the rest, which would follow a
         // closed tab or reorder the group for a foreground the group is not leaving.
@@ -3074,13 +3076,19 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if dropped && this.windows.contains hwnd && WinUserApi.IsWindow hwnd then
                 if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
                 let window = this.os.windowFromHwnd hwnd
+                let oldTop = this.topWindow
+                let aboveTarget =
+                    if oldTop=hwnd || this.windows.contains(this.os.foreground.hwnd) then None
+                    else
+                        let previous = (this.os.windowFromHwnd oldTop).prevZorder
+                        Some(if previous.hwnd=this.ts.hwnd then previous.prevZorder.hwnd else previous.hwnd)
                 match landing with
                 | Some place when this.keepSizes && placement.value.IsSome && not (window.isMaximized || window.isMinimized) ->
                     let origin = (place window).add(window.bounds.location.sub(window.visibleBounds.location))
                     IndependentWindowParking.restoreAt hwnd origin
                 | _ -> this.adjustWindowPlacement hwnd
                 dragReleasedEvent.Trigger hwnd
-                this.tabActivate(Tab hwnd,true)
+                this.activate(hwnd,true,true,?aboveTarget=aboveTarget)
     member this.dragReleased = dragReleasedEvent.Publish
 
     /// The tab after a closed one. No fade: the window shown is the one Windows brought up for
@@ -3092,7 +3100,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.tabActivate(Tab(hwnd), force) = this.activate(hwnd,force,true)
 
-    member private this.activate(hwnd, force, fade, ?shortcut:bool) =
+    member private this.activate(hwnd, force, fade, ?shortcut:bool, ?aboveTarget:IntPtr) =
         if defaultArg shortcut false && zorderCell.value.tryHead<>Some hwnd then this.ts.prepareShortcutMove(Tab hwnd)
         else this.ts.cancelShortcutMove()
         let window = this.os.windowFromHwnd(hwnd)
@@ -3118,8 +3126,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows
         // are raised with their owner, so hand the strip over before activating.
         if this.windows.contains(hwnd) then this.setTsOwner(window)
-        window.setForegroundOrRestore(force)
-        window.bringToTop()
+        match aboveTarget with
+        | Some above -> if above<>hwnd then window.insertAfter(above)
+        | None ->
+            window.setForegroundOrRestore(force)
+            window.bringToTop()
         // Activated but still under the other tabs when its owner is a combined taskbar's preview;
         // only once it is in front, as a refused activation leaves the strip with the real top window.
         if this.os.foreground.hwnd=hwnd then window.raise()

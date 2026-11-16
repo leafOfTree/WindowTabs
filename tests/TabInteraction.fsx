@@ -943,7 +943,7 @@ let main() =
                                     check (if dock=TabDockRight then at.x>=shown.width-column.seam+m else at.x<column.width+m)
                                           (sprintf "The dragged tab is not on the %A of its window: %A" dock at)
                                 finally image.bitmap.Dispose()
-                                let drag = { tab=dragged; tabOffset=Pt(12,9); tabSize=Sz(100,30); tabInfo=strip.tabInfo dragged; tabShift=0; tabAlignment=TabLeft; column=Some column }
+                                let drag = { sourceInFront=true; tab=dragged; tabOffset=Pt(12,9); tabSize=Sz(100,30); tabInfo=strip.tabInfo dragged; tabShift=0; tabAlignment=TabLeft; column=Some column }
                                 let pointer = Pt(900,400)
                                 let frame = DragOutPlacement.landing pointer drag landing Pt.empty None
                                 check (frame.location.add(column.tabAt landing).add(drag.tabOffset)=pointer && frame.size=landing)

@@ -1281,7 +1281,7 @@ type TabStripSprite<'id> when 'id : equality = {
                         [Pt(seam-side.width/2,y),button side :> ISprite]
                 | _ -> [])
 
-    member this.sprite =
+    member private this.spriteAt(position:'id -> Pt -> Pt) =
         {
             new ISprite with
             member x.image = this.bgImage
@@ -1290,7 +1290,7 @@ type TabStripSprite<'id> when 'id : equality = {
             // as it is pressed in a group behind, nor while carried into another strip, it went
             // under the tabs it passed.
             member x.children =
-                let tabs = this.tabSprites.list |> List.filter(fun (location,tab) ->
+                let tabs = this.tabSprites.list |> List.map(fun (pt,tab) -> position tab.id pt,tab) |> List.filter(fun (location,tab) ->
                     not this.isVertical || (location.y<this.size.height && location.y+tab.size.height>0))
                 let tabs =
                     match this.slide with
@@ -1301,10 +1301,12 @@ type TabStripSprite<'id> when 'id : equality = {
                 List2(this.junction @ this.feet @ (tabs |> List.map(fun (location,tab) -> location,tab :> ISprite)))
         }
 
+    member this.sprite = this.spriteAt(fun _ pt -> pt)
+
     member this.renderTab tab = this.tabSprite(tab).render
 
-    member this.render =
-        let image = this.sprite.render
+    member this.renderAt(position) =
+        let image = (this.spriteAt position).render
         if this.isVertical then
             use graphics = image.graphics
             use outline = this.columnOutline
@@ -1313,6 +1315,8 @@ type TabStripSprite<'id> when 'id : equality = {
             use clear = new SolidBrush(Color.Transparent)
             graphics.FillRectangle(clear,Rectangle(Point.Empty,image.size.Size))
         image
+
+    member this.render = this.renderAt(fun _ pt -> pt)
 
     member this.collapsedHeight = max 1 (min this.size.height (Dpi.scale 4))
 

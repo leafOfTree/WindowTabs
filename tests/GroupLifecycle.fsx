@@ -339,6 +339,14 @@ let main() =
             check followerWindow.isMaximized "A follower did not maximize"
             check (sourceWindow.zorder<followerWindow.zorder) "A maximized follower covered the originating tab"
             check (WinUserApi.GetActiveWindow()=snapSource.Handle) "Maximizing a follower changed the active tab"
+            // Another placement can supersede the one that restored the follower before its
+            // stacking correction. The new request already has the right frame.
+            followerWindow.insertAfter(WindowHandleTypes.HWND_TOP)
+            check (followerWindow.zorder<sourceWindow.zorder) "The fixture did not raise the synchronized follower"
+            FollowerPlacement.queue.submit(snapQueueOwner,snapFollower.Handle,
+                FollowerPlacement.alignBelowRequest snapFollower.Handle sourceWindow.bounds sourceWindow.placement snapSource.Handle)
+            pumpUntil "Repeated placement did not finish" (fun () -> FollowerPlacement.queue.isIdle(snapQueueOwner))
+            check (sourceWindow.zorder<followerWindow.zorder) "An already-sized follower stayed over the selected tab"
             // Combined Peek uses one preview owner per tab, below a common taskbar root.
             use sourcePreview = new Form(ShowInTaskbar=false)
             use followerPreview = new Form(ShowInTaskbar=false)
@@ -1480,7 +1488,7 @@ let main() =
                     group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
                     let tab = Tab b
                     let _,sprite = group.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
-                    let data = {tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab;tabShift=0;tabAlignment=TabLeft;column=None}
+                    let data = {sourceInFront=true; tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab;tabShift=0;tabAlignment=TabLeft;column=None}
                     let proportional = {data with tabSize=Sz(200,32);tabOffset=Pt(100,16)}
                     check (proportional.offsetIn(Sz(300,48))=Pt(150,24)) "Cross-DPI drag lost its grabbed point"
                     check (proportional.offsetIn(Sz(120,64))=Pt(60,32)) "Cross-orientation drag lost its grabbed point"
@@ -1495,6 +1503,11 @@ let main() =
                         onGroup dragTarget (fun group -> group.layoutFrame=(OS().windowFromHwnd d).visibleBounds))
                 let targetFrame = (OS().windowFromHwnd d).visibleBounds
                 let incomingSize = (OS().windowFromHwnd b).bounds.size
+                let backgroundJoin = sourceDock=TabDockRight && targetDock=TabDockLeft
+                if backgroundJoin then
+                    unrelated.Show()
+                    unrelated.Activate()
+                let foregroundBeforeDrop = WinUserApi.GetForegroundWindow()
                 let mutable releasedAt = Pt.empty
                 onGroup dragTarget (fun group ->
                     if sourceDock=TabDockTop && (targetDock=TabDockLeft || wideRow) then group.keepWindowSizes <- true
@@ -1510,9 +1523,9 @@ let main() =
                     // Carried in and not let go, the tab's window waits out of sight: the group's
                     // window in front stays so, and the windows the drag passes stay over it.
                     check (group.topWindow=d) (sprintf "A tab carried into a strip brought its window to the front before the drop: %A" group.topWindow)
-                    // Drawn in front all the same, as letting it go puts it.
+                    // Hovering preserves the selected tab until the drop.
                     let front = group.ts.tabSprites.list |> List.filter(fun (_,sprite) -> sprite.isTop) |> List.map(fun (_,sprite) -> sprite.id)
-                    check (group.ts.carriedIn=Some(Tab b) && front=[Tab b]) (sprintf "A tab carried into a strip was not drawn in front: %A" front)
+                    check (front=[Tab d]) (sprintf "Hovering over the strip changed its selected tab: %A" front)
                     target.dragEnd())
                 pumpUntil "Cross-orientation drag lost its insertion order" (fun () -> nativeOrder dragTarget=[b;d] && publicOrder dragTarget=[b;d])
                 if wideRow then
@@ -1536,7 +1549,12 @@ let main() =
                     pumpUntil "A tab dropped into an independent group did not land at its destination at its own size" (fun () ->
                         incoming.visibleBounds.location=targetFrame.location && incoming.bounds.size=incomingSize &&
                         onGroup dragTarget (fun group -> group.layoutFrame=incoming.visibleBounds))
-                check (onGroup dragTarget (fun group -> group.ts.carriedIn)=None) "A tab let go in a strip stayed marked as carried in"
+                pumpUntil "The destination did not select the dropped tab" (fun () -> onGroup dragTarget (fun group -> group.topWindow=b))
+                if backgroundJoin then
+                    let order = OS().windowZorders
+                    check (WinUserApi.GetForegroundWindow()=foregroundBeforeDrop && order.find unrelated.Handle < order.find b)
+                          "Selecting a dropped tab raised its background group over the foreground window"
+                    unrelated.Hide()
                 check (onGroup dragTarget (fun group -> group.ts.dock)=targetDock) "Drag changed the destination orientation"
                 // Only the group a tab was dropped into is one made by hand, to be remembered.
                 check (onGroup dragTarget (fun group -> group.isManual) && not(onGroup dragSource (fun group -> group.isManual)))
@@ -1702,11 +1720,12 @@ let main() =
                 let work = Screen.PrimaryScreen.WorkingArea
                 let workRect = Rect(Pt(work.X,work.Y),Sz(work.Width,work.Height))
                 let tabSize = Sz(100,24)
-                let centred = {tab=Tab hwnd;tabSize=tabSize;tabOffset=Pt(10,10);tabInfo=onGroup alone (fun group -> group.ts.tabInfo(Tab hwnd));tabShift=0;tabAlignment=TabCenter;column=None}
+                let centred = {sourceInFront=true; tab=Tab hwnd;tabSize=tabSize;tabOffset=Pt(10,10);tabInfo=onGroup alone (fun group -> group.ts.tabInfo(Tab hwnd));tabShift=0;tabAlignment=TabCenter;column=None}
+                let mutable sourceInFront = true
                 let dropAt (pt:Pt) (size:Sz) =
                     OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),size))
                     // The image's shift, as the strip computed it for the group's width.
-                    let data = {centred with tabShift=centred.shiftFor size.width}
+                    let data = {centred with sourceInFront=sourceInFront; tabShift=centred.shiftFor size.width}
                     (desktop :> IDragDropParent).dragDrop((pt,box data))
                     pumpUntil "The dropped window was not placed" (fun () -> OS().windowFromHwnd(hwnd).placement.rcNormalPosition.x<> -20000)
                     // Shown, as the program shows a dropped window, so its frame can be read.
@@ -1754,6 +1773,12 @@ let main() =
                         let rec walk (current:IntPtr) = current<>IntPtr.Zero && (current=upper || walk (WinUserApi.GetWindow(current,GetWindowConstants.GW_HWNDPREV)))
                         walk (WinUserApi.GetWindow(lower,GetWindowConstants.GW_HWNDPREV))
                     check (isAbove cover.Handle hwnd) "The test could not put a window over the one it drops"
+                    sourceInFront <- false
+                    cover.Activate()
+                    let foreground = WinUserApi.GetForegroundWindow()
+                    dropAt mid (Sz(work.Width,work.Height)) |> ignore
+                    check (WinUserApi.GetForegroundWindow()=foreground && isAbove cover.Handle hwnd) "A background tab covered the foreground window or took focus"
+                    sourceInFront <- true
                     dropAt mid (Sz(work.Width,work.Height)) |> ignore
                     pumpUntil "The dropped window did not come in front" (fun () -> isAbove hwnd cover.Handle)
                 onGroup alone (fun group -> group.removeWindow hwnd)
