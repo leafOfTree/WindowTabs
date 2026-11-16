@@ -1096,7 +1096,14 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                             }
                         member x.activate hwnd = this.activateWindow hwnd
                 }
-                taskSwitchCell.set(Some(new TaskSwitcher(settingsManager, tsDesktop)))
+                let search (original,windows:List2<TaskWindowItem>) =
+                    let fronts = windows.list |> List.map(fun (TaskWindowItem(hwnd,_)) -> hwnd) |> Set.ofList
+                    let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
+                    let eligible = groups |> List.filter(List.exists fronts.Contains) |> List.concat |> Set.ofList |> Set.union fronts
+                    let name hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+                    let entries = TabSearch.tabs name original groups |> List.filter(fun entry -> eligible.Contains entry.hwnd && entry.desktop="")
+                    TabSearch.switcherResults entries
+                taskSwitchCell.set(Some(new TaskSwitcher(settingsManager, tsDesktop,search=search)))
         else
             taskSwitchCell.value.iter <| fun s -> (s :> IDisposable).Dispose()
             taskSwitchCell.set(None)

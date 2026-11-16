@@ -927,6 +927,7 @@ module Strings =
 
     /// The tab search box.
     module TabSearch =
+        let qToSearch = { en="Press Q to search"; zh="按 Q 搜索"; ja="Q で検索"; ar="اضغط Q للبحث" }
         let prompt = { en="Type a title or app name to switch windows"; zh="输入标题或应用名，切换窗口"; ja="タイトルやアプリ名を入力してウィンドウを切り替え"; ar="اكتب عنوانًا أو اسم تطبيق للتبديل بين النوافذ" }
         let noMatches = { en="No matching windows."; zh="没有匹配的窗口。"; ja="一致するウィンドウはありません。"; ar="لا توجد نوافذ مطابقة." }
         /// Beside a window on another virtual desktop that has no name of its own.
