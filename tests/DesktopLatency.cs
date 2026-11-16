@@ -40,6 +40,7 @@ static class DesktopLatency
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd,IntPtr after,int x,int y,int width,int height,uint flags);
     [DllImport("user32.dll")] static extern uint SendInput(uint count,Input[] inputs,int size);
+    [DllImport("user32.dll")] static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern IntPtr OpenInputDesktop(uint flags,bool inherit,uint access);
     [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr desktop);
@@ -93,6 +94,11 @@ static class DesktopLatency
     {
         var v=SystemInformation.VirtualScreen;
         Inject(MouseInput(0xC001,(int)Math.Round((p.X-v.Left)*65535.0/(v.Width-1)),(int)Math.Round((p.Y-v.Top)*65535.0/(v.Height-1))));
+    }
+    static void Snap(byte arrow)
+    {
+        keybd_event(0x5B,0,0,UIntPtr.Zero); keybd_event(arrow,0,0,UIntPtr.Zero);
+        keybd_event(arrow,0,2,UIntPtr.Zero); keybd_event(0x5B,0,2,UIntPtr.Zero);
     }
     static Point TabPoint(IntPtr strip,int index,int count)
     {
@@ -192,6 +198,10 @@ static class DesktopLatency
             // Select the settled foreground owner, rather than an owner snapshot
             // taken while the last helper was still joining the group.
             await Task.Delay(500);
+            // The benchmark host is intentionally hidden, so Windows may retain focus on
+            // the user's previous window while the helpers are created. Use real input,
+            // as the production tab-click measurement does, before measuring resize.
+            Move(ContentPoint(HelperWindows.Last())); Inject(MouseInput(2),MouseInput(4));
             await Until("Helper group did not become foreground",()=>HelperWindows.Contains(GetForegroundWindow()) && GetWindow(strip,4)==GetForegroundWindow());
             var top=GetForegroundWindow();
             var slow=HelperWindows.First(h=>h!=top);
@@ -218,6 +228,24 @@ static class DesktopLatency
             SendMessage(slow,0x804E,IntPtr.Zero,IntPtr.Zero);
             PostMessage(top,0x112,new IntPtr(0xF120),IntPtr.Zero);
             await Until("Final group restore failed",()=>HelperWindows.All(h=>!IsZoomed(h) && !IsIconic(h))); await Task.Delay(350);
+            if(count==20) {
+                var area=Screen.PrimaryScreen.WorkingArea;
+                // Either edge drives the same native restore path; use left so the test stays
+                // independent of the user's right-side Snap Layout configuration.
+                foreach(var side in new[]{Tuple.Create((byte)0x25,true)}) {
+                    phase="20 windows snap "+(side.Item2?"left":"right");
+                    Snap(side.Item1);
+                    await Until("Snapped leader did not reach the requested screen edge",()=>{
+                        var bounds=Bounds(top); return side.Item2 ? bounds.Left<=area.Left+5 : bounds.Right>=area.Right-5;
+                    });
+                    await Until("Snap changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
+                    await Until("Snapped leader content not visible",()=>VisibleColor(top,Colors[HelperWindows.IndexOf(top)%3]));
+                    PostMessage(top,0x112,new IntPtr(0xF120),IntPtr.Zero);
+                    await Until("Snapped group did not restore",()=>HelperWindows.All(h=>!IsZoomed(h) && !IsIconic(h)));
+                    await Until("Restored snap changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
+                    await Task.Delay(350);
+                }
+            }
         }
     }
     sealed class Helper : Form
@@ -258,16 +286,35 @@ static class DesktopLatency
         Check(!File.Exists(crash) || new FileInfo(crash).Length==0,"WindowTabs wrote a crash log");
         Log("PASS: real browser clicks, verified visible pixels and controlled grouped maximize delays");
     }
+    static async Task RunGroups(int samples,int slowMs)
+    {
+        Check(Process.GetProcessesByName("WindowTabs").Length==0,"Existing WindowTabs instance; exit it first");
+        Check(Environment.UserInteractive,"Interactive desktop required"); var desktop=OpenInputDesktop(0,false,1); Check(desktop!=IntPtr.Zero,"Desktop is locked");
+        try { var name=new StringBuilder(256); uint needed; Check(GetUserObjectInformation(desktop,2,name,512,out needed) && name.ToString()=="Default","Unlocked Default desktop required"); } finally { CloseDesktop(desktop); }
+        Check(Screen.PrimaryScreen.WorkingArea.Width>=1000 && Screen.PrimaryScreen.WorkingArea.Height>=700,"Desktop must provide 1000x700 physical pixels");
+        GetCursorPos(out savedCursor); ownsInput=true;
+        string own=Process.GetCurrentProcess().MainModule.FileName;
+        File.WriteAllText(Path.Combine(Root,"WindowTabsSettings.json"),Json.Serialize(new {
+            enableTabbingByDefault=false,includedPaths=new[]{own},autoGroupingPaths=new[]{own},runAtStartup=false,replaceAltTab=false,combineIconsInTaskbar=false,hideInactiveTabs=false,
+            enableCtrlNumberHotKey=false,enableHoverActivate=false,autoHideMode="Never",alignment="Left",language="en",tabAppearance=new{tabMaxWidth=160,tabHeight=28,tabOverlap=0,tabHeightOffset=0}
+        }));
+        app=Start(Path.Combine(Root,"WindowTabs.exe"),"");
+        await GroupMaximize(samples,slowMs);
+        string crash=Path.Combine(Root,"WindowTabsCrash.log");
+        Check(!File.Exists(crash) || new FileInfo(crash).Length==0,"WindowTabs wrote a crash log");
+        Log("PASS: controlled 5 and 20 window grouped maximize delays");
+    }
     [STAThread] static int Main(string[] args)
     {
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException); Application.EnableVisualStyles();
         if(args.Length==2 && args[0]=="--helper") { using(var helper=new Helper(int.Parse(args[1]))) Application.Run(helper); return 0; }
-        if(args.Length!=5 || args[0]!="--run") return 2;
+        bool groups=args.Length==3 && args[0]=="--groups";
+        if(!groups && (args.Length!=5 || args[0]!="--run")) return 2;
         int code=1;
         using(var context=new ApplicationContext()) using(var start=new System.Windows.Forms.Timer{Interval=50}) {
             start.Tick+=async(s,e)=>{
                 start.Stop();
-                try { await Run(args[1],int.Parse(args[2]),int.Parse(args[3]),int.Parse(args[4])); code=0; }
+                try { if(groups) await RunGroups(int.Parse(args[1]),int.Parse(args[2])); else await Run(args[1],int.Parse(args[2]),int.Parse(args[3]),int.Parse(args[4])); code=0; }
                 catch(Exception error) {
                     Console.Error.WriteLine(error); File.WriteAllText(Path.Combine(Root,"failure.txt"),error.ToString());
                     if(app!=null && !app.HasExited) File.WriteAllText(Path.Combine(Root,"windows.json"),Json.Serialize(new {foreground=GetForegroundWindow().ToInt64(),windows=Windows(h=>InProcess(h,app.Id) || BrowserWindows.Contains(h) || HelperWindows.Contains(h)).Select(h=>new{hwnd=h.ToInt64(),owner=GetWindow(h,4).ToInt64(),visible=IsWindowVisible(h),title=Title(h),bounds=Bounds(h),dpi=GetDpiForWindow(h)}).ToArray()}));

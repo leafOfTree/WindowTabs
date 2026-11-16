@@ -662,11 +662,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let isVisibleCell = Cell.create(false)
     let locationGate = obj()
     let pendingLocations = Collections.Generic.HashSet<IntPtr>()
+    let mutable lastNativeLocation : int64 option = None
     let pendingMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool * int64>()
     let requestedMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool>()
     let minimizeStateTimer = new System.Windows.Forms.Timer(Interval=16)
     let mutable reconcileMinimizeState = false
     let mutable reconcilePlacementState = false
+    /// The active tab that Windows temporarily replaced while completing a native resize.
+    let mutable nativeTransitionOwner : IntPtr option = None
     /// The tab the group was last minimized from, which comes back first.
     let mutable minimizedFrom : IntPtr option = None
     let transitionClock = Stopwatch.StartNew()
@@ -763,6 +766,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 if not this.isSplit then this.settleTransition()
                 this.withUpdate(fun () -> this.updateIsVisible())
                 this.restoreTabStrip()
+                nativeTransitionOwner |> Option.iter(fun owner ->
+                    nativeTransitionOwner <- None
+                    if this.windows.contains(owner) && not(isMinimized owner) && not(this.windows.contains(this.os.foreground.hwnd)) then
+                        this.setZorder(zorderCell.value.where((<>) owner).prepend owner)
+                        this.os.windowFromHwnd(owner).setForeground(true))
             if splitPending && FollowerPlacement.queue.isIdle(placementOwner) then this.checkSplitSettled()
             if pendingMinimizeStates.Count=0 then minimizeStateTimer.Stop()
 
@@ -986,7 +994,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.adjustChildWindows = fun() ->
         this.updatePlacements()
-        
+
     member private this.hasFixedWindow =
         this.windows.items.any(fun hwnd -> IndependentWindowParking.fixedSize(this.os.windowFromHwnd hwnd))
 
@@ -1391,7 +1399,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// What the panes go just below: the divider, which lies over their edges, or else the strip.
     member private this.paneAnchor =
         if dividerShown then System.Threading.Volatile.Read(&dividerHandle) else this.ts.hwnd
-        
     member this.isIconOnly 
         with get() = this.ts.isIconOnly
         and set(value) = this.ts.isIconOnly <- value
@@ -2492,7 +2499,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.main(hwnd, evt) =
         let location = evt = WinEvent.EVENT_OBJECT_LOCATIONCHANGE
-        let post = not location || lock locationGate (fun () -> pendingLocations.Add(hwnd))
+        let post = not location || lock locationGate (fun () ->
+            lastNativeLocation <- Some(transitionClock.ElapsedMilliseconds)
+            pendingLocations.Add(hwnd))
         if post then
             this.invokeAsync(fun () ->
                 if location then lock locationGate (fun () -> pendingLocations.Remove(hwnd) |> ignore)
@@ -2673,6 +2682,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // In front, a tab asking for attention has it, however it was brought there: by
                 // its shortcut or the switcher as much as by a click, which clears it on its own.
                 this.flashTab(Tab(hwnd), false)
+            let nativeTransition =
+                lock locationGate (fun () ->
+                    lastNativeLocation |> Option.exists(fun at -> transitionClock.ElapsedMilliseconds-at<=250L))
+            if nativeTransition && not(this.windows.contains(hwnd)) && this.windows.contains(foregroundCell.value) then
+                nativeTransitionOwner <- Some foregroundCell.value
             this.foreground <- hwnd
             this.followClosedTab(this.os.foreground.hwnd)
             this.saveZorder()
