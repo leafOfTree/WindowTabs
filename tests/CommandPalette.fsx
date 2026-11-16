@@ -1228,17 +1228,35 @@ let main() =
         merge.Show()
         let checkGestureHints() =
             let hint = defaultArg merge.FooterNote ""
-            for key in ["Ctrl";"Shift"] do check (hint.Contains(key+"+"+tr Strings.TabMenu.click)) "The picker lost a modified click gesture"
+            check (hint.StartsWith(tr Strings.TabMenu.click+" ")) "The picker should show the click before its action"
+            for key,label in ["Ctrl",Strings.TabMenu.pickMultiple;"Shift",Strings.TabMenu.pickRange] do
+                check (hint.Contains(key+"+"+tr Strings.TabMenu.click+" "+tr label)) "The picker should show each modified click before its action"
         checkGestureHints()
-        merge.SelectWindow(2n,Keys.None)
+        merge.SelectWindow(1n,Keys.Control)
+        merge.SelectWindow(2n,Keys.Control)
         checkGestureHints()
         let oneSelectedHint = merge.FooterNote
         merge.SelectWindow(4n,Keys.Shift)
         check (merge.FooterNote=oneSelectedHint) "Changing the selected count should leave the gesture hints stable"
-        merge.SelectWindow(3n,Keys.Control)
+        merge.SelectWindow(4n,Keys.Shift)
         merge.SelectWindow(6n,Keys.Control)
         merge.Accept()
-        check (picked=[2n;4n;6n]) "Ctrl and Shift did not add the chosen windows in list order"
+        check (picked=[1n;6n]) "Repeating a fully selected range should clear that range and retain selections outside it"
+        picked <- []
+        let keyboard = TabSearchForm(candidates,[],pickMany=(fun ids -> picked <- ids))
+        keyboard.Show()
+        keyboard.ChooseRow(6n)
+        keyboard.Press(Keys.Control ||| Keys.Enter)
+        keyboard.ChooseRow(2n)
+        keyboard.Press(Keys.Control ||| Keys.Enter)
+        keyboard.Press(Keys.Down)
+        keyboard.Press(Keys.Down)
+        keyboard.Press(Keys.Shift ||| Keys.Enter)
+        keyboard.Press(Keys.Shift ||| Keys.Up)
+        keyboard.Press(Keys.Control ||| Keys.Enter)
+        check picked.IsEmpty "Modified Enter confirmed before selection was complete"
+        keyboard.Press(Keys.Enter)
+        check (picked=[2n;4n;6n]) "Shift+Enter and Shift+arrow should retain previous selections even when the range shrinks"
         let clickPicker = TabSearchForm(candidates,[],pickMany=(fun ids -> picked <- ids))
         clickPicker.Show()
         let confirmFor (rows:SettingsTreeList) =
@@ -1264,11 +1282,28 @@ let main() =
         let rows = pickerRows()
         picked <- []
         batch.SelectWindow(1n,Keys.Control)
+        batch.ChooseRow(1n)
+        let secondRowColor() =
+            use image = new Bitmap(rows.Width,rows.Height)
+            rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            image.GetPixel(rows.Width/2,height+height/2)
+        let resting = secondRowColor()
+        batch.Press(Keys.Down)
+        check (secondRowColor()<>resting && not(rows.RowSelection.Value rows.Roots.[1]))
+              "Moving down should highlight the keyboard target without marking it"
         click rows (left+width/2) (height+height/2)
         click rows (Dpi.scale 60) (2*height+height/2)
         check (picked.IsEmpty && [0..2] |> List.forall(fun i -> rows.RowSelection.Value rows.Roots.[i])) "Selection marks should reflect clicks anywhere on a row in multi-select mode"
         let confirm = confirmFor rows
         check confirm.Visible "Entering multi-select should show confirmation"
+        let doubleClick = MouseEventArgs(MouseButtons.Left,2,Dpi.scale 60,height/2,0)
+        typeof<Control>.GetMethod("OnMouseDoubleClick",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(rows,[|box doubleClick|]) |> ignore
+        check (not(rows.RowSelection.Value rows.Roots.[0]) && confirm.Enabled) "The second rapid click should toggle the marked row exactly once"
+        click rows (Dpi.scale 60) (height/2)
+        let form = rows.FindForm()
+        let footer = confirm.Parent
+        check (form.ClientSize.Height-footer.Bottom=Dpi.scale 5 && footer.Top-rows.Bottom=Dpi.scale 5)
+              "The picker footer should have equal space above and below its controls"
         for index in 0..2 do click rows (Dpi.scale 60) (index*height+height/2)
         check (picked.IsEmpty && not confirm.Enabled) "Emptying a selection should disable confirmation and keep the picker open"
         click rows (Dpi.scale 60) (height/2)

@@ -866,11 +866,16 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             let item,level = rows.[index]
             let top = this.rowTop index
             let row = Rectangle(Dpi.scale 2,top+1,this.contentWidth-Dpi.scale 4,this.rowSpan index-2)
-            let isSelected = match this.RowSelection with Some marked -> marked item | None -> Object.ReferenceEquals(item,selected)
+            let current = Object.ReferenceEquals(item,selected)
+            let marked = this.RowSelection |> Option.exists(fun marked -> marked item)
+            let isSelected = current || marked
             if isSelected || Object.ReferenceEquals(item,hovered) then
                 use shape = SettingsShapes.rounded (RectangleF(float32 row.X,float32 row.Y,float32 row.Width,float32 row.Height)) (SettingsShapes.controlRadius())
                 use fill = new SolidBrush(this.highlight(isSelected,p))
                 g.FillPath(fill,shape)
+                if current && this.RowSelection.IsSome then
+                    use outline = new Pen((if SystemInformation.HighContrast then SystemColors.HighlightText else p.accent),float32 (Dpi.scale 1))
+                    g.DrawPath(outline,shape)
             // After the highlight, and one crisp pixel: smoothed, it would blur into the rows around it.
             if item.SeparatorAbove && index>0 then
                 use divider = new Pen(if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(110,p.muted))
@@ -886,7 +891,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             for column in 0..columns.Length-1 do
                 let cell = bounds.[column]
                 let kind = columns.[column].Kind
-                let drawnKind = if kind=SelectionMarkColumn && (this.RowSelection.IsNone || not isSelected) then TextColumn else kind
+                let drawnKind = if kind=SelectionMarkColumn && not marked then TextColumn else kind
                 match drawnKind with
                 | TextColumn when column=0 ->
                     if this.ShowExpanders && item.Children.Count>0 then
