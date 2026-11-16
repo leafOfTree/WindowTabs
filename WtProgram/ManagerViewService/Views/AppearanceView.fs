@@ -262,7 +262,7 @@ type AppearanceView(?settings:ISettings) =
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info 1 (tr Strings.Settings.tabActiveBgColor.caption);2,info 2 (tr Strings.Settings.tabHighlightBgColor.caption);3,info 4 (tr Strings.Settings.tabNormalBgColor.caption)]))
                 lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(tabs.Width,tabs.Height)
-                slide=None;direction=(if vertical then TabDown else TabUp);alignment=TabLeft;onlyIcons=(vertical && preview.ColumnWidth=fst SettingsCatalog.columnWidthRange);transparent=true;held=None;position=None;rowSlide=None;showAddButton=TabAddButton.visible (settings.getValue("tabAddButton") :?> string) previewHovered; reserveAddButton=preview.ReserveAddButton; buttonScreen=None; windowRight=None; centerShift=0.0;blocked=[]; dock=preview.Position; scrollOffset=0
+                slide=None;direction=(if vertical then TabDown else TabUp);alignment=TabLeft;onlyIcons=((settings.getValue("showIconsOnly") :?> bool) || (vertical && preview.ColumnWidth=fst SettingsCatalog.columnWidthRange));transparent=true;held=None;position=None;rowSlide=None;showAddButton=TabAddButton.visible (settings.getValue("tabAddButton") :?> string) previewHovered; reserveAddButton=preview.ReserveAddButton; buttonScreen=None; windowRight=None; centerShift=0.0;blocked=[]; dock=preview.Position; scrollOffset=0
                 appearance=appearance;hover=Some(2,TabBackground);captured=None }
             use bitmap = ts.render.bitmap
             previewButton <-
@@ -327,10 +327,14 @@ type AppearanceView(?settings:ISettings) =
         let textBold = SettingsBindings.choice "tab-text-bold"
         textBold.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
         SettingsUi.settingRow textCard "tab-text-bold" textBold
+        SettingsUi.sectionHeading table (tr Strings.Appearance.show) []
+        let showCard = new SettingsCard()
+        SettingsUi.add table showCard
+        SettingsBindings.toggleRow showCard "icons-only"
         let closeButton = SettingsBindings.choice "tab-close-button"
         closeButton.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
-        SettingsUi.settingRow textCard "tab-close-button" closeButton
-        let addButton = SettingsBindings.choiceRow textCard "tab-add-button"
+        SettingsUi.settingRow showCard "tab-close-button" closeButton
+        let addButton = SettingsBindings.choiceRow showCard "tab-add-button"
         addButton.SelectedIndexChanged.Add(fun _ -> refresh())
         let lists = [textBold;closeButton;addButton;preset]
         let listWidth = lists |> List.map(fun list -> list.Width) |> List.max
@@ -368,7 +372,7 @@ type AppearanceView(?settings:ISettings) =
                     update(fun s -> {s with geometry=write (int editor.Value) s.geometry}))
         ThemeBinding.watch panel refresh
         let subscriptions =
-            ["tabPosition";"tabColumnWidth"] |> List.map(fun key ->
+            ["tabPosition";"tabColumnWidth";"showIconsOnly"] |> List.map(fun key ->
                 settings.notifyValue key (fun _ ->
                     if not panel.IsDisposed && panel.IsHandleCreated then
                         try panel.BeginInvoke(Action(fun () -> if not panel.IsDisposed then refresh())) |> ignore

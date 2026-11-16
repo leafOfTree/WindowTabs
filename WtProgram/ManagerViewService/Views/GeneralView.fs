@@ -25,7 +25,6 @@ type GeneralView() =
         updateShowOnSwitch()
         autoHide.SelectedIndexChanged.Add(fun _ -> updateShowOnSwitch())
         // After auto-hide, as the tab menu lists them.
-        SettingsBindings.toggleRow behaviour "icons-only"
         SettingsBindings.choiceRow behaviour "title-bar-drop" |> ignore
         let taskbar = SettingsUi.sectionCard table (tr Strings.General.taskbar)
         SettingsBindings.toggleRow taskbar "combine-taskbar-icons"

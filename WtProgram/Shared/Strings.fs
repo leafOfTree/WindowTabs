@@ -227,8 +227,8 @@ module Strings =
         let autoHide = { caption={ en="Auto-hide tabs"; zh="自动隐藏标签"; ja="タブを自動的に隠す"; ar="إخفاء علامات التبويب تلقائيًا" }
                          description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。"; ar="يبقى شريط رفيع فقط حتى تمرّر المؤشر فوقه." }
                          keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
-        let titleBarDrop = { caption={ en="Group by dragging a title bar"; zh="拖动标题栏来分组"; ja="タイトルバーのドラッグでグループ化"; ar="التجميع بسحب شريط العنوان" }
-                             description={ en="Drop a window on another one's tabs or title bar to join them."; zh="把窗口拖到另一个窗口的标签或标题栏上即可合并。"; ja="ウィンドウを別のウィンドウのタブかタイトルバーに落とすと結合します。"; ar="أفلت نافذة على علامات تبويب نافذة أخرى أو شريط عنوانها لضمّها." }
+        let titleBarDrop = { caption={ en="Drag title bars to group windows"; zh="拖动标题栏分组"; ja="タイトルバーをドラッグしてグループ化"; ar="اسحب شريط العنوان لتجميع النوافذ" }
+                             description={ en="Drag a window by its title bar until its tab is near another window’s tab, then release."; zh="拖动窗口的标题栏，让它的标签靠近另一个窗口的标签，再松手。"; ja="タイトルバーをドラッグし、そのウィンドウのタブを別のウィンドウのタブに近づけてから離します。"; ar="اسحب النافذة من شريط عنوانها حتى يقترب تبويبها من تبويب نافذة أخرى، ثم أفلتها." }
                              keywords={ en="drag drop window merge"; zh="拖放 窗口 合并"; ja="ドラッグ ドロップ ウィンドウ 結合"; ar="سحب إفلات نافذة دمج" } }
         let iconsOnly = { caption={ en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示"; ar="إظهار الأيقونات فقط" }
                           description={ en="Tabs show their icons without titles."; zh="标签只显示图标，不显示标题。"; ja="タブにタイトルを出さず、アイコンだけを表示します。"; ar="تعرض علامات التبويب أيقوناتها دون عناوين." }
@@ -437,7 +437,7 @@ module Strings =
         let tabTextBold = { caption={ en="Bold tab text"; zh="标签文字加粗"; ja="タブの文字を太字にする"; ar="نص علامات التبويب بخط عريض" }
                             description={ en="Which tab titles show in a heavier weight."; zh="哪些标签的标题以粗体显示。"; ja="どのタブのタイトルを太字で表示するか。"; ar="عناوين علامات التبويب التي تظهر بخط أثقل." }
                             keywords=tabTextWords }
-        let tabAddButton = { caption={ en="Show new tab button (+)"; zh="显示新建标签按钮（+）"; ja="新しいタブボタン（+）を表示"; ar="إظهار زر علامة تبويب جديدة (+)" }
+        let tabAddButton = { caption={ en="Show new tab button"; zh="显示新建标签按钮"; ja="新しいタブボタンを表示"; ar="إظهار زر علامة تبويب جديدة" }
                              description=TabMenu.addTabHint false
                              keywords={ en="plus add existing window hover show hide"; zh="加号 添加已有窗口 悬停 隐藏"; ja="プラス 追加 ウィンドウ ホバー 表示 非表示"; ar="زائد إضافة نافذة إظهار إخفاء" } }
         let addButtonHover = { en="On hover"; zh="悬停时"; ja="ホバー時"; ar="عند التمرير" }
@@ -580,6 +580,7 @@ module Strings =
         let dark = { en="Dark"; zh="深色"; ja="ダーク"; ar="داكن" }
         let explorerPreview = { en="File Explorer theme preview"; zh="文件资源管理器主题预览"; ja="エクスプローラーのテーマのプレビュー"; ar="معاينة سمة مستكشف الملفات" }
         let tabColors = { en="Tab colors"; zh="标签配色"; ja="タブの色"; ar="ألوان علامات التبويب" }
+        let show = { en="Show"; zh="显示"; ja="表示"; ar="عرض" }
         let colorPreset = { en="Color preset"; zh="配色预设"; ja="配色プリセット"; ar="مجموعة ألوان جاهزة" }
         let custom = { en="Custom"; zh="自定义"; ja="カスタム"; ar="مخصص" }
         /// Switcher styles: large icons in a row, or window titles in a column.

@@ -489,6 +489,7 @@ let main() =
         let appearance = AppearanceView() :> ISettingsView
         check (controls general.control |> Seq.forall(fun c -> c.Name<>"tabColumnWidth")) "Column width remains on General"
         check ((SettingsCatalog.find "tabColumnWidth").page=AppearanceSettings) "Column width search opens the wrong page"
+        check ((SettingsCatalog.find "icons-only").page=AppearanceSettings) "Icons-only search should open Appearance"
         let width = controls appearance.control |> Seq.pick(function :? SettingsNumberInput as c when c.Name="tabColumnWidth" -> Some c | _ -> None)
         check (width.Width=Dpi.scale 144 && position.Width=width.Width) "Number and short-choice editors do not share their default width"
         check (position.ItemText(0)=tr Strings.TabMenu.top) "Tab position still labels the top strip as horizontal"
@@ -1396,6 +1397,10 @@ let main() =
         Application.DoEvents()
         check (api.getValue("tabThemeMode") :?> string = "light") "Theme tile does not apply its mode"
         check (tiles |> List.filter(fun tile -> tile.Checked) |> List.length = 1) "Theme tiles are not mutually exclusive"
+        use tileImage = new Bitmap(lightTile.Width,lightTile.Height)
+        lightTile.DrawToBitmap(tileImage,Rectangle(Point.Empty,tileImage.Size))
+        check (tileImage.GetPixel(tileImage.Width/2,2).ToArgb()=(SettingsColors.current()).accent.ToArgb())
+              "The selected theme tile should have an accent border"
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()
         // Text that would be hard to read on a tab colour is adjusted there, and the page says where.

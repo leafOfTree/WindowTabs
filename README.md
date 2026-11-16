@@ -23,7 +23,7 @@ Download `WindowTabs.exe` from
 [Releases](https://github.com/leafOfTree/WindowTabs/releases) and run it.
 It runs in the system tray.
 
-- Hover over the tab bar to reveal **+** and click it to open another window of the current app. Under **Settings → Appearance → Show new tab button (+)** you can choose **Never**, **On hover** (default), or **Always**.
+- Hover over the tab bar to reveal **+** and click it to open another window of the current app. Under **Settings → Appearance → Show new tab button** you can choose **Never**, **On hover** (default), or **Always**.
 - Right-click **+** to find an existing window by title or app name and add it to the group.
 - You can also drag a tab onto another tab bar to group windows, or drag it away to ungroup.
 - **Group an app automatically:** right-click its tab → **Enable auto-grouping**.
