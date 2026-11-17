@@ -151,7 +151,7 @@ module SettingsCatalog =
         | "theme" -> [Strings.Appearance.system;Strings.Appearance.light;Strings.Appearance.dark]
         | "language" ->
             Strings.SettingsWindow.followWindows ::
-                [for _,name,_ in Localization.languages -> { en=name; zh=name; ja=name; ar=name }]
+                [for _,name,_ in Localization.languages -> { en=name; zh=name; ja=name; ar=name; ko=name }]
         | "restore-session" -> [Strings.General.sessionOff;Strings.General.sessionWindows;Strings.General.sessionApps]
         | "tab-alignment" -> alignmentLabels false
         | "tab-position" -> [Strings.TabMenu.top;Strings.Common.left;Strings.Common.right]

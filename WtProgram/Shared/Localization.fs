@@ -3,13 +3,13 @@ open System.Globalization
 
 /// One piece of user-visible text in every supported language. Every field is required, so a
 /// missing translation is a compile error. All instances live in Strings.
-type LocalizedText = { en:string; zh:string; ja:string; ar:string }
+type LocalizedText = { en:string; zh:string; ja:string; ar:string; ko:string }
 
 /// All user-visible text is compiled into the single WindowTabs.exe. (Satellite resource
 /// assemblies cannot be statically linked, so a .resx translation would not ship.)
 module Localization =
     /// Supported languages: code, name shown in the language menu, compact label.
-    let languages = [| "en","English","EN"; "zh","中文","中"; "ja","日本語","日"; "ar","العربية","ع" |]
+    let languages = [| "en","English","EN"; "zh","中文","中"; "ja","日本語","日"; "ar","العربية","ع"; "ko","한국어","한" |]
     /// Values of the language setting: "system" follows the Windows display language.
     let preferences = "system" :: [for code,_,_ in languages -> code]
     let mutable private preference = "system"
@@ -24,6 +24,7 @@ module Localization =
         | "zh" -> text.zh
         | "ja" -> text.ja
         | "ar" -> text.ar
+        | "ko" -> text.ko
         | _ -> text.en
     /// GDI and the standard controls read text left to right unless told otherwise, which puts the
     /// words of an Arabic sentence around a Latin word, and its final full stop, in the wrong order.
@@ -32,7 +33,7 @@ module Localization =
         let value = plain text
         if current()="ar" && value<>"" then "\u202B"+value+"\u202C" else value
     /// Every translation of a text, for search.
-    let all (text:LocalizedText) = [text.en; text.zh; text.ja; text.ar]
+    let all (text:LocalizedText) = [text.en; text.zh; text.ja; text.ar; text.ko]
 
 [<AutoOpen>]
 module LocalizationOperators =

@@ -1412,11 +1412,11 @@ let main() =
     check ((CommandLine.invalid "--command").Contains (tr (Strings.CommandLine.needsValue "--command"))) "An option missing its value was not said to need one"
     check (not ((CommandLine.invalid "--zzzzzz").Contains (tr (Strings.CommandLine.didYouMean "--commands")))) "An option far from any was given a guess"
     // Every example the help gives is read as it says, in every language, its commands real ones.
-    for language in ["en";"zh";"ja";"ar"] do
+    for language in ["en";"zh";"ja";"ar";"ko"] do
         let help =
             match language with
             | "zh" -> Strings.CommandLine.usage.zh | "ja" -> Strings.CommandLine.usage.ja
-            | "ar" -> Strings.CommandLine.usage.ar | _ -> Strings.CommandLine.usage.en
+            | "ar" -> Strings.CommandLine.usage.ar | "ko" -> Strings.CommandLine.usage.ko | _ -> Strings.CommandLine.usage.en
         let examples = help.Split('\n') |> Array.filter(fun line -> line.StartsWith "  WindowTabs ")
         check (examples.Length>=5) (sprintf "The %s help gives too few examples" language)
         for example in examples do
