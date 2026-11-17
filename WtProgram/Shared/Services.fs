@@ -83,6 +83,7 @@ type DispatchedDesktop(inner:IDesktop, dispatcher:IDispatcher) =
         member _.groupChanged = dispatcher.Send(fun () -> inner.groupChanged)
         member _.foregroundGroup = dispatcher.Send(fun () -> inner.foregroundGroup)
         member _.adoptIntoPane(group,hwnd,path) = dispatcher.Post(fun () -> inner.adoptIntoPane(group,hwnd,path))
+        member _.addExistingWindow(group,hwnd) = dispatcher.Post(fun () -> inner.addExistingWindow(group,hwnd))
         member _.adoptBeside(group,hwnd,drop,partner) = dispatcher.Post(fun () -> inner.adoptBeside(group,hwnd,drop,partner))
 
 type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
@@ -119,7 +120,7 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.suspendTabMonitoring() = dispatcher.Send(fun () -> inner.suspendTabMonitoring())
         member _.resumeTabMonitoring() = dispatcher.Send(fun () -> inner.resumeTabMonitoring())
         member _.llMouse = dispatcher.Send(fun () -> inner.llMouse)
-        member _.paneCandidates() = dispatcher.Send(fun () -> inner.paneCandidates())
+        member _.windowCandidates target = dispatcher.Send(fun () -> inner.windowCandidates target)
         member _.toggleSearch scope = dispatcher.Post(fun () -> inner.toggleSearch scope)
         member _.saveWorkspace() = dispatcher.Post(fun () -> inner.saveWorkspace())
         member _.restoreWorkspace() = dispatcher.Post(fun () -> inner.restoreWorkspace())

@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.Runtime.InteropServices
@@ -106,12 +106,18 @@ type TaskWindowGroup =
 
 type TaskWindowItem = TaskWindowItem of IntPtr * TaskWindowGroup option
 
+type SwitchSearchResult = { window:TaskWindowItem; title:string; highlights:(int * int) list }
+
+
     
 /// What the Alt+Tab logic needs from either switcher style.
 type ITaskSwitchView =
     abstract member show : unit -> unit
     abstract member hide : unit -> unit
     abstract member select : int -> unit
+    abstract member beginSearch : (string -> unit) * (KeyEventArgs -> unit) -> unit
+    abstract member navigationSteps : int * int
+    abstract member replaceRows : SwitchSearchResult list -> unit
     /// Takes the keyboard while the switcher is open.
     abstract member inputControl : Control
     /// Another window became active: the switch is cancelled.
@@ -122,6 +128,8 @@ type ITaskSwitchView =
     abstract member clicked : IEvent<int>
 
 type ITaskSwitchListControl =
+    abstract member navigationSteps : int * int
+    abstract member replaceRows : SwitchSearchResult list -> unit
     abstract member select : int -> unit
     abstract member control : Control
     abstract member onShow : Form -> unit
@@ -203,7 +211,16 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
     let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
     // The form's padding on each side.
     let inset = Dpi.scale 24
-    let items = windows.list |> List.map TaskWindowItems.create |> Array.ofList
+    let cache = Collections.Generic.Dictionary<TaskWindowItem,TreeListItem>()
+    let itemFor window =
+        match cache.TryGetValue window with
+        | true,item -> item
+        | _ ->
+            let item = TaskWindowItems.create window
+            cache.Add(window,item)
+            item
+    let items = windows.list |> List.map itemFor |> Array.ofList
+    let mutable filtering = false
     let fit = max 1 ((area.Height*85/100-inset)/Dpi.scale rowHeight)
     // Columns no narrower than this, so titles stay readable.
     let maxColumns = max 1 ((area.Width*9/10-inset)/Dpi.scale 280)
@@ -217,7 +234,7 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
         new SettingsTreeList([TreeListColumn("",0,TextColumn)],
                              ShowHeader=false,ShowExpanders=false,RowHeight=rowHeight,IconSize=32,
                              BackColor=(SettingsColors.current()).surface,ForeColor=(SettingsColors.current()).text,
-                             Margin=Padding.Empty)
+                             ScrollBarWidth=Dpi.scale 12-1,Margin=Padding.Empty)
     let lists = Array.init columns (fun _ -> newList())
     /// Where a window sits: its column and its row in that column.
     let place index = if columns=1 then 0,index else index/perColumn,index%perColumn
@@ -245,19 +262,34 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
             let rows = if columns=1 then items else items.[column*perColumn..min (items.Length-1) ((column+1)*perColumn-1)]
             list.Roots.AddRange(rows)
             list.Rebuild()
-            list.Disposed.Add(fun _ -> ImgHelper.disposeItems list.Roots)
+
             list.MouseMove.Add(fun e ->
                 if Cursor.Position<>start then
                     indexIn column e.Location |> Option.iter(fun index ->
                         let _,row = place index
                         if not (obj.ReferenceEquals(list.SelectedItem,list.Roots.[row])) then hovered.Trigger(index)))
             list.MouseClick.Add(fun e -> if e.Button=MouseButtons.Left then indexIn column e.Location |> Option.iter clicked.Trigger)
+    do control.Disposed.Add(fun _ -> ImgHelper.disposeItems cache.Values)
     /// The window on the row at a point in the first column, if any.
     member _.IndexAt(point:Point) = indexIn 0 point
     /// How many columns the windows fill.
     member _.Columns = columns
 
     interface ITaskSwitchListControl with
+        member _.navigationSteps = (if lists.Length>1 && lists.[1].Roots.Count>0 then perColumn else 1),1
+        member _.replaceRows rows =
+            filtering <- true
+            let page =
+                rows |> List.map(fun result ->
+                    let item = itemFor result.window
+                    item.Text <- result.title
+                    item.Highlights <- [|result.highlights|]
+                    item) |> Array.ofList
+            for i,list in Array.indexed lists do
+                list.Roots.Clear()
+                list.Roots.AddRange(page.[i*perColumn..min (page.Length-1) ((i+1)*perColumn-1)])
+                list.EmptyText <- if page.Length=0 && i=0 then tr Strings.TabSearch.noMatches else ""
+                list.Rebuild()
         member this.hovered = hovered.Publish
         member this.clicked = clicked.Publish
         member this.select index =
@@ -265,7 +297,7 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
             for other,list in Array.indexed lists do
                 list.SelectedItem <- if other=column then list.Roots.[row] else null
             // Focus follows the choice: a focused column with nothing chosen outlines its first row.
-            if columns>1 && lists.[column].Visible && not lists.[column].Focused then lists.[column].Focus() |> ignore
+            if not filtering && columns>1 && lists.[column].Visible && not lists.[column].Focused then lists.[column].Focus() |> ignore
         member this.control = control
         member this.contentHeight = (lists |> Array.map(fun list -> list.Roots.Count) |> Array.max)*Dpi.scale rowHeight
         member this.contentWidth = columns*columnWidth
@@ -278,9 +310,37 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
             for list in lists do
                 list.BackColor <- p.surface
                 list.ForeColor <- p.text
-type TaskSwitchForm(control:ITaskSwitchListControl) =
+module private SwitchSearchHint =
+    let height = Dpi.scale 28
+    let add (form:Form) inset maxWidth request =
+        let hint = new Label(Text=tr Strings.TabSearch.qToSearch,Dock=DockStyle.Top,Height=height,
+                             TextAlign=ContentAlignment.MiddleCenter,Font=SettingsUi.bodyFont(),
+                             BackColor=form.BackColor,ForeColor=(SettingsColors.current()).muted,Cursor=Cursors.Hand)
+        hint.Click.Add(fun _ -> request())
+        form.Controls.Add hint
+        fun changed keyDown ->
+            let input = new TextBox(Font=SettingsUi.bodyFont(),BorderStyle=BorderStyle.None,BackColor=form.BackColor,
+                                    ForeColor=(SettingsColors.current()).text,AccessibleName=tr Strings.TabSearch.prompt)
+            let field = new SettingsSearchBox(input,Dock=DockStyle.Fill,Underlined=true)
+            let inset =
+                match maxWidth with
+                | Some width -> max inset ((form.ClientSize.Width-width+1)/2)
+                | None -> inset
+            let header = new Panel(Dock=DockStyle.Top,Height=height,BackColor=form.BackColor,
+                                   Padding=Padding(inset-form.Padding.Left,0,inset-form.Padding.Right,0))
+            header.Controls.Add field
+            let index = form.Controls.GetChildIndex hint
+            hint.Dispose()
+            form.Controls.Add header
+            form.Controls.SetChildIndex(header,index)
+            input.TextChanged.Add(fun _ -> changed input.Text)
+            input.KeyDown.Add keyDown
+            input.Focus() |> ignore
+
+type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
     let os = OS()
     let mutable shadow : TaskSwitchShadow option = None
+    let mutable startInput = fun _ _ -> ()
     let form = 
         let f = { 
             new Form() with
@@ -308,10 +368,11 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
         let padding = Dpi.scale 12
         // Tall enough for every window, so each is one glance away; only more windows than
         // most of the screen can hold scroll.
-        let height = max (Dpi.scale 120) (control.contentHeight+padding*2)
+        let height = max (Dpi.scale 120) (control.contentHeight+padding*2+(if search.IsSome then SwitchSearchHint.height else 0))
         let formSize = Size(min (control.contentWidth+padding*2) (area.Width-Dpi.scale 32),min height (area.Height*85/100))
         f.AutoScaleMode <- AutoScaleMode.None
-        f.Padding <- Padding(padding)
+        // The list reserves a scroll bar column. Let it occupy the right padding.
+        f.Padding <- Padding(padding,padding,1,padding)
         f.Font <- SettingsUi.bodyFont()
         f.ShowInTaskbar <- false
         f.StartPosition <- FormStartPosition.Manual
@@ -321,6 +382,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
         f.ControlBox <- false
         control.control.Dock <- DockStyle.Fill
         f.Controls.Add(control.control)
+        search |> Option.iter(fun request -> startInput <- SwitchSearchHint.add f (padding+Dpi.scale 2) None request)
         if not (SystemCorners.keep f (fun () -> palette.border)) then
             use shape = SettingsShapes.rounded
                             (RectangleF(0.0f,0.0f,float32 formSize.Width,float32 formSize.Height))
@@ -347,12 +409,19 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
         shadow <- None
         form.Hide()
 
+    member this.close() =
+        this.hide()
+        form.Dispose()
+
     member this.select(index) =
         control.select(index)
 
     member this.inputControl = control.control
 
     interface ITaskSwitchView with
+        member _.beginSearch(changed,keys) = startInput changed keys
+        member _.navigationSteps = control.navigationSteps
+        member _.replaceRows rows = control.replaceRows rows
         member this.show() = this.show()
         member this.hide() = this.hide()
         member this.select index = this.select index
@@ -364,22 +433,32 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
 /// The horizontal switcher: large app icons in a row, wrapping onto more rows when there are
 /// many, with the chosen window's title beneath them. The panel matches the vertical list:
 /// the same surface, border, rounded corners and shadow.
-type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
+type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
     let iconSize = Dpi.scale 64
     let cell = Dpi.scale 96
     let gap = Dpi.scale 8
     let padding = Dpi.scale 20
     let titleHeight = Dpi.scale 36
     let radius = Dpi.scale 12
-    let items =
+    let mutable startInput = fun _ _ -> ()
+    let cache = Collections.Generic.Dictionary<TaskWindowItem,Bitmap option>()
+    let iconFor window =
+        match cache.TryGetValue window with
+        | true,icon -> icon
+        | _ ->
+            let icon = TaskWindowIcons.item window iconSize
+            cache.Add(window,icon)
+            icon
+    let mutable items =
         windows.list |> List.map(fun (TaskWindowItem(hwnd,_) as item) ->
-            OS().windowFromHwnd(hwnd).text,TaskWindowIcons.item item iconSize) |> Array.ofList
+            OS().windowFromHwnd(hwnd).text,[],iconFor item) |> Array.ofList
     let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
     let columns = max 1 (min items.Length ((area.Width*9/10-padding*2+gap)/(cell+gap)))
-    let rows = max 1 ((items.Length+columns-1)/columns)
     // Wide enough for a readable title even with one or two windows.
     let width = max (Dpi.scale 360) (columns*cell+(columns-1)*gap+padding*2)
-    let height = padding+rows*cell+(rows-1)*gap+titleHeight+padding/2
+    let gridTop = padding+(if search.IsSome then SwitchSearchHint.height else 0)
+    let rows = max 1 ((items.Length+columns-1)/columns)
+    let height = gridTop+rows*cell+(rows-1)*gap+titleHeight+padding/2
     let titleFont = SettingsUi.font (SettingsUi.uiFamily()) 11.0f FontStyle.Regular
     let mutable selected = 0
     let mutable closed = false
@@ -405,6 +484,7 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         // below other always-on-top windows.
         f.TopMost <- true
         f.BackColor <- (SettingsColors.current()).surface
+        search |> Option.iter(fun request -> startInput <- SwitchSearchHint.add f padding (Some(Dpi.scale 768)) request)
         f.Bounds <- Rectangle(area.Left+(area.Width-width)/2,area.Top+(area.Height-height)/2,width,height)
         if not (SystemCorners.keep f (fun () -> (SettingsColors.current()).border)) then
             use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 radius)
@@ -413,13 +493,13 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
     /// Each row is centred, so a short last row sits in the middle.
     let cellBounds index =
         let row,column = index/columns,index%columns
-        let inRow = if row=rows-1 then items.Length-row*columns else columns
+        let inRow = min columns (items.Length-row*columns)
         let left = (width-(inRow*cell+(inRow-1)*gap))/2
-        Rectangle(left+column*(cell+gap),padding+row*(cell+gap),cell,cell)
+        Rectangle(left+column*(cell+gap),gridTop+row*(cell+gap),cell,cell)
     member _.Size = Size(width,height)
     /// The window whose icon is at a point in the panel, if any.
     member _.IndexAt(point:Point) =
-        Seq.init items.Length id |> Seq.tryFind(fun index -> (cellBounds index).Contains(point))
+        seq {0..items.Length-1} |> Seq.tryFind(fun index -> (cellBounds index).Contains(point))
     /// The panel as drawn, transparent outside its rounded shape.
     member _.Render() =
         // Opaque, like the list: the window's rounded region trims the corners. With no alpha
@@ -437,7 +517,8 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
             use outline = SettingsShapes.rounded (SettingsShapes.outlineRect width height) (float32 radius)
             use border = new Pen(p.border)
             g.DrawPath(border,outline)
-        items |> Array.iteri(fun index (_,icon) ->
+        for index in 0..items.Length-1 do
+            let _,_,icon = items.[index]
             let bounds = cellBounds index
             if index=selected then
                 use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 10))
@@ -448,14 +529,18 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
             | Some image -> g.DrawImage(image,iconBounds)
             | None ->
                 use pen = new Pen(p.text,float32(Dpi.scale 2))
-                g.DrawRectangle(pen,Rectangle.Inflate(iconBounds,-Dpi.scale 8,-Dpi.scale 12)))
-        if items.Length>0 then
-            let title,_ = items.[max 0 (min (items.Length-1) selected)]
-            let bottom = padding+rows*cell+(rows-1)*gap
-            TextRenderer.DrawText(g,title,titleFont,Rectangle(padding,bottom,width-padding*2,titleHeight),
-                                  (if highContrast then SystemColors.WindowText else p.text),p.surface,
-                                  TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter
-                                  ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+                g.DrawRectangle(pen,Rectangle.Inflate(iconBounds,-Dpi.scale 8,-Dpi.scale 12))
+        if items.Length>0 || search.IsSome then
+            let title,highlights =
+                if items.Length=0 then tr Strings.TabSearch.noMatches,[]
+                else
+                    let text,runs,_ = items.[max 0 (min (items.Length-1) selected)]
+                    text,runs
+            let bottom = gridTop+rows*cell+(rows-1)*gap
+            let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter
+                        ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.PreserveGraphicsClipping
+            SettingsTreeList.drawMarked(g,title,highlights,Rectangle(padding,bottom,width-padding*2,titleHeight),flags,titleFont,
+                                        (if highContrast then SystemColors.WindowText else p.text),p)
         bitmap
     member private this.wirePointer() =
         // The pointer may already rest over an icon when Alt+Tab opens; only moving it chooses.
@@ -472,6 +557,11 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         if not (isNull previous) then previous.Dispose()
         form.Invalidate()
     interface ITaskSwitchView with
+        member _.beginSearch(changed,keys) = startInput changed keys
+        member _.navigationSteps = 1,(if items.Length>columns then columns else 1)
+        member this.replaceRows rows =
+            items <- rows |> List.map(fun result -> result.title,result.highlights,iconFor result.window) |> Array.ofList
+            if items.Length=0 then this.present()
         member this.show() =
             this.wirePointer()
             this.present()
@@ -489,7 +579,7 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
             form.Hide()
             form.Dispose()
             if not (isNull frame) then frame.Dispose()
-            for _,icon in items do icon |> Option.iter(fun image -> image.Dispose())
+            for icon in cache.Values do icon |> Option.iter(fun image -> image.Dispose())
         member this.select index =
             selected <- index
             if form.IsHandleCreated then this.present()
@@ -498,25 +588,36 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         member this.hovered = hovered.Publish
         member this.clicked = clicked.Publish
 
-type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:bool, ?view:ITaskSwitchView, ?activate:IntPtr -> unit) as this =
+type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:bool, ?view:ITaskSwitchView, ?activate:IntPtr -> unit, ?search:unit -> (string -> SwitchSearchResult list)) as this =
     let os = OS()
     let activate = defaultArg activate (fun hwnd -> os.windowFromHwnd(hwnd).setForegroundOrRestore(false))
     let Cell = CellScope()
     let switchIndex = Cell.create(0)
+    let requestSearch = search |> Option.map(fun _ -> fun () -> this.enterSearch())
     let form : ITaskSwitchView =
         match view with
         | Some view -> view
-        | None when style="List" -> TaskSwitchForm(TaskSwitchListControl(windows)) :> ITaskSwitchView
-        | None -> TaskSwitchIconView(windows) :> ITaskSwitchView
+        | None when style="List" -> TaskSwitchForm(TaskSwitchListControl(windows),?search=requestSearch) :> ITaskSwitchView
+        | None -> TaskSwitchIconView(windows,?search=requestSearch) :> ITaskSwitchView
     let endedEvent = Event<_>()
     let mutable finished = false
 
+    let mutable searching = false
+    let originalRows = lazy (windows.list |> List.map(fun (TaskWindowItem(hwnd,_) as item) -> {window=item; title=OS().windowFromHwnd(hwnd).text; highlights=[]}))
+    let mutable matches : SwitchSearchResult[] = [||]
+    let pageSize = max 1 windows.length
+    let mutable pageStart = 0
+    let count() = if searching then matches.Length else windows.length
+    let selectedWindow() = if searching then matches.[switchIndex.value].window else windows.at switchIndex.value
+    let showPage start =
+        pageStart <- start
+        form.replaceRows (matches.[start..min (matches.Length-1) (start+pageSize-1)] |> List.ofArray)
     let setIndex index =
         switchIndex.set(index)
-        form.select(index)
-
+        if searching && index/pageSize<>pageStart/pageSize then showPage (index/pageSize*pageSize)
+        form.select(index-pageStart)
     let doSwitch next =
-        let len = windows.length
+        let len = count()
         if len > 0 then
             let index = 
                 let index = switchIndex.value + (if next then -1 else 1)
@@ -536,9 +637,9 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:boo
         form.deactivated.Add <| fun () ->
             this.switchEnd(true)
 
-        form.hovered.Add setIndex
+        form.hovered.Add(fun index -> setIndex (pageStart+index))
         form.clicked.Add <| fun index ->
-            setIndex index
+            setIndex (pageStart+index)
             this.switchEnd(false)
 
         form.inputControl.KeyDown.Add <| fun e ->
@@ -547,6 +648,19 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:boo
         form.inputControl.KeyUp.Add <| fun e ->
             this.processKeys(e)
 
+
+    member _.moveArrow(key:Keys) =
+        let horizontal,vertical = form.navigationSteps
+        let step =
+            match key with
+            | Keys.Left -> -horizontal
+            | Keys.Right -> horizontal
+            | Keys.Up -> -vertical
+            | Keys.Down -> vertical
+            | _ -> 0
+        if step<>0 && count()>0 then
+            setIndex (max 0 (min (count()-1) (switchIndex.value+step)))
+        step<>0
 
     member this.processKeys(e:KeyEventArgs) =
         e.Handled <- true
@@ -557,30 +671,94 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:boo
         // Switching away makes the panel lose focus, which asks to end again: once is enough.
         if not finished then
             finished <- true
-            if cancel.not && windows.length > 0 then
-                let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
+            if cancel.not && count()>0 then
+                let (TaskWindowItem(hwnd,_)) = selectedWindow()
                 activate hwnd
-            form.hide()
+            match view,form with
+            | None,(:? TaskSwitchForm as owned) -> owned.close()
+            | _ -> form.hide()
             endedEvent.Trigger()
 
+    member _.releaseAlt() = if not searching then this.switchEnd(false)
+    member _.enterSearch() =
+        if not finished && not searching then
+            search |> Option.iter(fun load ->
+                searching <- true
+                let filter = lazy (load())
+                let update query =
+                    if not finished then
+                        matches <- (if String.IsNullOrWhiteSpace query then originalRows.Value else filter.Value query) |> Array.ofList
+                        showPage 0
+                        if matches.Length>0 then setIndex 0
+                let keys (e:KeyEventArgs) =
+                    match e.KeyCode with
+                    | key when e.Modifiers=Keys.None && this.moveArrow key -> e.SuppressKeyPress <- true
+                    | Keys.Enter | Keys.Escape ->
+                        e.SuppressKeyPress <- true
+                        if e.KeyCode=Keys.Escape then this.switchEnd(true)
+                        elif matches.Length>0 then this.switchEnd(false)
+                    | _ -> ()
+                let beginInput() =
+                    if not finished then
+                        matches <- originalRows.Value |> Array.ofList
+                        showPage 0
+                        if matches.Length>0 then setIndex switchIndex.value
+                        form.beginSearch(update,keys)
+                if form.inputControl.IsHandleCreated then form.inputControl.BeginInvoke(Action beginInput) |> ignore else beginInput())
+
     member this.selectedHwnd =
-        let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
+        let (TaskWindowItem(hwnd,_)) = selectedWindow()
         hwnd
 
     member this.ended = endedEvent.Publish
 
-type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
+/// Own Q through its matching key-up so repeats cannot open a second search.
+type SwitchSearchChord() =
+    let mutable held = false
+    member _.Held = held
+    member _.Handle(message,key,altDown,enter:unit -> unit) =
+        if key<>int Keys.Q then None
+        elif held then
+            if message=WindowMessages.WM_KEYUP || message=WindowMessages.WM_SYSKEYUP then held <- false
+            Some 1
+        elif altDown && (message=WindowMessages.WM_SYSKEYDOWN || message=WindowMessages.WM_KEYDOWN) then
+            held <- true
+            enter()
+            Some 1
+        else None
+
+type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop, ?search:IntPtr * List2<TaskWindowItem> -> (string -> SwitchSearchResult list)) as this=
     let os = OS()
     let Cell = CellScope()
-    let hotKeyManager = new HotKeyManager()
     let switcherCell = Cell.create(None:TaskSwitchAction option)
+    let mutable searchHook : IDisposable option = None
+    let removeSearchHook() =
+        searchHook |> Option.iter(fun hook -> hook.Dispose())
+        searchHook <- None
+
+    // Install when the switcher opens, ahead of shortcut hooks already running.
+    let watchSearchChord (switcher:TaskSwitchAction) =
+        removeSearchHook()
+        let chord = SwitchSearchChord()
+        let mutable ended = false
+        searchHook <- Some(os.registerKeyboardLLHook(fun (message,key) ->
+            let result = chord.Handle(int message,key.vkCode,(key.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN)<>0,switcher.enterSearch)
+            if ended && not chord.Held then removeSearchHook()
+            result))
+        switcher.ended.Add(fun () ->
+            ended <- true
+            if not chord.Held then removeSearchHook())
     let doTaskSwitch forward =
         match switcherCell.value with
         | None ->
-            let switcher = TaskSwitchAction(this.windows,settings.settings.switcherStyle,backward=not forward,activate=desktop.activate)
+            let original = WinUserApi.GetForegroundWindow()
+            let windows = this.windows
+            let openSearch = search |> Option.map(fun load -> fun () -> load(original,windows))
+            let switcher = TaskSwitchAction(windows,settings.settings.switcherStyle,backward=not forward,activate=desktop.activate,?search=openSearch)
             switcher.ended.Add <| fun() ->
                 switcherCell.set(None)
             switcherCell.set(Some(switcher))
+            if search.IsSome then watchSearchChord switcher
         | Some switcher ->
             if forward then switcher.switchPrev() else switcher.switchNext()
 
@@ -602,11 +780,13 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
             (hookStruct.vkCode = key)
 
         if isAltReleased() then
-            switcherCell.value.iter <| fun switcher -> switcher.switchEnd(false)
+            switcherCell.value.iter <| fun switcher -> switcher.releaseAlt()
             None
         elif isAltCmd(VirtualKeyCodes.VK_TAB) then
             let prev = not(Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT))
             doTaskSwitch prev
+            Some(1)
+        elif isAltCmd(hookStruct.vkCode) && (switcherCell.value |> Option.exists(fun switcher -> switcher.moveArrow(enum<Keys> hookStruct.vkCode))) then
             Some(1)
         elif isAltCmd(VirtualKeyCodes.VK_ESCAPE) then
             switcherCell.value.iter <| fun switcher -> switcher.switchEnd(true)
@@ -660,4 +840,7 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
             windowsInZorder.map(fun w -> TaskWindowItem(w.hwnd,None))
 
     interface IDisposable with
-        member this.Dispose() = hook.Dispose()
+        member this.Dispose() =
+            removeSearchHook()
+            hook.Dispose()
+            switcherCell.value.iter(fun switcher -> switcher.switchEnd(true))

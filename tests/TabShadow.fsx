@@ -107,16 +107,137 @@ let main () =
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
-        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; position=None; rowSlide=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0
+        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; position=None; rowSlide=None; showAddButton=false; reserveAddButton=false; buttonScreen=None; windowRight=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0
         transparent=true; appearance=appearance; hover=None; captured=None }
     let originalVerticalDpi = Dpi.value()
     try
-        for dpi in [96;144;192] do
+        for dpi in [96;120;144;192] do
             Dpi.set dpi
+            // A full row borrows any space on its right. A screen or caption boundary
+            // takes the missing width from the resting layout, before hover.
+            let full = {ts with size=Dpi.scaleSize(Sz(300,28)); appearance=Theme.dark.scaled; showAddButton=true}
+            let w,h = full.size.width,full.size.height
+            let buttonImage (strip:TabStripSprite<int>) =
+                strip.sprite.children.list |> List.pick(fun (_,child) ->
+                    match child with :? AddButtonSprite -> Some(child.image.bitmap) | _ -> None)
+            let joined = {full with reserveAddButton=true; appearance={full.appearance with tabStyle=JoinedTabs; tabOverlap=0}}
+            let floating = {full with appearance={full.appearance with tabStyle=FloatingTabs}; hover=Some(1,TabNew)}
+            let add = floating.sprite.children.list |> List.pick(fun (_,child) ->
+                match child with :? AddButtonSprite as add -> Some add | _ -> None)
+            let paintedBounds (bitmap:Bitmap) matches =
+                let pixels =
+                    [ for y in 0..bitmap.Height-1 do
+                          for x in 0..bitmap.Width-1 do
+                              if matches (bitmap.GetPixel(x,y)) then yield x,y ]
+                let xs,ys = List.unzip pixels
+                Rectangle.FromLTRB(List.min xs,List.min ys,List.max xs+1,List.max ys+1)
+            use glyph = (({add with drawSurface=ignore} :> ISprite).image).bitmap
+            let ink = paintedBounds glyph (fun pixel -> pixel.A>1uy)
+            check (ink.Width=ink.Height) "The add glyph was flattened"
+            for x in 0..ink.Width-1 do
+                for y in 0..ink.Height-1 do
+                    check (glyph.GetPixel(ink.X+x,ink.Y+y)=glyph.GetPixel(ink.X+y,ink.Y+x))
+                          "The two add glyph strokes have different weights"
+            for style in [JoinedTabs;FolderTabs;FloatingTabs] do
+                for hover,capture in [Some(2,TabBackground),None;Some(1,TabNew),None;None,Some(1,TabNew)] do
+                    let shown = {full with appearance={full.appearance with tabStyle=style}; hover=hover; captured=capture}
+                    use onHover = buttonImage shown
+                    use always = buttonImage {shown with reserveAddButton=true}
+                    if hover=Some(1,TabNew) || capture.IsSome then
+                        use idle = buttonImage {shown with hover=None; captured=None}
+                        for x in 0..idle.Width-1 do
+                            for y in 0..idle.Height-1 do
+                                let changed = idle.GetPixel(x,y)<>onHover.GetPixel(x,y)
+                                check (changed=(glyph.GetPixel(x,y).A>1uy)) "Hover or press must highlight only the plus strokes"
+                    check (onHover.Size=always.Size &&
+                           (seq { for x in 0..always.Width-1 do for y in 0..always.Height-1 -> x,y }
+                            |> Seq.forall(fun (x,y) -> onHover.GetPixel(x,y)=always.GetPixel(x,y))))
+                          (sprintf "Hover and Always drew different add buttons in %A" style)
+            let neighbour = joined.tabSprites.list |> List.map snd |> List.find(fun tab -> tab.id=2)
+            use divider = (({neighbour with roundLeft=false; showLeftSeparator=true} :> ISprite).image).bitmap
+            use button = buttonImage joined
+            let mid = button.Height/2
+            check (button.GetPixel(0,mid)<>button.GetPixel(1,mid) &&
+                   ([1..button.Height-2] |> List.forall(fun y -> button.GetPixel(0,y)=divider.GetPixel(0,y))))
+                  "The permanent add button did not use the same short divider as a plain tab"
+            use raised = buttonImage {joined with zorder=List2([2;1])}
+            check (raised.GetPixel(0,mid)=raised.GetPixel(1,mid)) "A divider remained beside a raised tab"
+            for alignment in [TabLeft;TabCenter;TabRight] do
+                let row = {full with alignment=alignment; reserveAddButton=true}
+                let _,button = row.buttonPlacement.Value
+                check (button.Left=(row.tabBounds 2).Right && button.Right<=w && row.renderBounds.Size=row.size.Size)
+                      "The permanent button did not fit beside the final horizontal tab"
+            for extra in [Dpi.scale 40;Dpi.scale 7;0] do
+                let room = Rectangle(0,0,w+extra,h+Dpi.scale 40)
+                let row = {full with buttonScreen=Some room; windowRight=Some(w+Dpi.scale 4)}
+                let edge,button = row.buttonPlacement.Value
+                check (room.Contains button && (row.lorder.list |> List.forall(fun id -> not(button.IntersectsWith(row.tabBounds id)))))
+                      "The floating button covered a tab or fell off the screen"
+                let centre = Pt(button.X+button.Width/2,button.Y+button.Height/2)
+                use pixels = row.render.bitmap
+                let frame = row.renderBounds
+                check (pixels.Size=frame.Size && pixels.GetPixel(centre.x-frame.X,centre.y-frame.Y).A>0uy &&
+                       row.tryHit centre=Some(1,TabNew)) "The outboard button was clipped or could not receive a click"
+                use cap = buttonImage row
+                let x,y = cap.Width-1,cap.Height-1
+                let resting = {row with showAddButton=false}
+                check (edge=System.Windows.Forms.DockStyle.Right && button.Left=(row.tabBounds 2).Right &&
+                       row.renderBounds.Height=h && (row.lorder.list |> List.forall(fun id -> row.tabBounds id=resting.tabBounds id)))
+                      "A horizontal hover button moved the tabs or wrapped below the title bar"
+                check (button.Right=min room.Right (w+button.Width)) "The row did not use the available space to its right"
+                if button.Right>row.windowRight.Value then
+                    check (cap.GetPixel(x,0).A=0uy && cap.GetPixel(x,y).A=0uy &&
+                           cap.GetPixel(0,0).A=255uy && cap.GetPixel(0,y).A=255uy)
+                          "The exposed button did not round its free end or keep its joined edge solid"
+                use supported = buttonImage {row with windowRight=Some button.Right}
+                check (supported.GetPixel(x,y).A=255uy) "The button rounded its lower corner while still on the window"
             for dock,direction in [for dock in [TabDockLeft;TabDockRight] do for direction in [TabUp;TabDown] do yield dock,direction] do
                 let column = { ts with dock=dock; direction=direction; size=Dpi.scaleSize(Sz(220,300)); appearance=Theme.dark.scaled }
                 let first = column.tabLocation 1
                 let second = column.tabLocation 2
+                let natural = {column with reserveAddButton=true; showAddButton=true; size=Sz(column.size.width,column.columnContentHeight+column.rowStep)}
+                let resting = {column with size=Sz(column.size.width,column.columnContentHeight)}
+                let viewport = Rectangle(Point.Empty,resting.size.Size)
+                for above in [false;true] do
+                    let room = Rectangle(0,(if above then -column.rowStep else 0),viewport.Width,viewport.Height+column.rowStep)
+                    let shown = {resting with showAddButton=true; buttonScreen=Some room}
+                    let edge,button = shown.buttonPlacement.Value
+                    check (edge=System.Windows.Forms.DockStyle.Fill && button.Width=viewport.Width && shown.renderBounds=room &&
+                           shown.tabBounds 2=resting.tabBounds 2 && shown.scrollMaximum=resting.scrollMaximum)
+                          "The vertical hover row changed the tab layout or did not extend the full column"
+                    use pixels = shown.render.bitmap
+                    use highlighted = ({shown with hover=Some(1,TabNew)}).render.bitmap
+                    let sample = Point(button.Width/4,button.Top-room.Top+button.Height/2)
+                    check (highlighted.GetPixel(sample.X,sample.Y)<>pixels.GetPixel(sample.X,sample.Y)) "The floating vertical add row lost its hover highlight"
+                    let outerX = if (dock=TabDockRight) <> (direction=TabUp) then 0 else pixels.Width-1
+                    let attachedX = pixels.Width-1-outerX
+                    let seam = if above then -room.Top else viewport.Height
+                    check (pixels.GetPixel(outerX,0).A=0uy && pixels.GetPixel(outerX,pixels.Height-1).A=0uy &&
+                           pixels.GetPixel(attachedX,0).A=255uy && pixels.GetPixel(attachedX,pixels.Height-1).A=255uy)
+                          "The hover row lost the column's rounded outer corners or its flush attached edge"
+                    for x in [outerX;attachedX] do
+                        for y in seam-2..seam+2 do
+                            check (pixels.GetPixel(x,y).A=255uy) "The old column corner left a notch at the hover row"
+                        check (shown.tryHit(Pt(x,button.Top+button.Height/2))=Some(1,TabNew))
+                              "The full-width hover row did not receive clicks at its edges"
+                for hovered in [false;true] do
+                    let tab = natural.tabSprites.list |> List.map snd |> List.find(fun tab -> tab.id=2)
+                    use expected = (({tab with onlyIcon=true; hover=(if hovered then Some TabBackground else None)} :> ISprite).image).bitmap
+                    use actual = buttonImage {natural with hover=(if hovered then Some(1,TabNew) else None)}
+                    for x in 0..actual.Width/3 do
+                        for y in 0..actual.Height-1 do
+                            check (expected.GetPixel(x,y)=actual.GetPixel(x,y)) "The add row's fill or hover inset differed from a vertical tab"
+                let short = {natural with size=Sz(natural.size.width,natural.size.height-natural.rowStep)}
+                for bar in [natural;short;{short with scrollOffset=short.scrollMaximum}] do
+                    let _,button = bar.buttonPlacement.Value
+                    check (button.Width=(bar.tabBounds 2).Width && button.Height=bar.rowHeight &&
+                           button.Top=bar.tabAreaHeight && button.Bottom<=bar.size.height &&
+                           bar.tryHit(Pt(button.Right-2,button.Top+button.Height/2))=Some(1,TabNew))
+                          "The permanent button did not occupy a clickable row below the tabs"
+                let scrolled = {short with scrollOffset=short.scrollMaximum}
+                check (natural.scrollMaximum=0 && (scrolled.tabBounds 2).Bottom<=scrolled.tabAreaHeight &&
+                       scrolled.buttonPlacement=short.buttonPlacement && short.scrollTrack.bottom<=short.tabAreaHeight)
+                      "Scrolling a short column hid its final tab or moved its permanent button"
                 check (first.x=second.x && second.y>first.y) "Vertical tabs did not stack in rows"
                 check (column.tryHit(second.add(Pt(Dpi.scale 12,Dpi.scale 16))) |> Option.exists(fun (id,_) -> id=2)) "Vertical hit testing selected a neighbouring row"
                 let sprite = snd (column.tabSprites.list |> List.find(fun (_,tab) -> tab.id=1))
@@ -128,7 +249,32 @@ let main () =
                 // A tab dragged along the strip is drawn over the others, held up as a pressed one,
                 // though another is the one chosen: not chosen as it was pressed in a group behind, or
                 // carried into another strip, it went under the tabs it passed.
-                for strip in [column;{ ts with size=Dpi.scaleSize(Sz(420,28)) }] do
+                for strip in [column;{ ts with size=Dpi.scaleSize(Sz(520,28)); appearance=Theme.dark.scaled }] do
+                    let buttons = {strip with showAddButton=true}
+                    let parts = buttons.sprite.children.list |> List.choose(fun (pt,child) ->
+                        match child with
+                        | :? AddButtonSprite as button ->
+                            Some(buttons.tryHit(pt.add(Pt(button.size.width/2,button.size.height/2))))
+                        | _ -> None)
+                    check (parts=[Some(1,TabNew)]) "The single add button did not target the front tab"
+                    check (buttons.layout=strip.layout && buttons.scrollMaximum=strip.scrollMaximum &&
+                           (strip.lorder.list |> List.forall(fun id -> buttons.tabBounds id=strip.tabBounds id)))
+                          "The add button changed tab alignment, size or scrolling"
+                    let last = buttons.tabBounds 2
+                    let pt,button = buttons.sprite.children.list |> List.pick(fun (pt,child) ->
+                        match child with :? AddButtonSprite as button -> Some(pt,button) | _ -> None)
+                    check ((if strip.isVertical then pt.y=last.Bottom else pt.x=last.Right)) "The add button left a gap after the last tab"
+                    use joined = buttons.render.bitmap
+                    let crossing =
+                        if strip.isVertical then
+                            let x = pt.x+button.size.width/2
+                            [for y in pt.y-2..pt.y+button.size.height/2 -> Pt(x,y)]
+                        else
+                            [for y in [pt.y+1;pt.y+button.size.height/2;pt.y+button.size.height-2] do
+                                for x in pt.x-2..pt.x+button.size.width/2 -> Pt(x,y)]
+                    for pixel in crossing do
+                        check (joined.GetPixel(pixel.x,pixel.y).A>0uy && (buttons.tryHit pixel).IsSome)
+                              "The pointer crossed a transparent or inactive pixel on its way to the add button"
                     let tabsDrawn (s:TabStripSprite<int>) =
                         s.sprite.children.list |> List.choose(fun (_,sprite) -> match sprite with :? TabSprite<int> as tab -> Some tab | _ -> None)
                     let dragged = { strip with slide=Some(2,(if strip.isVertical then strip.rowStep/2 else 40)) }

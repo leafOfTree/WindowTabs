@@ -16,6 +16,8 @@ type ITabStripMonitor =
     abstract member tabMoved : Tab * int -> unit
     abstract member windowMsg : Win32Message -> unit
 
+type private StripTipTarget = TabTitle of Tab | AddTabHint
+
 type TabStrip(monitor:ITabStripMonitor) as this =
     let Cell = CellScope(false, true)
     let _os = OS()
@@ -35,7 +37,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let entryClock = Diagnostics.Stopwatch()
     let entryTimer = new Timer(Interval=15)
     let mutable renderedFrames = 0L
-    let mutable renderedOffset = 0
+    let mutable renderedShift = Pt.empty
+    let mutable screenArea = Rectangle.Empty
+    let mutable windowRight : int option = None
     let mutable relocating = false
     let lorderCell = Cell.create(List2())
     let zorderCell = Cell.create(List2())
@@ -106,13 +110,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// window gets mouse messages only while the pointer is over its painted pixels, whatever
     /// the capture, so a quick drag off the tabs would stop short and miss the release.
     let rowDragTimer = new Timer(Interval=15)
-    let ptCell = Cell.create(None)
+    let pointerOverCell = Bemo.Cell<bool>(Cell, false, (=))
     let tabInfoCell = Cell.create(Map2():Map2<Tab,TabInfo>)
     let layeredWindowCell = Cell.create(None)
     let eventHandlersCell = Cell.create(Set2())
     let tabTint = Cell.create(Map2())
     let colorStyleCell = Cell.create(Services.settings.getValue("tabColorStyle") :?> string)
     let textWeightCell = Cell.create(Services.settings.getValue("tabTextWeight") :?> string)
+    let addButtonModeCell = Bemo.Cell<string>(Cell, Services.settings.getValue("tabAddButton") :?> string, (=))
     let closeButtonCell = Cell.create(Services.settings.getValue("tabCloseButton") :?> string)
     let mutable lastAlpha = 255uy
     let opacityCell = Cell.create(Services.settings.getValue("tabOpacity") :?> int)
@@ -134,7 +139,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let mutable pointerSource : unit -> Point = fun () -> Cursor.Position
     /// A cut-short title shows in full once the pointer rests on its tab, see pointTitle.
     let titleTimer = new Timer(Interval=500)
-    let mutable titleTab : Tab option = None
+    let mutable tipTarget : StripTipTarget option = None
     let mutable titleTip : TabTitleTip option = None
     /// Counts the tips asked for, so a window's picture printed for one already put away is dropped.
     let mutable tipRequest = 0
@@ -158,7 +163,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let mutable renamedBoldFont = makeFont 0 (FontStyle.Bold ||| FontStyle.Italic)
 
     let isMouseOverExport = Cell.export <| fun() ->
-        if this.isVertical then ptCell.value.IsSome else hoverCell.value.IsSome
+        if this.isVertical then pointerOverCell.value else hoverCell.value.IsSome
 
     let showInsideExport = Cell.export <| fun() -> showInsideCell.value
 
@@ -228,6 +233,22 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if tabTint.value.tryFind(tab) <> color then tabTint.value <- match color with Some c -> tabTint.value.add tab c | None -> tabTint.value.remove tab
     member _.colorStyle with get() = colorStyleCell.value and set value = colorStyleCell.value <- value
     member _.textWeight with get() = textWeightCell.value and set value = textWeightCell.value <- value
+    member private _.showsAddButton = reveal>=1.0 && TabAddButton.visible addButtonModeCell.value pointerOverCell.value
+    member this.addButtonMode
+        with get() = addButtonModeCell.value
+        and set value = this.withUpdate(fun () ->
+            let resize = (value="Always") <> (addButtonModeCell.value="Always")
+            addButtonModeCell.set(value)
+            if resize then
+                heldLayoutCell.set(None)
+                dockChangedEvent.Trigger()
+                this.ensureSelectedVisible()
+            if not this.showsAddButton then
+                if tipTarget=Some AddTabHint then
+                    tipTarget <- None
+                    this.hideTitle()
+                hoverCell.set(hoverCell.value |> Option.filter(fun (_,part) -> not part.isAddButton))
+                capturedCell.set(capturedCell.value |> Option.filter(fun (_,part) -> not part.isAddButton)))
     member _.closeButton with get() = closeButtonCell.value and set value = closeButtonCell.value <- value
     member _.opacity with get() = opacityCell.value and set value = opacityCell.value <- value
     member _.numberBadgeKeys with get() = numberBadgeKeysCell.value and set value = numberBadgeKeysCell.value <- value
@@ -238,9 +259,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member private this.layeredWindow = layeredWindowCell.value.Value
     member private this.os = _os
     member private this.window : Window = this.os.windowFromHwnd(this.hwnd)
-    member private this.pt = ptCell.value.Value
-    member private this.ptScreen = this.window.ptToScreen(this.pt)
-    member private this.setPt = ptCell.set
+
 
     member private this.size = sizeCell.value
 
@@ -268,6 +287,15 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             textBrush = SystemBrushes.MenuText
         }
 
+    member private this.buttonScreen =
+        if screenArea.IsEmpty || addButtonModeCell.value="Never" then None
+        else
+            let right = if this.showInside && not this.isVertical then min screenArea.Right (location.x+this.size.width) else screenArea.Right
+            Some(Rectangle.FromLTRB(screenArea.Left-location.x,screenArea.Top-location.y,right-location.x,screenArea.Bottom-location.y))
+
+    member private this.hoverButtonReserve =
+        if not this.isVertical && addButtonModeCell.value="Hover" then TabAddButton.hoverReserve this.size this.buttonScreen else 0
+
     member private this.tsBase direction =
         let zorder = zorderCell.value
         {
@@ -284,6 +312,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             onlyIcons = this.isIconOnly
             transparent = this.transparent
             dock = dockCell.value
+            reserveAddButton = addButtonModeCell.value="Always"
+            showAddButton = this.showsAddButton
+            windowRight = windowRight
+            buttonScreen = this.buttonScreen
             scrollOffset = scrollOffsetCell.value
             held = heldLayoutCell.value
             position = positionCell.value
@@ -307,11 +339,6 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member private this.onMouse(down, pt:Pt, btn, (tab:Tab, part)) =
         monitor.tabClick(btn, tab, part, down, pt)
         
-    member private this.hit : Option<Tab*TabPart> = maybe {
-        let! pt = ptCell.value
-        let! hit = this.hitAt(pt)
-        return hit 
-        }
     
     member private this.processMouse(mouse,?trackLeave:bool) =
         // Hover/capture changes share one render. Equal hover values leave the
@@ -319,19 +346,21 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         this.withUpdate(fun () ->
             match mouse with
             | MouseMove(pt) ->
-                this.setPt(Some(pt))
+                pointerOverCell.set(true)
                 if this.window.hasCapture.not && defaultArg trackLeave true then
                     this.window.trackMouseLeave()
-                let hit = this.hit
+                let hit = this.hitAt pt
                 hoverCell.set(hit)
-                this.pointTitle(hit |> Option.map fst)
+                let tabHit = hit |> Option.filter(fun (_,part) -> not part.isAddButton)
+                this.pointTitle(hit |> Option.map(fun (tab,part) -> if part.isAddButton then AddTabHint else TabTitle tab))
                 let enableHoverActivate = Services.settings.getValue("enableHoverActivate").cast<bool>()
                 if enableHoverActivate then
-                    hit.iter <| fun(hitTab, hitPart) -> monitor.tabActivate(hitTab)
+                    tabHit.iter <| fun(hitTab, hitPart) -> monitor.tabActivate(hitTab)
             | MouseClick(pt, btn, action) ->
-                this.setPt(Some(pt))
+                pointerOverCell.set(true)
                 this.hideTitle()
-                this.hit.iter <| fun(hitTab, hitPart) ->
+                let captured = capturedCell.value
+                (this.hitAt pt).iter <| fun(hitTab, hitPart) ->
                     match action with
                     | MouseDown ->
                         capturedCell.set(Some(hitTab, hitPart))
@@ -340,18 +369,20 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                         let closeClick = btn = MouseLeft && hitPart = capturedPart && hitPart = TabClose
                         // Middle-click closes too (TabStripDecorator); both keep the layout.
                         let middleCloses = btn = MouseMiddle && (Services.settings.getValue("enableMiddleClickClose") :?> bool)
-                        if hitTab = capturedTab && (closeClick || middleCloses) then
+                        if hitTab = capturedTab && not hitPart.isAddButton && (closeClick || middleCloses) then
                             heldLayoutCell.set(Some(this.ts.layout))
                         if hitTab = capturedTab && closeClick then
                             monitor.tabClose(hitTab)
-                        capturedCell.set(None)
                     | MouseDblClick -> ()
-                    this.onMouse(action, pt, btn, (hitTab, hitPart))
-                hoverCell.set(this.hit)
+                    let addPress = captured |> Option.exists(fun (_,part) -> part.isAddButton)
+                    if action<>MouseUp || captured=Some(hitTab,hitPart) || (not addPress && not hitPart.isAddButton) then
+                        this.onMouse(action, pt, btn, (hitTab, hitPart))
+                if action=MouseUp then capturedCell.set(None)
+                if pointerOverCell.value then hoverCell.set(this.hitAt pt)
             | MouseLeave ->
-                titleTab <- None
+                tipTarget <- None
                 this.hideTitle()
-                this.setPt(None)
+                pointerOverCell.set(false)
                 capturedCell.set(None)
                 hoverCell.set(None)
                 heldLayoutCell.set(None))
@@ -365,12 +396,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// next tab, and stays up until that one's is ready: put away first, it blinked out while the
     /// next window's picture was printed. Otherwise it waits for the pointer to rest. A click
     /// puts it away until the pointer moves on.
-    member private this.pointTitle(tab:Tab option) =
-        if tab<>titleTab then
-            titleTab <- tab
+    member private this.pointTitle(target:StripTipTarget option) =
+        if target<>tipTarget then
+            tipTarget <- target
             let visible = titleTip |> Option.exists(fun tip -> tip.Visible)
             let following = visible || tipClock.ElapsedMilliseconds-tipLeftAt < 400L
-            match tab with
+            match target with
             | Some _ when following ->
                 titleTimer.Stop()
                 this.showTitle()
@@ -390,7 +421,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// A tab behind, with the preview setting on, shows its window under its title once that is
     /// printed, off this thread; any other tab shows its title alone, when it is cut short.
     member private this.showTitle() =
-        titleTab |> Option.iter(fun tab ->
+        match tipTarget with
+        | Some AddTabHint when this.visible && not this.isShrunk && not (OpenMenus.any()) && this.slide.IsNone ->
+            this.ts.buttonPlacement |> Option.iter(fun (_,button) ->
+                let anchor = Rect(location.add(button.Location.Pt),button.Size.Sz)
+                this.showTipText(tr (Strings.TabMenu.addTabHint true),normalFont,anchor,None,
+                                 aim=Point(anchor.x+anchor.width/2,anchor.y+anchor.height/2)))
+        | Some(TabTitle tab) ->
             match this.tipSprite tab with
             | Some(_,sprite) when not sprite.isTop && (Services.settings.getValue("tabHoverPreview") :?> bool) ->
                 tipRequest <- tipRequest+1
@@ -407,32 +444,34 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                         let picture = picture()
                         invoker.asyncInvoke(fun () ->
                             match picture with
-                            | Some image when request=tipRequest && titleTab=Some tab -> this.showTip(tab,Some image)
+                            | Some image when request=tipRequest && tipTarget=Some(TabTitle tab) -> this.showTip(tab,Some image)
                             | Some image -> image.Dispose()
-                            | None -> if request=tipRequest && titleTab=Some tab then this.showTip(tab,None))) |> ignore
+                            | None -> if request=tipRequest && tipTarget=Some(TabTitle tab) then this.showTip(tab,None))) |> ignore
             | Some(_,sprite) when sprite.titleCut -> this.showTip(tab,None)
             // Nothing to show for this tab: the last tab's tip, left up to follow, goes.
-            | _ -> this.hideTitle())
+            | _ -> this.hideTitle()
+        | _ -> this.hideTitle()
 
     member private this.showTip(tab:Tab,picture:Bitmap option) =
         match this.tipSprite tab with
         | Some(offset,sprite) when picture.IsSome || sprite.titleCut ->
-            let tip =
-                match titleTip with
-                | Some tip -> tip
-                | None ->
-                    let tip = new TabTitleTip()
-                    titleTip <- Some tip
-                    tip
-            let strip : Rect = this.bounds
-            let anchor = if this.isVertical then Rect(strip.location.add(offset),sprite.size) else strip
-            let pointer = pointerSource()
-            tip.show(sprite.displayInfo.text,sprite.displayInfo.textFont,
-                     Rectangle(anchor.x,anchor.y,anchor.width,anchor.height),pointer.X,
-                     ?side=(if this.isVertical then Some this.dock else None),?pointerY=Some pointer.Y,?image=picture)
+            let anchor = Rect(location.add(offset),sprite.size)
+            this.showTipText(sprite.displayInfo.text,sprite.displayInfo.textFont,anchor,picture)
         | _ ->
             picture |> Option.iter(fun image -> image.Dispose())
             titleTip |> Option.iter(fun tip -> tip.hide())
+
+    member private this.showTipText(text,font,anchor:Rect,picture:Bitmap option,?aim:Point) =
+        let tip =
+            match titleTip with
+            | Some tip -> tip
+            | None ->
+                let tip = new TabTitleTip(this.hwnd)
+                titleTip <- Some tip
+                tip
+        tip.show(text,font,anchor.Rectangle,?pointerX=(aim |> Option.map(fun pt -> pt.X)),
+                 ?side=(if this.isVertical && aim.IsSome then Some this.dock else None),
+                 ?pointerY=(aim |> Option.map(fun pt -> pt.Y)),?image=picture)
 
     member internal _.titleTipShown = titleTip |> Option.exists(fun tip -> tip.Visible)
 
@@ -481,7 +520,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             match columnResize,columnScroll with
             | _ when this.moveRowDrag(pt) -> ()
             | Some(start,width,growsRight),_ ->
-                let delta = this.window.ptToScreen(pt).x-start
+                let delta = this.toScreen(pt).x-start
                 let logical = int(Math.Round(float delta*96.0/float(Dpi.value())))
                 let next = between SettingsCatalog.columnWidthRange (width+(if growsRight then logical else -logical))
                 // Pulling the edge out of an icons-only column shows the titles.
@@ -601,7 +640,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     TabReveal.sideFrame full.bitmap collapsed.bitmap reveal ((this.dock=TabDockLeft) <> this.showInside)
                 else TabReveal.frame full.bitmap collapsed.bitmap reveal this.direction
         try
-            renderedOffset <- offset
+            renderedShift <-
+                if this.showsAddButton then this.ts.renderBounds.Location.Pt
+                elif this.isVertical then Pt(offset,0) else Pt(0,offset)
             renderedFrames <- renderedFrames+1L
             lastAlpha <- this.alpha
             this.window.update(image, this.location.add(this.renderedShift), lastAlpha)
@@ -627,7 +668,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 elif Map.isEmpty reorderOffsets then this.ts.render
                 else this.ts.renderAt(reorderPosition (reorderRemaining()))
             if dimmedCell.value && not SystemInformation.HighContrast then
-                let keep = if collapsed then None else zorderCell.value.tryHead |> Option.map this.ts.tabBounds
+                let keep =
+                    if collapsed then None else
+                    let ts = this.ts
+                    let origin = ts.renderBounds.Location
+                    zorderCell.value.tryHead |> Option.map(fun tab ->
+                        let rect = ts.tabBounds tab
+                        Rectangle(rect.X-origin.X,rect.Y-origin.Y,rect.Width,rect.Height))
                 try Img(TabDimming.render this.appearance.tabNormalBgColor keep image.bitmap)
                 finally image.bitmap.Dispose()
             else image
@@ -755,7 +802,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             layoutChangedEvent.Trigger(true)
 
     member private this.isColumnResizeEdge(pt:Pt) =
-        if not this.isVertical || this.isShrunk then false
+        if not this.isVertical || this.isShrunk || not (Rect(Pt(),this.size).containsPoint pt) then false
         else
             let growsRight = (this.dock=TabDockRight) <> this.showInside
             if growsRight then pt.x>=this.size.width-Dpi.scale 4 else pt.x<Dpi.scale 4
@@ -764,7 +811,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if not this.isVertical || this.isShrunk then false
         elif this.isColumnResizeEdge(pt) then
             this.hideTitle()
-            columnResize <- Some(this.window.ptToScreen(pt).x,(if this.isIconOnly then fst SettingsCatalog.columnWidthRange else columnWidthValue),(this.dock=TabDockRight) <> this.showInside)
+            columnResize <- Some(this.toScreen(pt).x,(if this.isIconOnly then fst SettingsCatalog.columnWidthRange else columnWidthValue),(this.dock=TabDockRight) <> this.showInside)
             this.window.setCapture()
             true
         elif this.ts.scrollThumb.IsSome && this.ts.scrollTrack.containsPoint(pt) then
@@ -807,18 +854,27 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.rowContentWidth =
         let count = this.lorder.count
         let width = if this.isIconOnly then this.iconTabWidth else this.appearance.tabMaxWidth
-        count*width - max 0 (count-1)*this.appearance.tabOverlap
-    member this.columnContentHeight = this.lorder.count*this.ts.rowStep+Dpi.scale 4
-    member private this.renderedShift = if this.isVertical then Pt(renderedOffset,0) else Pt(0,renderedOffset)
+        count*width - max 0 (count-1)*this.appearance.tabOverlap +
+            (if this.addButtonMode="Always" then TabAddButton.width this.appearance.tabHeight else 0)
+    member this.columnContentHeight =
+        let rows = this.lorder.count + (if this.addButtonMode="Always" then 1 else 0)
+        TabMetrics.columnHeight rows this.appearance.tabHeight
+    member private _.renderedShift = renderedShift
+    member _.toScreen(pt:Pt) : Pt = location.add pt
 
     /// Each tab's place on screen, in the strip's order, as the row stands when out in full: for a
     /// window carried over the row by its own title bar, which the row may still be coming out for.
     member this.rowTabs =
+        let row = this.ts
         this.lorder.list |> List.map(fun tab ->
-            let r = this.ts.tabBounds tab
+            let r = row.tabBounds tab
             Rect(this.location.add(Pt(r.X,r.Y)),Sz(r.Width,r.Height)))
+    member this.rowTab (tab:Tab) =
+        let r = this.ts.tabBounds tab
+        Rect(this.location.add(Pt(r.X,r.Y)),Sz(r.Width,r.Height))
+
     /// The row drawn out in full, and where its top left is on screen; the caller disposes it.
-    member this.rowImage() = this.renderAt false,this.location
+    member this.rowImage() = this.renderAt false,this.location.add(this.ts.renderBounds.Location.Pt)
     /// The row drawn out in full as it would stand with `extra` (tabs of other groups, with their
     /// info) put in at `index`, and where its top left is on screen: each tab takes its shape
     /// from its place in that row, and `carried` is in front, as letting it go puts it, held up
@@ -834,7 +890,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 tabs = Map2(List2(infos |> List.map(fun (tab,ti) -> tab,this.displayInfo order (Some carried) tab ti)))
                 lorder = List2(order)
                 zorder = List2(carried :: (zorderCell.value.list @ added |> List.filter((<>) carried)))
-                hover = None; captured = Some(carried,TabBackground); slide = None; held = None }
+                hover = None; captured = Some(carried,TabBackground); slide = None; held = None; showAddButton=false }
         let image = try sprite.render with _ -> Img(Sz(1,1))
         image,this.location
 
@@ -844,8 +900,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             let index = lorderCell.value.findIndex((=)zorderCell.value.head)
             let top = index*this.ts.rowStep+Dpi.scale 4
             let bottom = top+this.ts.rowHeight
-            let maximum = max 0 (this.lorder.count*this.ts.rowStep+Dpi.scale 4-this.size.height)
-            let desired = if top<scrollOffsetCell.value then top elif bottom>scrollOffsetCell.value+this.size.height then bottom-this.size.height else scrollOffsetCell.value
+            let maximum = this.ts.scrollMaximum
+            let desired = if top<scrollOffsetCell.value then top elif bottom>scrollOffsetCell.value+this.ts.tabAreaHeight then bottom-this.ts.tabAreaHeight else scrollOffsetCell.value
             let next = between (0,maximum) desired
             if next<>scrollOffsetCell.value then this.hideTitle()
             scrollOffsetCell.set(next)
@@ -874,8 +930,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member private this.pointerBounds : Rect =
         if this.isVertical && revealTarget>0.0 then
             let tolerance = Dpi.scale TabMetrics.sideHoverTolerance
-            if this.dock=TabDockLeft then Rect(location.sub(Pt(tolerance,0)),Sz(this.size.width+tolerance,this.size.height))
-            else Rect(location,Sz(this.size.width+tolerance,this.size.height))
+            let tolerated =
+                if this.dock=TabDockLeft then Rect(location.sub(Pt(tolerance,0)),Sz(this.size.width+tolerance,this.size.height))
+                else Rect(location,Sz(this.size.width+tolerance,this.size.height))
+            tolerated.union this.window.bounds
         else this.window.bounds
 
     /// Coordinate polling must respect popups covering the strip, while retaining the
@@ -1088,7 +1146,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// The column that holds the tab alone, as wide as this one.
     member private this.loneColumn(tab:Tab) =
         { this.ts with lorder=List2([tab]); zorder=List2([tab]); size=Sz(this.ts.size.width,this.ts.rowStep+Dpi.scale 4)
-                       scrollOffset=0; slide=None; held=None; hover=None; captured=None }
+                       scrollOffset=0; slide=None; held=None; hover=None; captured=None; showAddButton=false; reserveAddButton=false }
 
     /// The column the tab lands in beside its window; none for a row of tabs.
     member this.dragColumn(tab:Tab) : DragColumn option =
@@ -1262,8 +1320,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             shortcutTarget <- Some(tab,origin)
             entryClock.Restart()
 
-    member this.setPlacement(placement, ?owner:Tab) =
+    member this.setPlacement(placement, ?owner:Tab, ?ownerRight:int) =
         let previous = location
+        let previousReserve = this.hoverButtonReserve
+        let previousRight = windowRight
+        windowRight <- ownerRight |> Option.map(fun right -> right-placement.bounds.x)
+        let oldButton = if this.showsAddButton && not this.isEmpty then this.ts.buttonPlacement else None
+        let area = Screen.FromRectangle(placement.bounds.Rectangle).WorkingArea
+        screenArea <- if area.IntersectsWith(placement.bounds.Rectangle) then area else Rectangle.Empty
         let target = placement.bounds.location
         if destination<>target then
             entryTimer.Stop()
@@ -1290,8 +1354,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             if heightChanged then this.ensureSelectedVisible())
         // A size/direction change already uploaded fresh pixels at the new
         // position. Otherwise keep the existing strip/shadow surfaces.
-        if moved && this.visible && renderedFrames>0L && renderedFrames=previousRender then
-            this.move()
+        if this.visible && renderedFrames>0L && renderedFrames=previousRender then
+            if previousReserve<>this.hoverButtonReserve || (this.showsAddButton && not this.isEmpty && (oldButton<>this.ts.buttonPlacement || previousRight<>windowRight)) then this.update()
+            elif moved then this.move()
      
     member this.dimmed
         with get() = dimmedCell.value
@@ -1339,6 +1404,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         let ts = this.ts
         let ts = 
             { ts with
+                showAddButton = false
                 zorder =    
                     match top with
                     | Some(top) -> ts.zorder.moveToEnd((=)top)
@@ -1357,7 +1423,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         captureWatch.Dispose()
         titleTimer.Dispose()
         tipRequest <- tipRequest+1
-        titleTab <- None
+        tipTarget <- None
         titleTip |> Option.iter(fun tip -> tip.Dispose())
         titleTip <- None
         dropRevealImages()

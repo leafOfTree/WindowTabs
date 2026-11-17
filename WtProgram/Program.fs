@@ -1096,7 +1096,14 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                             }
                         member x.activate hwnd = this.activateWindow hwnd
                 }
-                taskSwitchCell.set(Some(new TaskSwitcher(settingsManager, tsDesktop)))
+                let search (original,windows:List2<TaskWindowItem>) =
+                    let fronts = windows.list |> List.map(fun (TaskWindowItem(hwnd,_)) -> hwnd) |> Set.ofList
+                    let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
+                    let eligible = groups |> List.filter(List.exists fronts.Contains) |> List.concat |> Set.ofList |> Set.union fronts
+                    let name hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+                    let entries = TabSearch.tabs name original groups |> List.filter(fun entry -> eligible.Contains entry.hwnd && entry.desktop="")
+                    TabSearch.switcherResults entries
+                taskSwitchCell.set(Some(new TaskSwitcher(settingsManager, tsDesktop,search=search)))
         else
             taskSwitchCell.value.iter <| fun s -> (s :> IDisposable).Dispose()
             taskSwitchCell.set(None)
@@ -1285,7 +1292,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let palette = TabSearchForm([],[],settings=(settingsManager :> ISettings),pick=this.activateWindow,pages=pages,scope=wanted,windows=false)
                 // The group's own choices, read on its thread, shown beside their commands once in.
                 match this.desktop.groups.tryFind(fun group -> group.windows.contains((=)active)) with
-                | Some(:? GroupInfo as info) -> info.readShownChoices(fun () -> palette.Refresh())
+                | Some(:? GroupInfo as info) ->
+                    let changes = info.shownChoicesChanged.Subscribe(fun () -> palette.Refresh())
+                    palette.Ended.Add(fun () -> changes.Dispose())
+                    info.readShownChoices ignore
                 | _ -> ()
                 palette
         let isWindows = scope.IsNone
@@ -1656,13 +1666,21 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
         member x.llMouse = llMouseEvent.Publish
 
-        member x.paneCandidates() =
+        member x.windowCandidates target =
             let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
-            let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
-            // The most recently used first, as Switch windows lists them.
+            let liveGroups = this.desktop.groups.list
+            let groups = liveGroups |> List.map(fun group -> group.windows.list)
+            let eligible =
+                match target with
+                | None -> fun _ -> true
+                | Some strip ->
+                    let grouped = groups |> List.concat |> Set.ofList
+                    let own = liveGroups |> List.tryFind(fun group -> group.hwnd=strip)
+                    fun hwnd -> own |> Option.exists(fun group ->
+                        not (group.windows.contains((=) hwnd)) && (grouped.Contains hwnd || Services.filter.isTabbableWindow hwnd))
             TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups
-            |> List.filter(fun entry -> entry.desktop="")
-            |> List.sortBy(fun entry -> entry.recency)
+            |> List.filter(fun entry -> entry.desktop="" && eligible entry.hwnd)
+            |> fun entries -> if target.IsSome then entries else List.sortBy(fun entry -> entry.recency) entries
             |> List.map(fun entry -> entry.hwnd,entry.title,entry.program)
 
         member x.toggleSearch scope = this.togglePalette scope

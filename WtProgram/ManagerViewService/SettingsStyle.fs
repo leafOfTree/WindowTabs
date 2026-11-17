@@ -10,18 +10,7 @@ module SettingsShapes =
     /// whole coordinates, so whole-number edges fill exactly one row or column each; at 0.5 the
     /// top and left spread over two and half the bottom and right fell outside the control.
     let outlineRect (width:int) (height:int) = RectangleF(0.0f,0.0f,float32(width-1),float32(height-1))
-    let rounded (rect:RectangleF) radius =
-        let path = new Drawing2D.GraphicsPath()
-        if rect.Width>0.0f && rect.Height>0.0f then
-            let d = min (radius*2.0f) (min rect.Width rect.Height)
-            if d<=0.0f then path.AddRectangle(rect)
-            else
-                path.AddArc(rect.Left,rect.Top,d,d,180.0f,90.0f)
-                path.AddArc(rect.Right-d,rect.Top,d,d,270.0f,90.0f)
-                path.AddArc(rect.Right-d,rect.Bottom-d,d,d,0.0f,90.0f)
-                path.AddArc(rect.Left,rect.Bottom-d,d,d,90.0f,90.0f)
-                path.CloseFigure()
-        path
+    let rounded = DrawingPaths.rounded
     /// WinUI's two corners: controls round off by 4px, what floats over them and cards by 8px.
     let controlRadius() = float32(Dpi.scale 4)
     let overlayRadius() = float32(Dpi.scale 8)

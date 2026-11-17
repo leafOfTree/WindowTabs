@@ -68,19 +68,18 @@ module TitleBarDrop =
 
     /// The visible tabs with a small margin, with the
     /// title bar under it: a user laying one title bar over another has the pointer there.
-    let bars (m:TitleBarMetrics) (t:TitleBarTarget) =
+    let tabBounds (t:TitleBarTarget) =
         match t.tabs with
-        | [] -> []
-        | tabs ->
-            let left = tabs |> List.map(fun r -> r.left) |> List.min
-            let top = tabs |> List.map(fun r -> r.top) |> List.min
-            let right = tabs |> List.map(fun r -> r.right) |> List.max
-            let bottom = tabs |> List.map(fun r -> r.bottom) |> List.max
-            let ltrb l t r b = Rect(Pt(l,t),Sz(max 0 (r-l),max 0 (b-t)))
-            let captionBand = ltrb (left-m.margin) t.frame.top (right+m.margin) (t.frame.top+min m.caption t.frame.height)
-            [ltrb (left-m.margin) (top-m.margin) (right+m.margin) (bottom+m.margin); captionBand]
+        | [] -> None
+        | first::rest -> Some(List.fold (fun (area:Rect) tab -> area.union tab) first rest)
 
-    let onBar m t (pt:Pt) = bars m t |> List.exists(fun r -> r.containsPoint pt)
+    let withinBar (m:TitleBarMetrics) (t:TitleBarTarget) bounds (pt:Pt) =
+        bounds |> Option.exists(fun (r:Rect) ->
+            pt.x>=r.left-m.margin && pt.x<r.right+m.margin &&
+            ((pt.y>=r.top-m.margin && pt.y<r.bottom+m.margin) ||
+             (pt.y>=t.frame.top && pt.y<t.frame.top+min m.caption t.frame.height)))
+
+    let onBar m t pt = withinBar m t (tabBounds t) pt
 
     /// The gap among the tabs nearest the pointer, never ahead of the pinned tabs.
     let insertion (t:TitleBarTarget) (pt:Pt) =
@@ -96,9 +95,9 @@ module TitleBarDrop =
         pt.y<monitor.top+bandWidth || pt.y>=monitor.bottom-bandWidth
 
     /// The carried tab selects the target and insertion gap. The pointer reserves screen edges for snapping.
-    let aim (m:TitleBarMetrics) (hit:TitleBarTarget option) (monitor:Rect) (pt:Pt) (tab:Pt) =
-        if inBand m.band monitor pt then OffTarget
+    let aim (m:TitleBarMetrics) (monitor:Rect) (pt:Pt) (tab:Pt) nearTarget hitAt =
+        if inBand m.band monitor pt || not (nearTarget tab) then OffTarget
         else
-            match hit with
+            match hitAt tab with
             | Some t when onBar m t tab -> OnBar(t.strip,insertion t tab)
             | _ -> OffTarget

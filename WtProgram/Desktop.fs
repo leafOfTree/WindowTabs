@@ -38,13 +38,16 @@ module AutoGroup =
 /// What the group's tab menu shows ticked, read on the group's thread for the palette: its tabs'
 /// side and alignment, and its own auto-hide mode, None while it follows the setting.
 /// `placed`: the tabs were dragged to a place of their own, so no alignment is theirs.
-type GroupChoicesShown = { dock:TabDock; alignment:Bemo.TabAlignment; placed:bool; autoHide:string option; iconOnly:bool }
+type GroupChoicesShown = {
+    dock:TabDock; alignment:Bemo.TabAlignment; placed:bool; autoHide:string option; iconOnly:bool
+    alwaysOnTop:bool; keepWindowSizes:bool; transparentMode:bool }
 
 type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =
     let Cell = CellScope(true, true)
     let windowsCell = Cell.create(List2())
     let stagedAdds = Collections.Generic.Dictionary<IntPtr,obj>()
     let mutable _isExited = 0
+    let shownChoicesChangedEvent = Event<unit>()
     let initialAppearance = ThemeService.currentAppearance()
     let (_group, invoker) = ThreadHelper.startOnThreadAndWait <| fun() ->
         let plugins = List2<_>([
@@ -77,6 +80,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
     member this.invokeGroup = invoker.asyncInvoke
     /// The group's choices as last read, for the palette to show beside its commands. Main thread only.
     member val shownChoices : GroupChoicesShown option = None with get,set
+    member _.shownChoicesChanged = shownChoicesChangedEvent.Publish
     /// Reads them on the group's thread, after anything queued there, then calls `read` back on
     /// the main thread. Never waited for: a group's thread may be waiting on the main one.
     member this.readShownChoices(read:unit -> unit) =
@@ -88,10 +92,15 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                            alignment=ts.getAlignment(if ts.isVertical then TabUp else ts.direction)
                            placed=ts.position.IsSome
                            autoHide=Option.ofObj(_group.bb.read<string>("autoHideMode",null))
-                           iconOnly=ts.isIconOnly }
+                           iconOnly=ts.isIconOnly
+                           alwaysOnTop=_group.alwaysOnTop
+                           keepWindowSizes=_group.keepWindowSizes
+                           transparentMode=_group.transparentMode }
                 with _ -> None
             desktopDispatcher.Post(fun () ->
-                if shown.IsSome then this.shownChoices <- shown
+                if shown.IsSome && this.shownChoices<>shown then
+                    this.shownChoices <- shown
+                    shownChoicesChangedEvent.Trigger()
                 read()))
     /// The group's tab layout, its tabs in the strip's order and its split, read on the group's
     /// thread. Complete on the main STA, including when the group exits before its queued read.
@@ -343,6 +352,10 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 let foregroundWindow = os.foreground
                 this.findGroupContainingHwnd(foregroundWindow.hwnd)
         member x.adoptIntoPane(groupHwnd,hwnd,path) = this.adoptIntoPane(groupHwnd,hwnd,path)
+        member x.addExistingWindow(groupHwnd,hwnd) =
+            this.groups.tryFind(fun g -> g.hwnd=groupHwnd && not ((g :> IGroup).windows.contains((=) hwnd)))
+            |> Option.iter(fun group -> this.handToPane(group,hwnd,fun () ->
+                if group.group.windows.contains hwnd then group.group.tabActivate(Tab hwnd,false)))
         member x.adoptBeside(groupHwnd,hwnd,drop,partner) =
             this.groups.tryFind(fun g -> g.hwnd=groupHwnd) |> Option.iter(fun group ->
                 this.handToPane(group,hwnd,fun () -> group.group.dropTab(hwnd,drop,partner)))

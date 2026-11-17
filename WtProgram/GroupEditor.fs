@@ -1623,7 +1623,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     match titleTip with
                     | Some tip -> tip
                     | None ->
-                        let tip = new TabTitleTip()
+                        let tip = new TabTitleTip(form.Handle)
                         titleTip <- Some tip
                         tip
                 tip.show(nameOf hwnd,bodyFont,form.RectangleToScreen(Rectangle(r.X,r.Y-scroll,r.Width,r.Height)),Control.MousePosition.X))

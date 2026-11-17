@@ -85,6 +85,8 @@ and TabPart =
     | TabClose
     /// The button where the two tabs of a split view meet.
     | TabSplit
+    | TabNew
+    member this.isAddButton = this=TabNew
 
 and TabDirection =
     | TabUp

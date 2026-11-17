@@ -120,7 +120,7 @@ let main() =
         member _.suspendTabMonitoring() = ()
         member _.resumeTabMonitoring() = ()
         member _.llMouse = mouse.Publish
-        member _.paneCandidates() = []
+        member _.windowCandidates _ = []
         member _.toggleSearch _ = ()
         member _.saveWorkspace() = ()
         member _.restoreWorkspace() = ()
@@ -524,8 +524,11 @@ let main() =
             check (timeUntil 2000 (fun () -> not(covers()))).IsSome "The fade between tabs stayed"
             waitOperation()
             check (onGroup(fun group -> group.topWindow=hb && group.splitLayout.IsNone)) "The switch between tabs did not bring the tab up"
-            onGroup(fun group -> group.tabActivate(Tab ha,false))
+            let beforeDrop = coversShown()
+            onGroup(fun group -> group.holdForDrag ha; group.releaseDrag(ha,true))
+            check (coversShown()=beforeDrop) "Dropping a tab faded the previous window back over it"
             waitOperation()
+            check (onGroup(fun group -> group.topWindow=ha)) "The dropped tab did not remain in front"
             onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
             waitOperation()
             onGroup(fun group -> group.execute(EndSplit(Some ha)))

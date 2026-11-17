@@ -52,17 +52,19 @@ type OleDropTarget(ts:TabStrip) as this=
                     match label with
                     | Some tip -> tip
                     | None ->
-                        let tip = new TabTitleTip()
+                        let tip = new TabTitleTip(ts.hwnd)
                         label <- Some tip
                         tip
                 let strip : Rect = ts.bounds
                 use font = TabMetrics.font 0 System.Drawing.FontStyle.Regular
                 tip.show(text,font,System.Drawing.Rectangle(strip.x,strip.y,strip.size.width,strip.size.height),pointerX)
 
+    let tabAt pt = ts.tryHit(window.ptToClient(pt)) |> Option.filter(fun (_,part) -> not part.isAddButton)
+
     let effectAt (keys:int) (pt:POINTL) (allowed:int) =
         // Captured here: by OleDrop the right button is already up.
         rButtonDown <- keys.hasFlag(MouseMessageKeyStateMask.MK_RBUTTON)
-        let tab = ts.tryHit(window.ptToClient(Pt(pt.x,pt.y))) |> Option.map(fun (Tab(hwnd),_) -> hwnd)
+        let tab = tabAt (Pt(pt.x,pt.y)) |> Option.map(fun (Tab(hwnd),_) -> hwnd)
         if tab<>hoveredTab then
             hoveredTab <- tab
             hoveredFolder <- tab |> Option.bind Shell.getShellFolder
@@ -130,7 +132,7 @@ type OleDropTarget(ts:TabStrip) as this=
             // Read before effectAt, which records the keys of this call: the right button is up by now.
             let menuFor = rButtonDown
             let effect = effectAt grfKeyState pt pdwEffect
-            ts.tryHit(window.ptToClient(ptScreen)).iter <| fun(Tab(hwnd),part) ->
+            (tabAt ptScreen).iter <| fun(Tab(hwnd),part) ->
                 let folder = if hoveredTab=Some hwnd then hoveredFolder else Shell.getShellFolder hwnd
                 folder.iter <| fun folder ->
                     let dropped = Array.ofList files

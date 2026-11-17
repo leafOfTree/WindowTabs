@@ -14,10 +14,11 @@ type ISpriteHitTest =
 [<AutoOpen>]
 module Sprite = 
     type ISprite with
-        member this.render : Img =
+        member this.renderWithin(clip:Rectangle option) : Img =
             let image = this.image
             try
                 use gr = image.graphics
+                clip |> Option.iter(fun (bounds:Rectangle) -> gr.SetClip(bounds))
                 let draw (childLocation:Pt, child:ISprite) =
                     use bitmap = child.render.bitmap
                     gr.DrawImageUnscaled(bitmap, childLocation.Point)
@@ -26,6 +27,8 @@ module Sprite =
             with _ ->
                 image.bitmap.Dispose()
                 reraise()
+
+        member this.render : Img = this.renderWithin(None)
 
         member this.tryHit(pt:Pt, path:List2<ISprite>) =
             let path = path.prepend(this)
