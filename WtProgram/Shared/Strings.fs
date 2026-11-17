@@ -1291,8 +1291,8 @@ module Strings =
                                    ar="تضمين تفاصيل النوافذ: برنامج كل نافذة وفئتها وما إذا كانت تستخدم علامات تبويب. لا يتضمن العناوين أبدًا."
                                    ko="창 세부 정보 포함: 각 창의 프로그램, 클래스, 탭 사용 여부. 제목은 포함하지 않습니다." }
         let refreshReport = { en="Refresh the report"; zh="刷新报告"; ja="レポートを更新"; ar="تحديث التقرير"; ko="보고서 새로 고침" }
-        let reportCopied = { en="Report copied."; zh="报告已复制。"; ja="レポートをコピーしました。"; ar="تم نسخ التقرير."; ko="보고서를 복사했습니다." }
-        let reportRefreshed = { en="Report refreshed."; zh="报告已刷新。"; ja="レポートを更新しました。"; ar="تم تحديث التقرير."; ko="보고서를 새로 고쳤습니다." }
+        let reportCopied = { en="Report copied"; zh="报告已复制"; ja="レポートをコピーしました"; ar="تم نسخ التقرير"; ko="보고서를 복사했습니다" }
+        let reportRefreshed = { en="Report refreshed"; zh="报告已刷新"; ja="レポートを更新しました"; ar="تم تحديث التقرير"; ko="보고서를 새로 고쳤습니다" }
         let reportTitle = { en="Troubleshooting report"; zh="故障排查报告"; ja="トラブルシューティング レポート"; ar="تقرير استكشاف الأخطاء وإصلاحها"; ko="문제 해결 보고서" }
         let projectPage = { en="Project page"; zh="项目主页"; ja="プロジェクトページ"; ar="صفحة المشروع"; ko="프로젝트 페이지" }
         let reportIssue = { en="Report an issue"; zh="报告问题"; ja="問題を報告"; ar="الإبلاغ عن مشكلة"; ko="문제 보고" }
