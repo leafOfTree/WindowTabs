@@ -26,6 +26,8 @@ hosts are excluded. HTML, Cobertura and a text summary are generated under
 `tests/coverage/<run-id>/report`. F# sequence points, branches and generated code
 mean that line percentages and AltCover's sequence-point percentages differ.
 
+Set `WINDOWTABS_TEST_UI_CULTURE` to a culture such as `ko-KR` to run the suites with that display language while the app follows Windows.
+
 With `WINDOWTABS_CHECK_THREADS=1` set, the suites and the app refuse a control touched
 from a thread not its own, as WinForms does under a debugger; the suites pass with it, and a
 run with it finds what a debugging session would stop at.

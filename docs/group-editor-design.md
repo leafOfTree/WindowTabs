@@ -386,8 +386,7 @@ the main STA with the other popups, one at a time.
 - `WtProgram/Commands.fs`, `Shared/SettingsCatalog.fs`, `TabStripDecorator.fs`: the
   command, its shortcut entry and the tab menu item.
 - `WtProgram/Shared/Strings.fs`: title, New group, Close on save, Move to, Keep open, Expand, Collapse, the shapes'
-  names, Drop a window here, the drag hints, Save, Cancel, the notices; `en`, `zh`, `ja`
-  (and `ar` as the file has it).
+  names, Drop a window here, the drag hints, Save, Cancel, the notices in every supported language.
 
 ## 6. Tests
 

@@ -121,7 +121,7 @@ let main() =
     // Keywords name the setting's own subject, not words that fit half the page.
     assertTrue (not (found "switcher" |> List.contains "search-tabs")) "Search tabs is found as an Alt+Tab switcher"
     // A short description is shown whole as the reason for the match, not cut to a piece of it.
-    assertTrue (SettingsCatalog.searchEvidence "replaces" (SettingsCatalog.find "use-windowtabs-for-alt-tab") = [tr Strings.Settings.replaceAltTab.description])
+    assertTrue (SettingsCatalog.searchEvidence "replaces" (SettingsCatalog.find "use-windowtabs-for-alt-tab") = [Strings.Settings.replaceAltTab.description.en])
                "A short description shown as the reason for a match was cut short"
     assertTrue (SettingsCatalog.searchRank "start" (SettingsCatalog.find "settings-reset") = 0) "A match inside a description word is not ranked last"
     assertTrue (List.head (ranked "TART") = "launch-at-sign-in") "Substrings ignore case and can start inside words"
@@ -536,7 +536,7 @@ let main() =
         form.Controls.Add(view.control)
         SettingsUi.apply form
         form.Show()
-        let restore = form.Controls.Find("restore-shortcuts",true).[0]
+        let restoreButton = form.Controls.Find("restore-shortcuts",true).[0] :?> Button
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
         // The palette and the window search lead the page on a card of their own, listed once,
@@ -575,8 +575,13 @@ let main() =
         do
             let rec all (control:Control) = seq { yield control; for child in control.Controls do yield! all child }
             let boxes = all view.control |> Seq.choose(function :? SettingsShortcutInput as box -> Some box | _ -> None) |> List.ofSeq
-            // Tightly padded key caps keep three keys and the clear button within that width.
-            assertTrue (not boxes.IsEmpty && boxes |> List.forall(fun box -> box.Width=Dpi.scale SettingsShapes.editorWidth))
+            // Default shortcuts fit the standard box, which also makes room for its translated prompts.
+            let expectedWidth (box:SettingsShortcutInput) =
+                let promptWidth text =
+                    let size = TextRenderer.MeasureText(tr text,box.Font,Size.Empty,TextFormatFlags.NoPadding)
+                    size.Width+2*Dpi.scale 12
+                List.max [Dpi.scale SettingsShapes.editorWidth; promptWidth Strings.Shortcuts.pressShortcut; promptWidth Strings.Shortcuts.notSet]
+            assertTrue (not boxes.IsEmpty && boxes |> List.forall(fun box -> box.Width=expectedWidth box))
                        (sprintf "Shortcut boxes are not editor width: %A" (boxes |> List.map(fun box -> box.Width)))
             use image = new Bitmap(form.Width,form.Height)
             form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
@@ -718,9 +723,6 @@ let main() =
         // Swapped and cleared shortcuts both come back to the catalog defaults.
         hotKeys.["nextTab"] <- 3621
         next.Shortcut <- 3621
-        let rec findButton text (control:Control) =
-            if control.Text=text then Some(control :?> Button)
-            else control.Controls |> Seq.cast<Control> |> Seq.tryPick (findButton text)
         let search = view.control.Controls.Find("search-tabs",true).[0] :?> SettingsShortcutInput
         assertTrue (search.Shortcut=0) "Explicitly cleared tab search shortcut was not preserved"
         hotKeys.["searchTabs"] <- 1568
@@ -729,7 +731,6 @@ let main() =
         hotKeys.["rename-tab"] <- SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F7)
         // So does a key given to a window in the window search.
         windowKeys.Value <- [{ path= @"C:\Apps\Notes.exe"; title="Notes"; code=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F8) }]
-        let restoreButton = (findButton "Restore default shortcuts" view.control).Value
         assertTrue (restoreButton.AccessibleDescription=tr Strings.Shortcuts.restoreDefaultsHelp) "The reset button does not say what it resets"
         restoreButton.PerformClick()
         assertTrue windowKeys.Value.IsEmpty "Restore default shortcuts left a key given to a window"
