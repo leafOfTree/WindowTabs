@@ -570,6 +570,12 @@ module Strings =
         /// Short, so the choice leaves its row's description room for one line.
         let sessionWindows = { en="Windows only"; zh="仅窗口"; ja="ウィンドウのみ"; ar="النوافذ فقط"; ko="창만" }
         let sessionApps = { en="Windows and missing apps"; zh="窗口和缺少的应用"; ja="ウィンドウと不足アプリ"; ar="النوافذ والتطبيقات الناقصة"; ko="창 및 누락된 앱" }
+        let settingsImportFiles =
+            { en="Settings file (*.json;*.txt)|*.json;*.txt|All files (*.*)|*.*"
+              zh="设置文件 (*.json;*.txt)|*.json;*.txt|所有文件 (*.*)|*.*"
+              ja="設定ファイル (*.json;*.txt)|*.json;*.txt|すべてのファイル (*.*)|*.*"
+              ar="ملف الإعدادات (*.json;*.txt)|*.json;*.txt|كل الملفات (*.*)|*.*"
+              ko="설정 파일 (*.json;*.txt)|*.json;*.txt|모든 파일 (*.*)|*.*" }
         let settingsFile = { en="Settings file"; zh="设置文件"; ja="設定ファイル"; ar="ملف الإعدادات"; ko="설정 파일" }
         let openFolder = { en="Open folder"; zh="打开文件夹"; ja="フォルダーを開く"; ar="فتح المجلد"; ko="폴더 열기" }
         let export = { en="Export…"; zh="导出…"; ja="エクスポート…"; ar="تصدير…"; ko="내보내기…" }

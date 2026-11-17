@@ -413,6 +413,7 @@ type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
         this.FlatStyle <- FlatStyle.Flat
         this.FlatAppearance.BorderSize <- 0
         this.AccessibleName <- help
+        if isToggle then this.AccessibleDescription <- tr Strings.TabSearch.off
         this.AccessibleRole <- if isToggle then AccessibleRole.CheckButton else AccessibleRole.PushButton
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
         SettingsHover(this,help) |> ignore
@@ -422,7 +423,7 @@ type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
         and set(value) =
             if value<>isChecked then
                 isChecked <- value
-                this.AccessibleDescription <- if value then "on" else "off"
+                this.AccessibleDescription <- tr (if value then Strings.TabSearch.on else Strings.TabSearch.off)
                 this.Invalidate()
                 checkedChanged.Trigger(EventArgs.Empty)
     member _.CheckedChanged = checkedChanged.Publish

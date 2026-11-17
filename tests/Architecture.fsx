@@ -663,7 +663,7 @@ let main() =
         check (not (AppTabColors.remembered app)) "An app colour was not forgotten"
         // What a typed word matched, said under a command as under a settings search result.
         check (SettingsCatalog.evidence "switcher" Strings.Settings.groupWindowsInSwitcher "General" []=["switcher"]) "A keyword match is not named under the row"
-        check (SettingsCatalog.evidence "group" Strings.Settings.groupWindowsInSwitcher "General" []=[]) "A match the name shows is repeated under the row"
+        check (SettingsCatalog.evidence "Alt+Tab" Strings.Settings.groupWindowsInSwitcher "General" []=[]) "A match the name shows is repeated under the row"
         // A notice from a group's own thread is shown from the main one, where its window lives.
         do
             let shownOn = ref None

@@ -59,7 +59,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   `Shared/Services.fs`. Group threads may `Send` to the main thread, never the other
   way round (except group creation). A new service method needs a line in its adapter.
 - **Text.** Every user-visible string is a `LocalizedText` in `Shared/Strings.fs` with
-  `en`, `zh` and `ja` filled in, shown with `tr`. Never hard-code UI text.
+  English (`en`), Chinese (`zh`), Japanese (`ja`), Arabic (`ar`) and Korean (`ko`)
+  filled in. Use `tr` for display, including accessible names and descriptions.
+  Use `Localization.plain` for parsed strings such as file-dialog filters, and
+  `Localization.all` for multilingual search. Keep option names in command examples
+  and wildcard patterns in filters valid in every translation.
+  When adding a language, update `LocalizedText`, `Localization.languages`, `plain`
+  and `all`, and test both its explicit selection and Follow Windows.
 - **Settings.** Captions, defaults, ranges, choices with their labels (`choiceLabels`) and
   shortcut defaults live in `Shared/SettingsCatalog.fs`; search, editors, the command palette
   and reset all read from there.

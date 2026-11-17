@@ -203,8 +203,8 @@ understand and have tested your changes. See [AGENTS.md](AGENTS.md), [architectu
 - **Threads:** each tab group runs on its own UI thread, and the main thread owns
   settings and window discovery. Calls between them go through the adapters in
   `Shared/Services.fs`. Read [architecture](docs/architecture.md) before touching this.
-- **UI text:** every visible string lives in `Shared/Strings.fs` with English, Chinese
-  and Japanese. Machine translation is fine for a first draft; native speakers can refine it.
+- **UI text:** every visible string lives in `Shared/Strings.fs` with translations for every
+  supported language listed above. Machine translation is fine for a first draft; native speakers can refine it.
 - **Settings:** names, defaults and ranges are declared once in
   `Shared/SettingsCatalog.fs`; the Settings window, search and reset all read from it.
 - **DPI and themes:** use logical pixels and scale with `Dpi.scale`; check your UI in

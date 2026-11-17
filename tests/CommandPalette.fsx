@@ -941,15 +941,18 @@ let main() =
                 note (List.contains (tr setting.caption) titles) (sprintf "Searching \"%s\" did not find %s: %A" query (tr setting.caption) titles)
         // A setting for the group in front comes before the one for every group, its name a little
         // longer: the group in front is what the palette was opened over.
+        let englishEntries =
+            Localization.setPreference "en"
+            try (CommandPalette.actionsPage active).entries |> List.map(fun entry -> (),entry)
+            finally Localization.setPreference (api.getValue "language" :?> string)
         for query,groupCommand,setting in ["tab po",Strings.Commands.groupTabPosition,Strings.Settings.tabPosition
                                            "align",Strings.Commands.groupTabAlignment,Strings.Settings.tabAlignment
                                            "auto hide",Strings.Commands.groupAutoHide,Strings.Settings.autoHide
                                            "combine",Strings.Commands.combineGroupIcons,Strings.Settings.combineTaskbarIcons] do
-            palette.Query <- query
-            let titles = palette.Results |> List.map(fun entry -> entry.title)
-            match List.tryFindIndex ((=) (tr groupCommand.caption)) titles,List.tryFindIndex ((=) (tr setting.caption)) titles with
-            | Some forGroup,Some forAll -> note (forGroup<forAll) (sprintf "Searching \"%s\" listed %s above %s" query (tr setting.caption) (tr groupCommand.caption))
-            | _ -> issues.Add(sprintf "Searching \"%s\" did not find both %s and %s: %A" query (tr groupCommand.caption) (tr setting.caption) titles)
+            let titles = TabSearch.shown query englishEntries |> List.map(fun (_,entry) -> entry.title)
+            match List.tryFindIndex ((=) groupCommand.caption.en) titles,List.tryFindIndex ((=) setting.caption.en) titles with
+            | Some forGroup,Some forAll -> note (forGroup<forAll) (sprintf "Searching \"%s\" listed %s above %s" query setting.caption.en groupCommand.caption.en)
+            | _ -> issues.Add(sprintf "Searching \"%s\" did not find both %s and %s: %A" query groupCommand.caption.en setting.caption.en titles)
         // What can do nothing for the window in front comes after what can.
         let shownPage = CommandPalette.actionsPage active
         for query in ["icon";"app";"tab";"workspace"] do
@@ -990,6 +993,11 @@ let main() =
         // box set it higher, it jumped up as Enter was pressed.
         let paletteForm () =
             Application.OpenForms |> Seq.cast<Form> |> Seq.find(fun form -> form.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? SettingsSearchBox))
+        // A short caption leaves the Esc key inside a fixed pixel range.
+        let form = paletteForm()
+        let tree = trees form |> List.find(fun tree -> tree.Visible)
+        let left = form.PointToClient(tree.PointToScreen(Point(tree.NameLeft(tree.SelectedItem),0))).X
+        let width = TextRenderer.MeasureText(tree.SelectedItem.Text,tree.Font,Size.Empty,TextFormatFlags.SingleLine).Width
         let nameTop () =
             pump 50
             let form = paletteForm()
@@ -998,7 +1006,7 @@ let main() =
             let distance (a:Color) (b:Color) = abs(int a.R-int b.R)+abs(int a.G-int b.G)+abs(int a.B-int b.B)
             [Dpi.scale 54..Dpi.scale 100] |> List.tryFind(fun y ->
                 let background = image.GetPixel(form.Width/2,y)
-                [Dpi.scale 28..Dpi.scale 90] |> List.exists(fun x -> distance (image.GetPixel(x,y)) background>120))
+                [left..left+width-1] |> List.exists(fun x -> distance (image.GetPixel(x,y)) background>120))
         let onRow = nameTop()
         palette.Accept()
         let onLine = nameTop()

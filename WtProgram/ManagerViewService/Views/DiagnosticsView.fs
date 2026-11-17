@@ -47,7 +47,7 @@ module SettingsFile =
     /// Replaces every setting with the file's.
     let import (owner:IWin32Window) =
         // .txt is the name older versions give the settings file, and still opens here.
-        use dialog = new OpenFileDialog(Filter=sprintf "%s (*.json;*.txt)|*.json;*.txt|All files (*.*)|*.*" (tr Strings.General.settingsFile))
+        use dialog = new OpenFileDialog(Filter=Localization.plain Strings.General.settingsImportFiles)
         if dialog.ShowDialog(owner)=DialogResult.OK then
             let imported =
                 try

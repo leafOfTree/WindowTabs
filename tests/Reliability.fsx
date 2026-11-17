@@ -629,6 +629,22 @@ let main() =
     for code,expected in ["en","Close";"zh","关闭";"ja","閉じる";"ar","إغلاق";"ko","닫기"] do
         Localization.setPreference code
         check (Localization.plain Strings.TabMenu.close=expected) ("Language override ignored: "+code)
+        let parts = (Localization.plain Strings.General.settingsImportFiles).Split('|')
+        check (parts.Length=4 && parts.[1]="*.json;*.txt" && parts.[3]="*.*") ("Invalid settings import filter: "+code)
+        use toggle = new SettingsIconButton(WindowListIcon,"",toggle=true)
+        check (toggle.AccessibleDescription=tr Strings.TabSearch.off) ("Missing initial toggle state: "+code)
+        toggle.Checked <- true
+        check (toggle.AccessibleDescription=tr Strings.TabSearch.on) ("Missing enabled toggle state: "+code)
+        toggle.Checked <- false
+        check (toggle.AccessibleDescription=tr Strings.TabSearch.off) ("Missing disabled toggle state: "+code)
+    let thread = Thread.CurrentThread
+    let savedCulture = thread.CurrentUICulture
+    try
+        Localization.setPreference "system"
+        for code,_,_ in Localization.languages do
+            thread.CurrentUICulture <- Globalization.CultureInfo.GetCultureInfo(code)
+            check (Localization.current()=code) ("Follow Windows missed "+code)
+    finally thread.CurrentUICulture <- savedCulture
     // Arabic is shown inside a right-to-left embedding; parsed and saved values stay unmarked.
     Localization.setPreference "ar"
     check (tr Strings.TabMenu.close="\u202Bإغلاق\u202C") "Arabic text must read right to left"

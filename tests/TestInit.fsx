@@ -42,6 +42,9 @@ let private watchForHang () =
 /// can survive cleanup and call a managed delegate during CLR shutdown.
 /// Run each script inside the same Application.Run lifetime as the application.
 let run (action:unit -> unit) =
+    let culture = Environment.GetEnvironmentVariable "WINDOWTABS_TEST_UI_CULTURE"
+    if not (String.IsNullOrWhiteSpace culture) then
+        Globalization.CultureInfo.DefaultThreadCurrentUICulture <- Globalization.CultureInfo.GetCultureInfo culture
     watchForHang()
     use context = new ApplicationContext()
     let mutable failure : ExceptionDispatchInfo option = None
