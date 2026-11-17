@@ -101,7 +101,7 @@ type SettingsRec = {
     alignment: string
     tabPosition: string
     tabColumnWidth: int
-    /// "system", "en", "zh" or "ja".
+    /// "system" or a code from Localization.languages, such as "en", "zh", "ja", "ar" or "ko".
     language: string
     }
 

@@ -93,7 +93,7 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
   menu.
 - **Taskbar:** optionally combine each group into one taskbar button, which shows every
   app in the group.
-- **Languages:** English, 中文, 日本語, العربية.
+- **Languages:** English, 中文, 日本語, العربية, 한국어.
 
 <a href="docs/images/settings.png"><img src="docs/images/settings.png" width="600" alt="WindowTabs settings" /></a>
 
