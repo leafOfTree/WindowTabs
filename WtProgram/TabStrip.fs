@@ -82,9 +82,15 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let capturedCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
     let hoverCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
     let slideCell = Cell.create(None)
-    /// A tab dragged in from another strip and still held here: drawn in front, as it will be
-    /// once let go.
-    let carriedInCell = Bemo.Cell<Tab option>(Cell, None, (=))
+    let reorderTimer = new Timer(Interval=15)
+    let reorderClock = Diagnostics.Stopwatch()
+    let mutable reorderOffsets : Map<Tab,Pt> = Map.empty
+    let reorderPosition remaining tab (point:Pt) =
+        match Map.tryFind tab reorderOffsets with
+        | Some offset -> point.add(offset.mulf(remaining,remaining))
+        | None -> point
+    /// Long enough to be perceived while crossing a dense row of tabs.
+    let reorderRemaining() = 1.0 - TabReveal.ease (min 1.0 (reorderClock.Elapsed.TotalMilliseconds / 180.0))
     let heldLayoutCell = Bemo.Cell<(float * float) option>(Cell, None, (=))
     /// Where the row was dragged to, over its alignment; none until it is dragged.
     let positionCell = Bemo.Cell<float option>(Cell, None, (=))
@@ -180,6 +186,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         showInsideExport.init()
 
         revealTimer.Tick.Add(fun _ -> this.stepReveal())
+        reorderTimer.Tick.Add(fun _ ->
+            if reorderRemaining()<=0.0 || not this.visible then
+                reorderTimer.Stop()
+                reorderOffsets <- Map.empty
+            if this.visible then this.paint())
         entryTimer.Tick.Add(fun _ ->
             let t = min 1.0 (entryClock.Elapsed.TotalMilliseconds / 100.0)
             let remaining = 1.0 - TabReveal.ease t
@@ -276,13 +287,6 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             textBrush = SystemBrushes.MenuText
         }
 
-    /// The tabs front to back as drawn: a tab carried in from another strip in front, as letting
-    /// it go puts it; the others as they are.
-    member private this.drawnZorder =
-        match carriedInCell.value with
-        | Some tab when lorderCell.value.contains((=) tab) -> List2(tab :: (zorderCell.value.list |> List.filter((<>) tab)))
-        | _ -> zorderCell.value
-
     member private this.buttonScreen =
         if screenArea.IsEmpty || addButtonModeCell.value="Never" then None
         else
@@ -293,7 +297,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if not this.isVertical && addButtonModeCell.value="Hover" then TabAddButton.hoverReserve this.size this.buttonScreen else 0
 
     member private this.tsBase direction =
-        let zorder = this.drawnZorder
+        let zorder = zorderCell.value
         {
             tabs = Map2(this.tabs.items.map <| fun tab ->
                 tab,this.displayInfo lorderCell.value.list zorder.tryHead tab (this.tabInfo tab))
@@ -659,7 +663,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member private this.renderAt collapsed : Img =
         try
-            let image = if collapsed then this.ts.renderCollapsed else this.ts.render
+            let image =
+                if collapsed then this.ts.renderCollapsed
+                elif Map.isEmpty reorderOffsets then this.ts.render
+                else this.ts.renderAt(reorderPosition (reorderRemaining()))
             if dimmedCell.value && not SystemInformation.HighContrast then
                 let keep =
                     if collapsed then None else
@@ -1368,13 +1375,28 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         with get() = transparentCell.value
         and set(value) = transparentCell.set(value)
 
-    member this.carriedIn
-        with get() = carriedInCell.value
-        and set(value:Tab option) = carriedInCell.set(value)
-
     member this.slide
         with get() : (Tab * int) option = slideCell.value
         and set(value) =
+            match value with
+            | Some(held,_) when this.visible && this.tabs.contains held ->
+                let before = this.ts
+                let after = {before with slide=value}
+                if before.movedTab<>after.movedTab then
+                    let remaining = reorderRemaining()
+                    reorderOffsets <-
+                        before.lorder.list |> List.choose(fun tab ->
+                            if tab=held then None
+                            else
+                                let from = reorderPosition remaining tab (before.tabLocation tab)
+                                let delta = from.sub(after.tabLocation tab)
+                                if delta=Pt.empty then None else Some(tab,delta))
+                        |> Map.ofList
+                    reorderClock.Restart()
+                    if not reorderOffsets.IsEmpty then reorderTimer.Start()
+            | _ ->
+                reorderTimer.Stop()
+                reorderOffsets <- Map.empty
             slideCell.set(value)
             this.updateDragScroll()
 
@@ -1392,6 +1414,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member _.destroying = destroyingEvent.Publish
     member this.destroy() = 
+        reorderTimer.Dispose()
         dragScrollTimer.Dispose()
         entryTimer.Dispose()
         destroyingEvent.Trigger()

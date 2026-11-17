@@ -1,4 +1,4 @@
-param([switch]$Interactive, [switch]$BuildOnly,
+param([switch]$Interactive, [switch]$BuildOnly, [switch]$GroupOnly, [switch]$DebugBuild,
       [string]$BrowserPath = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
       [ValidateRange(10, 1000)][int]$Switches = 30,
       [ValidateRange(3, 100)][int]$MaximizeSamples = 5,
@@ -8,20 +8,27 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 if (-not $BuildOnly -and -not $Interactive) { throw 'This benchmark owns foreground and mouse input. Use -Interactive on an unlocked, idle desktop, or -BuildOnly.' }
 if (-not $BuildOnly -and (Get-Process WindowTabs -ErrorAction SilentlyContinue)) { throw 'Exit existing WindowTabs instances before running this benchmark.' }
-if (-not (Test-Path -LiteralPath $BrowserPath -PathType Leaf)) { throw "Browser executable missing: $BrowserPath" }
+if (-not $GroupOnly -and -not (Test-Path -LiteralPath $BrowserPath -PathType Leaf)) { throw "Browser executable missing: $BrowserPath" }
 $stage = Join-Path $PSScriptRoot ('Debug/desktop-latency-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
-dotnet build (Join-Path $repo 'WindowTabs.sln') -c Release -v:minimal
-if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
-Copy-Item -LiteralPath (Join-Path $repo 'WtProgram/bin/Release/WindowTabs.exe') -Destination $stage
+$configuration = if ($DebugBuild) { 'Debug' } else { 'Release' }
+dotnet build (Join-Path $repo 'WindowTabs.sln') -c $configuration -v:minimal
+if ($LASTEXITCODE -ne 0) { throw "$configuration build failed." }
+Copy-Item -LiteralPath (Join-Path $repo "WtProgram/bin/$configuration/WindowTabs.exe") -Destination $stage
+if ($DebugBuild) {
+    Copy-Item -LiteralPath (Join-Path $repo "Win32/bin/$configuration/Win32.dll") -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo "WtProgram/bin/$configuration/FSharp.Core.dll") -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo "WtProgram/bin/$configuration/WindowTabs.exe.config") -Destination $stage
+}
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'DesktopLatency.exe'
 & $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopLatency.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Desktop latency driver compilation failed.' }
-@{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; browserPath=$BrowserPath; browserVersion=(Get-Item -LiteralPath $BrowserPath).VersionInfo.FileVersion; switches=$Switches; maximizeSamples=$MaximizeSamples; slowWindowMs=$SlowWindowMs; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
+@{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; groupOnly=[bool]$GroupOnly; browserPath=$BrowserPath; browserVersion=if ($GroupOnly) { $null } else { (Get-Item -LiteralPath $BrowserPath).VersionInfo.FileVersion }; switches=$Switches; maximizeSamples=$MaximizeSamples; slowWindowMs=$SlowWindowMs; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
 Write-Host "Desktop latency artifacts: $stage"
 if ($BuildOnly) { return }
-$process = Start-Process -FilePath $hostExe -ArgumentList @('--run',('"'+$BrowserPath+'"'),"$Switches","$MaximizeSamples","$SlowWindowMs") -WorkingDirectory $stage -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $stage 'stdout.log') -RedirectStandardError (Join-Path $stage 'stderr.log')
+$arguments = if ($GroupOnly) { @('--groups',"$MaximizeSamples","$SlowWindowMs") } else { @('--run',('"'+$BrowserPath+'"'),"$Switches","$MaximizeSamples","$SlowWindowMs") }
+$process = Start-Process -FilePath $hostExe -ArgumentList $arguments -WorkingDirectory $stage -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $stage 'stdout.log') -RedirectStandardError (Join-Path $stage 'stderr.log')
 $processHandle = $process.Handle
 $shown = @{ 'stdout.log'=0; 'stderr.log'=0 }
 function Write-NewLogs {
@@ -52,4 +59,4 @@ $process.WaitForExit()
 Write-NewLogs
 if ($process.ExitCode -ne 0) { throw "Desktop latency failed ($($process.ExitCode)); see $stage" }
 $report = Get-Content -LiteralPath (Join-Path $stage 'result.json') -Raw | ConvertFrom-Json
-if ($report.status -ne 'passed' -or $report.clicks.Count -ne (2*$Switches) -or $report.maximizes.Count -ne (4*$MaximizeSamples)) { throw 'Benchmark exited without completing every requested measurement.' }
+if ($report.status -ne 'passed' -or (-not $GroupOnly -and $report.clicks.Count -ne (2*$Switches)) -or $report.maximizes.Count -ne (4*$MaximizeSamples)) { throw 'Benchmark exited without completing every requested measurement.' }
