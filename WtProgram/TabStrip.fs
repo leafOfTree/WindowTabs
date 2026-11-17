@@ -49,7 +49,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// On screen, the bars the app keeps over its window that the tabs inside it make way for.
     let appBarsCell = Bemo.Cell<Rect list>(Cell, [], (=))
     let isInAltTabCell = Cell.create(false)
-    let numberBadgeKeysCell = Bemo.Cell<string>(Cell, SettingsCatalog.textDefault "numberLeaderKeys", (=))
+    let numberBadgeKeysCell = Bemo.Cell<string * string>(Cell, (SettingsCatalog.textDefault "numberLeaderKeys",""), (=))
     let numberBadgesCell = Bemo.Cell<bool>(Cell, false, (=))
     /// Seeded by the setting; the group's own choice then goes with its tab layout.
     let iconOnlyCell = Cell.create(Services.settings.getValue("showIconsOnly").cast<bool>())
@@ -265,12 +265,22 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member private this.showInside = showInsideCell.value
 
+    member private _.badges (order:Tab list) =
+        if not numberBadgesCell.value then Map.empty
+        else
+            let keys,prefix = numberBadgeKeysCell.value
+            let _,labels = NumberLeaderKeys.hints keys order.Length
+            List.zip order (Array.toList labels)
+            |> List.choose(fun (tab,label) ->
+                if label.StartsWith(prefix,StringComparison.Ordinal) then Some(tab,label.Substring(prefix.Length)) else None)
+            |> Map.ofList
+
     /// How a tab is drawn, for its place in `lorder` with `front` the tab shown.
-    member private this.displayInfo (lorder:Tab list) (front:Tab option) (tab:Tab) (ti:TabInfo) =
+    member private this.displayInfo badges (front:Tab option) (tab:Tab) (ti:TabInfo) =
         {
             tint = tabTint.value.tryFind(tab)
             colorStyle = colorStyleCell.value
-            numberBadge = if numberBadgesCell.value then lorder |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<numberBadgeKeysCell.value.Length) |> Option.map(fun i -> string numberBadgeKeysCell.value.[i]) else None
+            numberBadge = Map.tryFind tab badges
             bgColor = tabBgColor.value.tryFind(tab)
             TabDisplayInfo.text = ti.text
             splitTrail = ti.splitTrail
@@ -298,9 +308,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member private this.tsBase direction =
         let zorder = zorderCell.value
+        let badges = this.badges lorderCell.value.list
         {
             tabs = Map2(this.tabs.items.map <| fun tab ->
-                tab,this.displayInfo lorderCell.value.list zorder.tryHead tab (this.tabInfo tab))
+                tab,this.displayInfo badges zorder.tryHead tab (this.tabInfo tab))
             hover = hoverCell.value
             captured = capturedCell.value
             lorder = lorderCell.value
@@ -884,10 +895,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         let added = extra |> List.map fst
         let at = max 0 (min index own.Length)
         let order = List.take at own @ added @ List.skip at own
+        let badges = this.badges order
         let infos = (own |> List.map(fun tab -> tab,this.tabInfo tab)) @ extra
         let sprite =
             { this.tsBase this.direction with
-                tabs = Map2(List2(infos |> List.map(fun (tab,ti) -> tab,this.displayInfo order (Some carried) tab ti)))
+                tabs = Map2(List2(infos |> List.map(fun (tab,ti) -> tab,this.displayInfo badges (Some carried) tab ti)))
                 lorder = List2(order)
                 zorder = List2(carried :: (zorderCell.value.list @ added |> List.filter((<>) carried)))
                 hover = None; captured = Some(carried,TabBackground); slide = None; held = None; showAddButton=false }

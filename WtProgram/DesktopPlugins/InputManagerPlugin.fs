@@ -5,25 +5,36 @@ open System.Runtime.InteropServices
 /// The deadline and foreground belong to the first press, not subsequent repeats.
 type NumberLeaderState() =
     let mutable armed : (IntPtr * DateTime) option = None
+    let mutable prefix = ""
+    member _.hintPrefix = prefix
     member _.active = armed.IsSome
     member _.cancel() = armed <- None
-    member _.arm foreground (now:DateTime) = armed <- Some(foreground,now.AddSeconds(10.0))
+    member _.arm foreground (now:DateTime) =
+        prefix <- ""
+        armed <- Some(foreground,now.AddSeconds(10.0))
     member _.validate foreground now =
         match armed with
         | Some(hwnd,deadline) when hwnd=foreground && now<deadline -> true
         | _ -> armed <- None; false
     member this.key foreground now key count keys =
         if not (this.validate foreground now) then false,None
-        elif (NumberLeaderKeys.index keys key).IsSome then
-            armed <- None
-            true,(NumberLeaderKeys.index keys key |> Option.filter(fun index -> index<count))
-        elif key=0x1B then armed <- None; true,None
-        elif List.contains key [0x10;0x11;0x12;0xA0;0xA1;0xA2;0xA3;0xA4;0xA5] then false,None
-        else armed <- None; false,None
+        else
+            let alphabet,labels = NumberLeaderKeys.hints keys count
+            match NumberLeaderKeys.index alphabet key with
+            | Some index ->
+                let next = prefix + string alphabet.[index]
+                let target = labels |> Array.tryFindIndex ((=) next)
+                if target.IsNone && labels |> Array.exists(fun label -> label.StartsWith(next,StringComparison.Ordinal)) then prefix <- next
+                else armed <- None
+                true,target
+            | None when key=0x1B -> armed <- None; true,None
+            | None when List.contains key [0x14;0x10;0x11;0x12;0xA0;0xA1;0xA2;0xA3;0xA4;0xA5] -> false,None
+            | None -> armed <- None; false,None
 
 /// Keep releases paired with swallowed presses even if focus or modifiers change.
 type NumericShortcutCapture() =
     let pressed = Collections.Generic.HashSet<int>()
+    member _.held key = pressed.Contains key
     member _.handle(msg, key, target:int option) =
         if msg=WindowMessages.WM_KEYUP || msg=WindowMessages.WM_SYSKEYUP then
             pressed.Remove(key), None
@@ -121,7 +132,7 @@ type ShortcutKeys(cancelDrag:unit -> bool, closeEmptyPane:unit -> bool) =
         let chordMatches = key.vk=(code &&& 0xFF) && key.control=((code &&& 0x200)<>0) && key.alt=((code &&& 0x400)<>0) && key.shift=((code &&& 0x100)<>0)
         let count = key.tabs |> Option.map List.length |> Option.defaultValue 0
         let leaderConsumed,leaderTarget =
-            if down && not chordMatches then leader.key key.foreground key.now key.vk count key.leaderKeys
+            if down && not chordMatches && not (leaderCapture.held key.vk) then leader.key key.foreground key.now key.vk count key.leaderKeys
             else false,None
         let capturedLeader,_ = leaderCapture.handle(key.msg,key.vk,if leaderConsumed then Some 0 else None)
         let target =
@@ -213,7 +224,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                 leader.arm (WinUserApi.GetForegroundWindow()) DateTime.UtcNow
                 let keys = leaderKeys
                 info.invokeGroup(fun() ->
-                    info.group.bb.write("numberBadgeKeys",keys)
+                    info.group.bb.write("numberBadgeKeys",(keys,""))
                     info.group.bb.write("numberBadges",true))
                 timer.Start())
 
@@ -270,6 +281,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
             let foreground = this.foregroundGroup
             let foregroundHwnd = WinUserApi.GetForegroundWindow()
             let path = pathFor foregroundHwnd
+            let previousPrefix = leader.hintPrefix
             let outcome =
                 keys.handle { msg=int key
                               vk=data.vkCode
@@ -288,6 +300,9 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                               leaderKeys=leaderKeys
                               leaderInSameGroup=this.leaderInSameGroup }
             if outcome.leaderEnded then this.cancelLeader()
+            elif leader.active && previousPrefix<>leader.hintPrefix then
+                let hints = leaderKeys,leader.hintPrefix
+                leaderGroup |> Option.iter(fun info -> info.invokeGroup(fun() -> info.group.bb.write("numberBadgeKeys",hints)))
             if outcome.maskAlt then AltMenuMask.send()
             outcome.activate |> Option.iter(fun (index,_) ->
                 foreground.iter <| fun group ->

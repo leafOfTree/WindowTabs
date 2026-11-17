@@ -50,6 +50,7 @@ module SettingsCatalog =
         { id="combine-taskbar-icons"; page=GeneralSettings; text=Strings.Settings.combineTaskbarIcons; binding=Toggle("combineIconsInTaskbar",false,true) }
         { id="use-windowtabs-for-alt-tab"; page=GeneralSettings; text=Strings.Settings.replaceAltTab; binding=Toggle("replaceAltTab",false,false) }
         { id="group-windows-in-the-switcher"; page=GeneralSettings; text=Strings.Settings.groupWindowsInSwitcher; binding=Toggle("groupWindowsInSwitcher",false,false) }
+        { id="switcher-shortcuts"; page=GeneralSettings; text=Strings.Settings.switcherShortcuts; binding=Toggle("switcherShortcuts",true,true) }
         { id="switcher-style"; page=GeneralSettings; text=Strings.Settings.switcherStyle; binding=Choice("switcherStyle",["Icons";"List"],"Icons") }
         { id="pause-in-full-screen"; page=HotKeySettings; text=Strings.Settings.pauseInFullScreen; binding=Toggle("pauseInFullScreen",false,false) }
         { id="next-tab"; page=HotKeySettings; text=Strings.Settings.nextTab; binding=Shortcut("nextTab",3623) }

@@ -255,6 +255,9 @@ module Strings =
         let switcherStyle = { caption={ en="Switcher style"; zh="切换器样式"; ja="スイッチャーの表示"; ar="نمط المبدّل" }
                               description={ en="Large icons in a row, or a list with full window titles."; zh="一排大图标，或显示完整窗口标题的列表。"; ja="大きなアイコンを横に並べるか、ウィンドウ タイトルを一覧で表示します。"; ar="أيقونات كبيرة في صف، أو قائمة تعرض عناوين النوافذ كاملة." }
                               keywords={ en="layout"; zh="布局"; ja="レイアウト"; ar="التخطيط" } }
+        let switcherShortcuts = { caption={ en="Use switcher shortcuts"; zh="使用切换器快捷键"; ja="切り替えショートカットを使う"; ar="استخدام اختصارات المبدّل" }
+                                  description={ en="Press Q to search or F to show window keys."; zh="按 Q 搜索，按 F 显示窗口选择键。"; ja="Q で検索、F でウィンドウの選択キーを表示します。"; ar="اضغط Q للبحث أو F لعرض مفاتيح اختيار النوافذ." }
+                                  keywords={ en="Alt+Tab"; zh="Alt+Tab"; ja="Alt+Tab"; ar="Alt+Tab" } }
         let groupWindowsInSwitcher = { caption={ en="Group windows in Alt+Tab"; zh="在 Alt+Tab 中按分组显示"; ja="Alt+Tab でグループをまとめる"; ar="تجميع النوافذ في Alt+Tab" }
                                        description={ en="Each group appears as one item, with the icon its taskbar button has."; zh="每个分组只显示一项，图标与任务栏按钮相同。"; ja="各グループを、タスク バーのボタンと同じアイコンの 1 項目として表示します。"; ar="تظهر كل مجموعة كعنصر واحد بالأيقونة نفسها التي يحملها زر شريط المهام." }
                                        keywords={ en="switcher"; zh="切换器"; ja="切り替え"; ar="المبدّل" } }
@@ -928,7 +931,6 @@ module Strings =
 
     /// The tab search box.
     module TabSearch =
-        let qToSearch = { en="Press Q to search"; zh="按 Q 搜索"; ja="Q で検索"; ar="اضغط Q للبحث" }
         let prompt = { en="Type a title or app name to switch windows"; zh="输入标题或应用名，切换窗口"; ja="タイトルやアプリ名を入力してウィンドウを切り替え"; ar="اكتب عنوانًا أو اسم تطبيق للتبديل بين النوافذ" }
         let noMatches = { en="No matching windows."; zh="没有匹配的窗口。"; ja="一致するウィンドウはありません。"; ar="لا توجد نوافذ مطابقة." }
         /// Beside a window on another virtual desktop that has no name of its own.

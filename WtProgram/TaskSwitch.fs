@@ -116,6 +116,7 @@ type ITaskSwitchView =
     abstract member hide : unit -> unit
     abstract member select : int -> unit
     abstract member beginSearch : (string -> unit) * (KeyEventArgs -> unit) -> unit
+    abstract member showHints : string array -> unit
     abstract member navigationSteps : int * int
     abstract member replaceRows : SwitchSearchResult list -> unit
     /// Takes the keyboard while the switcher is open.
@@ -128,6 +129,7 @@ type ITaskSwitchView =
     abstract member clicked : IEvent<int>
 
 type ITaskSwitchListControl =
+    abstract member showHints : string array -> unit
     abstract member navigationSteps : int * int
     abstract member replaceRows : SwitchSearchResult list -> unit
     abstract member select : int -> unit
@@ -276,6 +278,10 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
     member _.Columns = columns
 
     interface ITaskSwitchListControl with
+        member _.showHints labels =
+            for i,item in Array.indexed items do
+                item.HintKey <- labels.[i]
+            for list in lists do list.Invalidate()
         member _.navigationSteps = (if lists.Length>1 && lists.[1].Roots.Count>0 then perColumn else 1),1
         member _.replaceRows rows =
             filtering <- true
@@ -310,32 +316,23 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
             for list in lists do
                 list.BackColor <- p.surface
                 list.ForeColor <- p.text
-module private SwitchSearchHint =
-    let height = Dpi.scale 28
-    let add (form:Form) inset maxWidth request =
-        let hint = new Label(Text=tr Strings.TabSearch.qToSearch,Dock=DockStyle.Top,Height=height,
-                             TextAlign=ContentAlignment.MiddleCenter,Font=SettingsUi.bodyFont(),
-                             BackColor=form.BackColor,ForeColor=(SettingsColors.current()).muted,Cursor=Cursors.Hand)
-        hint.Click.Add(fun _ -> request())
-        form.Controls.Add hint
-        fun changed keyDown ->
-            let input = new TextBox(Font=SettingsUi.bodyFont(),BorderStyle=BorderStyle.None,BackColor=form.BackColor,
-                                    ForeColor=(SettingsColors.current()).text,AccessibleName=tr Strings.TabSearch.prompt)
-            let field = new SettingsSearchBox(input,Dock=DockStyle.Fill,Underlined=true)
-            let inset =
-                match maxWidth with
-                | Some width -> max inset ((form.ClientSize.Width-width+1)/2)
-                | None -> inset
-            let header = new Panel(Dock=DockStyle.Top,Height=height,BackColor=form.BackColor,
-                                   Padding=Padding(inset-form.Padding.Left,0,inset-form.Padding.Right,0))
-            header.Controls.Add field
-            let index = form.Controls.GetChildIndex hint
-            hint.Dispose()
-            form.Controls.Add header
-            form.Controls.SetChildIndex(header,index)
-            input.TextChanged.Add(fun _ -> changed input.Text)
-            input.KeyDown.Add keyDown
-            input.Focus() |> ignore
+module private SwitchSearchField =
+    let height() = Dpi.scale 28
+    let add (form:Form) inset maxWidth changed keyDown =
+        let input = new TextBox(Font=SettingsUi.bodyFont(),BorderStyle=BorderStyle.None,BackColor=form.BackColor,
+                                ForeColor=(SettingsColors.current()).text,AccessibleName=tr Strings.TabSearch.prompt)
+        let field = new SettingsSearchBox(input,Dock=DockStyle.Fill,Underlined=true)
+        let inset =
+            match maxWidth with
+            | Some width -> max inset ((form.ClientSize.Width-width+1)/2)
+            | None -> inset
+        let header = new Panel(Dock=DockStyle.Top,Height=height(),BackColor=form.BackColor,
+                               Padding=Padding(inset-form.Padding.Left,0,inset-form.Padding.Right,0))
+        header.Controls.Add field
+        form.Controls.Add header
+        input.TextChanged.Add(fun _ -> changed input.Text)
+        input.KeyDown.Add keyDown
+        input.Focus() |> ignore
 
 type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
     let os = OS()
@@ -368,7 +365,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
         let padding = Dpi.scale 12
         // Tall enough for every window, so each is one glance away; only more windows than
         // most of the screen can hold scroll.
-        let height = max (Dpi.scale 120) (control.contentHeight+padding*2+(if search.IsSome then SwitchSearchHint.height else 0))
+        let height = max (Dpi.scale 120) (control.contentHeight+padding*2)
         let formSize = Size(min (control.contentWidth+padding*2) (area.Width-Dpi.scale 32),min height (area.Height*85/100))
         f.AutoScaleMode <- AutoScaleMode.None
         // The list reserves a scroll bar column. Let it occupy the right padding.
@@ -382,7 +379,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
         f.ControlBox <- false
         control.control.Dock <- DockStyle.Fill
         f.Controls.Add(control.control)
-        search |> Option.iter(fun request -> startInput <- SwitchSearchHint.add f (padding+Dpi.scale 2) None request)
+        search |> Option.iter(fun _ -> startInput <- SwitchSearchField.add f (padding+Dpi.scale 2) None)
         if not (SystemCorners.keep f (fun () -> palette.border)) then
             use shape = SettingsShapes.rounded
                             (RectangleF(0.0f,0.0f,float32 formSize.Width,float32 formSize.Height))
@@ -420,6 +417,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
 
     interface ITaskSwitchView with
         member _.beginSearch(changed,keys) = startInput changed keys
+        member _.showHints labels = control.showHints labels
         member _.navigationSteps = control.navigationSteps
         member _.replaceRows rows = control.replaceRows rows
         member this.show() = this.show()
@@ -434,6 +432,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
 /// many, with the chosen window's title beneath them. The panel matches the vertical list:
 /// the same surface, border, rounded corners and shadow.
 type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
+    let mutable hints : string array = [||]
     let iconSize = Dpi.scale 64
     let cell = Dpi.scale 96
     let gap = Dpi.scale 8
@@ -456,7 +455,8 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
     let columns = max 1 (min items.Length ((area.Width*9/10-padding*2+gap)/(cell+gap)))
     // Wide enough for a readable title even with one or two windows.
     let width = max (Dpi.scale 360) (columns*cell+(columns-1)*gap+padding*2)
-    let gridTop = padding+(if search.IsSome then SwitchSearchHint.height else 0)
+    let mutable searchFieldHeight = 0
+    let gridTop = padding
     let rows = max 1 ((items.Length+columns-1)/columns)
     let height = gridTop+rows*cell+(rows-1)*gap+titleHeight+padding/2
     let titleFont = SettingsUi.font (SettingsUi.uiFamily()) 11.0f FontStyle.Regular
@@ -484,7 +484,7 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
         // below other always-on-top windows.
         f.TopMost <- true
         f.BackColor <- (SettingsColors.current()).surface
-        search |> Option.iter(fun request -> startInput <- SwitchSearchHint.add f padding (Some(Dpi.scale 768)) request)
+        search |> Option.iter(fun _ -> startInput <- SwitchSearchField.add f padding (Some(Dpi.scale 768)))
         f.Bounds <- Rectangle(area.Left+(area.Width-width)/2,area.Top+(area.Height-height)/2,width,height)
         if not (SystemCorners.keep f (fun () -> (SettingsColors.current()).border)) then
             use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 radius)
@@ -495,7 +495,8 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
         let row,column = index/columns,index%columns
         let inRow = min columns (items.Length-row*columns)
         let left = (width-(inRow*cell+(inRow-1)*gap))/2
-        Rectangle(left+column*(cell+gap),gridTop+row*(cell+gap),cell,cell)
+        let inset = if row=0 && searchFieldHeight>0 then max 0 (searchFieldHeight+gap-gridTop) else 0
+        Rectangle(left+column*(cell+gap),gridTop+row*(cell+gap)+inset,cell,cell-inset)
     member _.Size = Size(width,height)
     /// The window whose icon is at a point in the panel, if any.
     member _.IndexAt(point:Point) =
@@ -524,12 +525,14 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
                 use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 10))
                 use highlight = new SolidBrush(if highContrast then SystemColors.Highlight else p.selection)
                 g.FillPath(highlight,shape)
-            let iconBounds = Rectangle(bounds.X+(cell-iconSize)/2,bounds.Y+(cell-iconSize)/2,iconSize,iconSize)
+            let iconBounds = Rectangle(bounds.X+(cell-iconSize)/2,bounds.Y+(bounds.Height-iconSize)/2,iconSize,iconSize)
             match icon with
             | Some image -> g.DrawImage(image,iconBounds)
             | None ->
                 use pen = new Pen(p.text,float32(Dpi.scale 2))
                 g.DrawRectangle(pen,Rectangle.Inflate(iconBounds,-Dpi.scale 8,-Dpi.scale 12))
+            if index<hints.Length && hints.[index]<>"" then
+                NumberBadgeSprite.drawHint g iconBounds hints.[index] p.surface
         if items.Length>0 || search.IsSome then
             let title,highlights =
                 if items.Length=0 then tr Strings.TabSearch.noMatches,[]
@@ -557,7 +560,11 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
         if not (isNull previous) then previous.Dispose()
         form.Invalidate()
     interface ITaskSwitchView with
-        member _.beginSearch(changed,keys) = startInput changed keys
+        member this.beginSearch(changed,keys) =
+            searchFieldHeight <- SwitchSearchField.height()
+            startInput changed keys
+            this.present()
+        member this.showHints labels = hints <- labels; this.present()
         member _.navigationSteps = 1,(if items.Length>columns then columns else 1)
         member this.replaceRows rows =
             items <- rows |> List.map(fun result -> result.title,result.highlights,iconFor result.window) |> Array.ofList
@@ -603,6 +610,10 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:boo
     let mutable finished = false
 
     let mutable searching = false
+    let mutable labels : string array = [||]
+    let mutable alphabet = ""
+    let mutable prefix = ""
+    let mutable altReleasedInHints = false
     let originalRows = lazy (windows.list |> List.map(fun (TaskWindowItem(hwnd,_) as item) -> {window=item; title=OS().windowFromHwnd(hwnd).text; highlights=[]}))
     let mutable matches : SwitchSearchResult[] = [||]
     let pageSize = max 1 windows.length
@@ -679,9 +690,41 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:boo
             | _ -> form.hide()
             endedEvent.Trigger()
 
-    member _.releaseAlt() = if not searching then this.switchEnd(false)
+    member _.enterHints(keys:string) =
+        if not finished && not searching && labels.Length=0 && windows.length>0 then
+            let keys, codes = NumberLeaderKeys.hints keys windows.length
+            alphabet <- keys
+            labels <- codes
+            form.showHints labels
+            true
+        else false
+
+    member _.hintKey(key:int) =
+        if finished || labels.Length=0 then false
+        // A tap-to-Escape remapper needs the original CapsLock press and release.
+        elif key=int Keys.CapsLock then false
+        elif key=int Keys.Escape then
+            labels <- [||]
+            prefix <- ""
+            form.showHints (Array.create windows.length "")
+            true
+        else
+            NumberLeaderKeys.index alphabet key |> Option.iter(fun index ->
+                let next = prefix + string alphabet.[index]
+                match labels |> Array.tryFindIndex ((=) next) with
+                | Some target -> setIndex target; this.switchEnd(false)
+                | None when labels |> Array.exists(fun label -> label.StartsWith(next,StringComparison.Ordinal)) ->
+                    prefix <- next
+                    form.showHints (labels |> Array.map(fun label -> if label.StartsWith(next,StringComparison.Ordinal) then label.Substring(next.Length) else ""))
+                | _ -> ())
+            key<>int Keys.Menu && key<>int Keys.LMenu && key<>int Keys.RMenu
+
+    member _.browsingWithoutAlt = altReleasedInHints && labels.Length=0 && not searching
+    member _.releaseAlt() =
+        if labels.Length>0 then altReleasedInHints <- true
+        elif not searching && not altReleasedInHints then this.switchEnd(false)
     member _.enterSearch() =
-        if not finished && not searching then
+        if not finished && not searching && labels.Length=0 then
             search |> Option.iter(fun load ->
                 searching <- true
                 let filter = lazy (load())
@@ -740,25 +783,45 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop, ?search:IntPtr 
     let watchSearchChord (switcher:TaskSwitchAction) =
         removeSearchHook()
         let chord = SwitchSearchChord()
+        let held = Collections.Generic.HashSet<int>()
         let mutable ended = false
         searchHook <- Some(os.registerKeyboardLLHook(fun (message,key) ->
-            let result = chord.Handle(int message,key.vkCode,(key.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN)<>0,switcher.enterSearch)
-            if ended && not chord.Held then removeSearchHook()
+            let msg,vk = int message,key.vkCode
+            let up = msg=WindowMessages.WM_KEYUP || msg=WindowMessages.WM_SYSKEYUP
+            let alt = (key.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN)<>0
+            // Reserve the press before activation: closing the popup must keep the hook for key-up.
+            let result =
+                if held.Contains vk then
+                    if up then held.Remove vk |> ignore
+                    Some 1
+                elif not ended && not up then
+                    held.Add vk |> ignore
+                    if switcher.hintKey vk || ((alt || switcher.browsingWithoutAlt) && vk=int Keys.F && switcher.enterHints(settings.settings.numberLeaderKeys)) then Some 1
+                    elif switcher.browsingWithoutAlt && vk=int Keys.Escape then switcher.switchEnd(true); Some 1
+                    elif switcher.browsingWithoutAlt && vk=int Keys.Enter then switcher.switchEnd(false); Some 1
+                    elif switcher.browsingWithoutAlt && vk=int Keys.Q then switcher.enterSearch(); Some 1
+                    elif switcher.browsingWithoutAlt && switcher.moveArrow(enum<Keys> vk) then Some 1
+                    else
+                        held.Remove vk |> ignore
+                        chord.Handle(msg,vk,alt,switcher.enterSearch)
+                elif ended && not chord.Held then None
+                else chord.Handle(msg,vk,alt,switcher.enterSearch)
+            if ended && not chord.Held && held.Count=0 then removeSearchHook()
             result))
         switcher.ended.Add(fun () ->
             ended <- true
-            if not chord.Held then removeSearchHook())
+            if not chord.Held && held.Count=0 then removeSearchHook())
     let doTaskSwitch forward =
         match switcherCell.value with
         | None ->
             let original = WinUserApi.GetForegroundWindow()
             let windows = this.windows
-            let openSearch = search |> Option.map(fun load -> fun () -> load(original,windows))
+            let openSearch = search |> Option.filter(fun _ -> settings.settings.switcherShortcuts) |> Option.map(fun load -> fun () -> load(original,windows))
             let switcher = TaskSwitchAction(windows,settings.settings.switcherStyle,backward=not forward,activate=desktop.activate,?search=openSearch)
             switcher.ended.Add <| fun() ->
                 switcherCell.set(None)
             switcherCell.set(Some(switcher))
-            if search.IsSome then watchSearchChord switcher
+            if openSearch.IsSome then watchSearchChord switcher
         | Some switcher ->
             if forward then switcher.switchPrev() else switcher.switchNext()
 

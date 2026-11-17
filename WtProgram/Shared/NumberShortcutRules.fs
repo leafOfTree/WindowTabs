@@ -39,3 +39,23 @@ module NumberLeaderKeys =
     let index (keys:string) key =
         let key = if key>=0x60 && key<=0x69 then key-0x60+0x30 else key
         keys |> Seq.tryFindIndex(fun c -> virtualKey c=Some key)
+
+    let hints keys count =
+        let keys = normalize keys
+        let alphabet =
+            if keys.Length=1 && count>1 then
+                keys + ("123456789" |> Seq.filter ((<>) keys.[0]) |> Seq.toArray |> String)
+            else keys
+        // Use the shortest possible maximum length, keeping earlier keys short.
+        let hints = ResizeArray<string>()
+        let rec fill remaining (level:string array) =
+            if remaining <= level.Length then hints.AddRange(level |> Array.take remaining)
+            else
+                // Expand just enough prefixes at this depth to fit the remaining windows.
+                let expand = min level.Length (1 + (remaining - level.Length - 1) / (alphabet.Length - 1))
+                let keep = level.Length - expand
+                let leaves, prefixes = Array.splitAt keep level
+                hints.AddRange leaves
+                fill (remaining - keep) [| for p in prefixes do for c in alphabet -> p + string c |]
+        fill count (alphabet |> Seq.map string |> Seq.toArray)
+        alphabet,hints.ToArray()
