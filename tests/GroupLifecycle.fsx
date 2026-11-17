@@ -356,13 +356,19 @@ let main() =
             followerPreviewWindow.setOwner(snapOwnerWindow)
             sourceWindow.setOwner(sourcePreviewWindow)
             followerWindow.setOwner(followerPreviewWindow)
+            let mutable resizedWithoutOccluding = false
+            use resizeSubscription = snapFollower.Resize.Subscribe(fun _ ->
+                resizedWithoutOccluding <- followerWindow.hasStyleEx WindowsExtendedStyles.WS_EX_TRANSPARENT)
             for command in [ShowWindowCommands.SW_SHOWNOACTIVATE;ShowWindowCommands.SW_SHOWMAXIMIZED;ShowWindowCommands.SW_SHOWNOACTIVATE] do
                 sourceWindow.showWindow(command)
                 sourceWindow.setForeground(false)
                 let focused = WinUserApi.GetForegroundWindow()
+                resizedWithoutOccluding <- false
                 FollowerPlacement.queue.submit(snapQueueOwner,snapFollower.Handle,
                     FollowerPlacement.alignBelowRequest snapFollower.Handle sourceWindow.bounds sourceWindow.placement snapSource.Handle)
                 pumpUntil "Separate preview-owner placement did not finish" (fun () -> FollowerPlacement.queue.isIdle(snapQueueOwner))
+                check resizedWithoutOccluding "The resizing follower could occlude the foreground browser"
+                check (not(followerWindow.hasStyleEx WindowsExtendedStyles.WS_EX_TRANSPARENT)) "Placement left the follower transparent"
                 check (sourceWindow.zorder<followerWindow.zorder) "A follower with its own Peek owner covered the originating tab"
                 check (WinUserApi.GetForegroundWindow()=focused && WinUserApi.GetActiveWindow()=snapSource.Handle)
                       "A follower with its own Peek owner changed activation"

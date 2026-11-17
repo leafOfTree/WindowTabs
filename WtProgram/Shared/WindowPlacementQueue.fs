@@ -155,6 +155,21 @@ module FollowerPlacement =
             not above && window<>source),IntPtr.Zero) |> ignore
         above
 
+    /// A follower can briefly rise over the source during a native maximize or restore.
+    /// Keep it out of the source's occlusion calculation until its stacking is restored.
+    let private excludeFromOcclusion (window:Window) expected =
+        let index = WindowLongFieldOffset.GWL_EXSTYLE
+        let flag = int64 WindowsExtendedStyles.WS_EX_TRANSPARENT
+        let style = window.styleEx.ToInt64()
+        if style &&& flag<>0L then null else
+        WinUserApi.SetWindowLong(window.hwnd,index,IntPtr(style ||| flag)) |> ignore
+        { new IDisposable with
+            member _.Dispose() =
+                if identity window.hwnd=expected then
+                    let current = window.styleEx.ToInt64()
+                    if current &&& flag<>0L then
+                        WinUserApi.SetWindowLong(window.hwnd,index,IntPtr(current &&& ~~~flag)) |> ignore }
+
     let private apply hwnd (expected,request) current =
         let valid() = current() && identity hwnd=expected && WinUserApi.IsWindow(hwnd)
         if valid() then
@@ -178,6 +193,12 @@ module FollowerPlacement =
                     { wp with showCmd=ShowWindowCommands.SW_SHOWNORMAL
                               rcNormalPosition=Rect(wp.rcNormalPosition.location,actual.rcNormalPosition.size) }
                 let previous = defaultArg below window.prevZorder.hwnd
+                use occlusion =
+                    match actual.showCmd,wp.showCmd with
+                    | ShowWindowCommands.SW_SHOWNORMAL,ShowWindowCommands.SW_SHOWMAXIMIZED
+                    | ShowWindowCommands.SW_SHOWMAXIMIZED,ShowWindowCommands.SW_SHOWNORMAL
+                        when below.IsSome && window.parent.pid.isCurrentProcess && valid() -> excludeFromOcclusion window expected
+                    | _ -> null
                 let mutable positioned = false
                 // Apps draw invisible resize borders of different widths (new Outlook 10px, most
                 // 7px at 125%). Matching window bounds left the visible frames a few pixels apart,
