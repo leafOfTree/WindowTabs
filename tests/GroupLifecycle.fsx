@@ -966,6 +966,14 @@ let main() =
         let handles = forms |> List.map (fun form -> form.Handle)
         let a,b,c = handles.[0],handles.[1],handles.[2]
         try
+            forms.[0].Show()
+            let original = forms.[0].Bounds
+            for hwnd in [a;b] do BatchDragWindows.hide hwnd
+            check (not(WinUserApi.IsWindowVisible a)) "A dragged window was left visible"
+            for hwnd in [a;b] do WindowGroupToken.recoverAfterRestart (OS().windowFromHwnd hwnd)
+            check (WinUserApi.IsWindowVisible a && forms.[0].Bounds=original && not(WinUserApi.IsWindowVisible b))
+                  "Drag recovery moved a window or showed one that was already hidden"
+            forms.[0].Hide()
             let restored = Collections.Generic.List<IntPtr>()
             onGroup source (fun _ -> (TaskbarRestorePlugin(restored.Add) :> IPlugin).init())
             for hwnd in handles do (source :> IGroup).addWindow(hwnd,false)
@@ -1501,6 +1509,94 @@ let main() =
                 for hwnd in [a;b] do (dragSource :> IGroup).addWindow(hwnd,false)
                 (dragTarget :> IGroup).addWindow(d,false)
                 pumpUntil "Drag groups did not acquire windows" (fun () -> nativeOrder dragSource=[a;b] && nativeOrder dragTarget=[d])
+                if wideRow then
+                    let pointer = Pt(work.Left+work.Width/2,work.Top+work.Height/3)
+                    let carried = onGroup dragSource (fun group ->
+                        let tab = Tab b
+                        let row = group.ts.rowTab tab
+                        let drag = {sourceInFront=true; tab=tab; tabSize=row.size; tabOffset=Pt(row.width/2,row.height/2)
+                                    tabInfo=group.ts.tabInfo tab; tabShift=0; tabAlignment=TabLeft; column=None}
+                        Services.get<TabStripDecorator>().landBatch(drag,pointer)
+                        drag)
+                    pumpUntil "Dropping a batch by its second tab lost the grab point" (fun () ->
+                        onGroup dragSource (fun group ->
+                            let tab = group.ts.rowTab carried.tab
+                            tab.location.add(carried.offsetIn tab.size).distance(pointer)<=3.0))
+                    let infos = onGroup dragSource (fun g -> [for h in [a;b] -> Tab h,g.ts.tabInfo(Tab h)])
+                    let batch = {source=dragSource.hwnd; grabbed=carried; members=[a;b]; infos=infos}
+                    let hasPaint (strip:TabStrip) =
+                        let image,_ = strip.rowImage()
+                        use bitmap = image.bitmap
+                        seq { for y in 0..3..bitmap.Height-1 do
+                                  for x in 0..3..bitmap.Width-1 do yield bitmap.GetPixel(x,y).A }
+                        |> Seq.exists(fun alpha -> alpha>1uy)
+                    onGroup dragSource (fun g ->
+                        let source = Services.get<TabStripDecorator>() :> IBatchSlot
+                        try
+                            source.mask([Tab a;Tab b],false)
+                            check (not(hasPaint g.ts)) "The source still painted the tabs carried out of it"
+                            source.mask([Tab a],false)
+                            check (hasPaint g.ts && g.lorder.list=[a;b]) "Hiding one carried tab hid its neighbour or changed membership"
+                        finally source.mask([],false)
+                        check (hasPaint g.ts) "The source strip did not return after the drag"
+                        let mutable ended = false
+                        let action = DragAction {
+                            targets=Map2(); layoutTargets=Map2(); notifications=Set2()
+                            initialHwnd=g.ts.hwnd; initialPt=Pt.empty; imageOffset=Pt.empty
+                            image=(fun () -> Img(Sz(1,1))); data=box batch; buttonDown=(fun () -> true)
+                            clicked=ignore; onCancel=ignore; onBegin=ignore; onDrop=ignore; onEnd=(fun () -> ended <- true) }
+                        let floating = AnimationWindow(OS())
+                        try
+                            action.start()
+                            let vanished _ _ = raise(ObjectDisposedException("target"))
+                            action.setNextState(BatchDragState(batch,source,vanished,floating,Pt.empty))
+                            try action.captureEnded(Pt.empty) with :? ObjectDisposedException -> ()
+                            check (ended && WinUserApi.GetCapture()=IntPtr.Zero && hasPaint g.ts)
+                                  "Losing the target during release left the batch drag active"
+                        finally floating.Dispose())
+                    onGroup dragTarget (fun g ->
+                        g.ts.dock <- TabDockTop
+                        g.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),Sz(800,40));showInside=false})
+                        let decorator = Services.get<TabStripDecorator>()
+                        let strips = Map2(List2([g.ts.hwnd,decorator :> IDragDropTarget]))
+                        let layouts = Map2(List2([d,decorator :> ILayoutDropTarget]))
+                        let row = g.ts.rowTab(Tab d)
+                        let below = Pt(row.right-1,row.bottom+1)
+                        for hit,owner in [g.ts.hwnd,IntPtr.Zero; d,IntPtr.Zero; IntPtr.Zero,d] do
+                            match DragRouting.batchSlot strips layouts batch.members below hit owner None with
+                            | Some(target,(strip,order)) ->
+                                check (strip=g.ts.hwnd && order=[d;a;b]) "A batch near the target row did not merge at the indicated slot"
+                                let scene = target.picture(batch,order)
+                                try
+                                    target.mask([],true)
+                                    check (not(hasPaint g.ts)) "The destination still painted its original row under the preview"
+                                finally target.mask([],false)
+                                check (hasPaint g.ts) "Leaving the destination did not restore its row"
+                                let positions = scene.positions below
+                                let painted = positions.Add(Tab d,positions.[Tab d].add(Pt(40,0)))
+                                let bounds = scene.screenBounds painted
+                                let neighbour = bounds.[Tab d]
+                                let mid = neighbour.left+neighbour.width/2
+                                let orderAt direction edge =
+                                    let right = direction>0
+                                    let origin = if right then bounds.[Tab b].right else bounds.[Tab a].left
+                                    let next = bounds |> Map.map(fun tab r -> if tab=Tab d then r else r.move(edge-origin,0))
+                                    let frame = {order=(if right then [a;b;d] else [d;a;b]);motion=Pt(direction,0);painted=bounds;next=next}
+                                    let grip = if right then mid-20 else mid+20
+                                    target.slot(Pt(grip,neighbour.top+neighbour.height/2),batch.members,Some frame) |> Option.map snd
+                                check (orderAt 1 (mid-1)=Some [a;b;d] && orderAt 1 mid=Some [d;a;b] &&
+                                       orderAt -1 (mid+1)=Some [d;a;b] && orderAt -1 mid=Some [a;b;d])
+                                      "The leading edge should swap at half overlap regardless of the grab point"
+                                let earlier = scene.positions (scene.location.sub(Pt(2000,0)))
+                                let later = scene.positions (scene.location.add(Pt(2000,0)))
+                                let delta = later.[Tab a].sub(earlier.[Tab a])
+                                check (delta.x>0 && later.[Tab d]=earlier.[Tab d] && delta=later.[Tab b].sub(earlier.[Tab b]))
+                                      (sprintf "Expected the batch to move together across the row: %A -> %A" earlier later)
+                                let img = scene.draw positions
+                                use picture = img.bitmap
+                                check (picture.Width>1 && picture.Height>1 && g.lorder.list=[d]) "Merge preview failed or moved a window before release"
+                            | None -> failwith "The target title bar did not accept the dragged tabs"
+                        check ((DragRouting.batchSlot strips layouts batch.members below IntPtr.Zero IntPtr.Zero None).IsNone) "A covered row accepted the batch")
                 let data = onGroup dragSource (fun group ->
                     if sourceDock=TabDockTop && targetDock=TabDockLeft then group.keepWindowSizes <- true
                     group.ts.dock <- sourceDock

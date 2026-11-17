@@ -1714,6 +1714,20 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member this.initializePlugins(plugins:List2<IPlugin>) =
         let dispatcher = InvokerService.invoker :> IDispatcher
+        Services.register(DispatchedBatchMove(dispatcher,fun (batch,target,pt) ->
+                this.desktop.groups.tryFind(fun g -> g.hwnd=batch.source) |> Option.iter(fun source ->
+                    let members = batch.members |> List.filter(fun h -> WinUserApi.IsWindow h && source.windows.contains((=) h))
+                    if not members.IsEmpty then
+                        let strip,order = match target with Some(h,order) -> Some h,order | None -> None,members
+                        let step = {group=strip; tabs=order; joining=(if strip=Some batch.source then [] else members); reorder=true; layout=None}
+                        GroupEditorApply.run {groups=[step]; detached=[]; closing=[]} (fun outcome ->
+                            let (Tab grabbed) = batch.grabbed.tab
+                            if strip.IsNone && not(List.contains grabbed outcome.skipped) then
+                                this.desktop.groups.tryFind(fun g -> g.windows.contains((=) grabbed))
+                                |> Option.iter(fun g ->
+                                    let target = g :?> GroupInfo
+                                    target.invokeGroup(fun () ->
+                                        if not target.isExited then Services.get<TabStripDecorator>().landBatch(batch.grabbed,pt)))))) :> IBatchMove)
         Services.register(DispatchedProgram(this, dispatcher) :> IProgram)
         Services.register(DispatchedFilterService(FilterService(), dispatcher) :> IFilterService)
         Services.register(DispatchedManagerView(ManagerViewService(), dispatcher) :> IManagerView)

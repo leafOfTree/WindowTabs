@@ -118,6 +118,31 @@ let main() =
     let g2 = GroupDraft.ofGroup (IntPtr 2) [d] Set.empty GroupLayout.Single
     let desk = DesktopDraft.ofDesktop [g1;g2] [e;f;a]
     check (desk.loose=[e;f] && DesktopDraft.find a desk=InGroup 0 && DesktopDraft.find e desk=Loose && DesktopDraft.find (IntPtr 99) desk=Nowhere) "The desktop draft did not place its windows"
+    let selection = TabSelection()
+    let order = [a;b;c;d;e]
+    let strip = TabSelection(explicitMarks=true)
+    strip.press(order,a,false,false,a)
+    strip.single a
+    for clicked in [a;c] do
+        strip.press(order,clicked,false,true,a)
+        check (strip.items order=[clicked]) "Ctrl-click should mark only the clicked tab, including the active one"
+        strip.press(order,clicked,false,true,a)
+        check (strip.items order=[]) "A second Ctrl-click should clear the mark"
+    selection.press(order,c,false,true,a)
+    check (selection.items order=[a;c]) "Ctrl-click did not keep the active window"
+    selection.press(order,e,true,false,a)
+    check (selection.items order=[c;d;e]) "Shift-click did not extend from the anchor"
+    selection.press(order,d,false,true,a)
+    check (selection.items order=[c;e]) "Ctrl-click did not remove the clicked window"
+    check (not(selection.canDoubleClickRename(false,false))) "Releasing Ctrl before the second click allowed rename"
+    selection.press(order,c,false,false,a)
+    selection.single c
+    check (not(selection.canDoubleClickRename(false,false))) "Collapsing a multi-selection on release allowed rename"
+    selection.press(order,c,false,false,a)
+    check (selection.canDoubleClickRename(false,false) && not(selection.canDoubleClickRename(true,false)) && not(selection.canDoubleClickRename(false,true)))
+          "Only an unmodified double-click on a single tab should rename it"
+    let block = DesktopDraft.moveBlock [a;b;c;e] 1 0 desk
+    check (block.groups.Length=1 && block.groups.Head.tabs=[a;b;c;e;d] && block.loose=[f]) "A batch lost its destination when its source row emptied"
     let m = DesktopDraft.moveToGroup c 1 (Some 0) desk
     check (m.groups.[0].tabs=[a;b] && m.groups.[1].tabs=[c;d]) "A tab moved to another row did not land at its index"
     let m2 = DesktopDraft.moveToGroup d 0 None desk
@@ -425,6 +450,18 @@ let main() =
             check (image.Height=l.height) "The overview picture is not its own height"
             let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
             let tabIn (row:GroupEditorRowLayout) hwnd = row.tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
+            let multi = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a};{group=Some(IntPtr 2); frame=frame; active=d}],shown,None)
+            let point h = centre (tabIn multi.Layout.rows.[0] h)
+            multi.MouseDown(point a,Keys.Control)
+            multi.MouseUp(point a)
+            multi.MouseDown(point c,Keys.Shift)
+            multi.MouseUp(point c)
+            multi.MouseDown(point b)
+            let drop = centre multi.Layout.newGroup
+            multi.MouseMove(drop)
+            multi.MouseUp(drop)
+            check ((multi.Draft.groups |> List.map(fun g -> g.tabs))=[[d];[a;b;c]]) "Dragging a range by its middle did not create one group in strip order"
+            multi.Close()
             let tabsOf i = editor.Draft.groups.[i].tabs
             let clickTab (row:GroupEditorRowLayout) hwnd = editor.MouseDown(centre (tabIn row hwnd)); editor.MouseUp(centre (tabIn row hwnd))
             // A tab dragged to another row's tabs joins it there as the pointer arrives, the drop changing nothing more.

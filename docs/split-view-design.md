@@ -129,7 +129,7 @@ the tree's simplest case and keep their behaviour.
   read once at joining, brought back a size the group had long left. The
   monitor under the pointer decides (`DragOutPlacement`); the window lands with its tab under the
   pointer at that size, as the strip's alignment places a lone tab, wholly inside the work area,
-  and the drag image shows it at that size. It comes in front, active: its old group took the
+  and the drag image shows the carried tabs at their strip size. It comes in front, active: its old group took the
   foreground as the tab left it, to show panes the tab had parked, and the window landed under
   them.
 - Splitting again: while split, the same ways apply to a pane. Split in group on a tab divides

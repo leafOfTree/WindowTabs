@@ -325,6 +325,7 @@ module WindowGroupToken =
     let madeByHand hwnd = WindowFlag.get madeByHandKey hwnd
 
     let recoverAfterRestart (window:Window) =
+        BatchDragWindows.restore window.hwnd
         if IndependentWindowParking.parked window.hwnd then IndependentWindowParking.restore window.hwnd
         elif (read window.hwnd).IsSome then IndependentWindowParking.recoverUnmarked window
 

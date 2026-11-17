@@ -48,6 +48,10 @@ type ServiceProvider() =
         ServiceProvider.localServices.ContainsKey(t) || services.ContainsKey(t)
 
 /// Typed service boundaries: each member is marshalled to the owning thread explicitly.
+type DispatchedBatchMove(dispatcher:IDispatcher, commit) =
+    interface IBatchMove with
+        member _.drop(batch,target,pt) = dispatcher.Post(fun () -> commit(batch,target,pt))
+
 type DispatchedSettings(inner:ISettings, dispatcher:IDispatcher, ?published:Collections.Concurrent.ConcurrentDictionary<string,obj>) =
     interface ISettings with
         member _.appearance = dispatcher.Send(fun () -> inner.appearance)

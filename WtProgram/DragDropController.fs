@@ -60,6 +60,110 @@ module DragRouting =
         let owner = if root=IntPtr.Zero then IntPtr.Zero else WinUserApi.GetWindow(root,GetWindowConstants.GW_OWNER)
         root,owner
 
+    /// A point just below the row hits its member window, or an owned helper, instead of the strip.
+    let batchSlot (strips:Map2<IntPtr,IDragDropTarget>) (layouts:Map2<IntPtr,ILayoutDropTarget>) members pt hit owner preview =
+        let candidate =
+            match strips.tryFind hit with
+            | Some target -> Some(box target)
+            | None -> layouts.tryFind hit |> Option.orElseWith(fun () -> layouts.tryFind owner) |> Option.map box
+        candidate |> Option.bind(function
+            | :? IBatchSlot as target ->
+                let bounds = preview |> Option.bind(fun (shown,rects) -> if obj.ReferenceEquals(shown,target) then Some rects else None)
+                target.slot(pt,members,bounds) |> Option.map(fun slot -> target,slot)
+            | _ -> None)
+
+type BatchDragState(batch:BatchDrag, source:IBatchSlot, aim, floating:AnimationWindow, offset:Pt) =
+    let row = lazy(AnimationWindow(OS()))
+    let carried = batch.members |> List.map Tab |> Set.ofList
+    let mutable shown = None
+    let mutable windowsHidden = false
+    let hideWindows hide =
+        if hide<>windowsHidden then
+            windowsHidden <- hide
+            batch.members |> List.iter(if hide then BatchDragWindows.hide else BatchDragWindows.restore)
+    let timer = new Timer(Interval=15)
+    let clock = Diagnostics.Stopwatch()
+    let mutable preview : BatchRowPreview option = None
+    let mutable pointer = Pt.empty
+    let mutable painted = Map.empty<Tab,Pt>
+    let mutable offsets = Map.empty<Tab,Pt>
+    let draw() =
+        match preview with
+        | None -> timer.Stop()
+        | Some scene ->
+            let t = max 0.0 (1.0 - clock.Elapsed.TotalMilliseconds / 180.0)
+            let remaining = t*t*t
+            let positions = scene.positions pointer |> Map.map(fun tab point ->
+                match offsets.TryFind tab with
+                | Some delta -> point.add(delta.mulf(remaining,remaining))
+                | None -> point)
+            if positions<>painted then
+                row.Value.setImage(scene.draw positions)
+                painted <- positions
+            if remaining<=0.0 || offsets.IsEmpty then timer.Stop()
+    let hidden = Set.toList carried
+    let mutable covered : (IntPtr * IBatchSlot) option = None
+    let uncover() =
+        covered |> Option.iter(fun (hwnd,target) ->
+            target.mask((if hwnd=batch.source then hidden else []),false))
+        covered <- None
+    do
+        source.mask(hidden,false)
+        timer.Tick.Add(fun _ -> draw())
+    let locate (pt:Pt) =
+        let bounds =
+            match covered,preview,shown with
+            | Some(_,target),Some scene,Some(_,order) ->
+                Some(target,{order=order;motion=pt.sub pointer;painted=scene.screenBounds painted
+                             next=scene.screenBounds(scene.positions pt)})
+            | _ -> None
+        aim pt bounds
+    member _.destination pt = locate pt |> Option.map snd
+    interface IDragState with
+        member _.mouseMove pt =
+            match locate pt with
+            | Some(target:IBatchSlot,((strip,order) as slot)) ->
+                if strip<>batch.source then hideWindows true
+                pointer <- pt
+                if shown<>Some slot then
+                    let scene = target.picture(batch,order)
+                    if Option.map fst covered<>Some strip then
+                        uncover()
+                        target.mask((if strip=batch.source then hidden else []),true)
+                        covered <- Some(strip,target)
+                    offsets <-
+                        if SystemInformation.UIEffectsEnabled && Option.map fst shown=Some strip then
+                            scene.positions pt |> Map.toList |> List.choose(fun (tab,point) ->
+                                match painted.TryFind tab with
+                                | Some previous when previous<>point && not(carried.Contains tab) -> Some(tab,previous.sub point)
+                                | _ -> None) |> Map.ofList
+                        else Map.empty
+                    preview <- Some scene
+                    painted <- Map.empty
+                    clock.Restart()
+                    row.Value.setLocation scene.location
+                    draw()
+                    row.Value.setIsVisible(true)
+                    shown <- Some slot
+                timer.Start()
+                floating.setIsVisible(false)
+            | None ->
+                hideWindows true
+                timer.Stop()
+                preview <- None
+                if row.IsValueCreated then row.Value.setIsVisible(false)
+                uncover()
+                shown <- None
+                floating.setLocation(pt.sub(offset))
+                floating.setIsVisible(true)
+        member _.dispose() =
+            hideWindows false
+            timer.Dispose()
+            preview <- None
+            if row.IsValueCreated then row.Value.Dispose()
+            uncover()
+            source.mask([],false)
+
 type DragCapturedStateInfo = {
     target : IDragDropTarget
     targetHwnd : IntPtr
@@ -269,7 +373,7 @@ type DragActionInfo = {
     layoutTargets : Map2<IntPtr, ILayoutDropTarget>
     notifications: Set2<IDragDropNotification>
     initialHwnd : IntPtr
-    image : (Img -> unit) -> Img
+    image : unit -> Img
     imageOffset : Pt
     initialPt : Pt
     data: obj
@@ -333,6 +437,14 @@ type DragAction(info:DragActionInfo) =
                 info.onCancel()
                 // Let go before a drag began, a click: cancelled with the button still down, none.
                 if drop.IsSome || not(info.buttonDown()) then info.clicked()
+            | :? BatchDragState as state,where ->
+                try
+                    let destination =
+                        try where |> Option.bind state.destination
+                        finally this.release()
+                    where |> Option.iter(fun pt ->
+                        Services.get<IBatchMove>().drop(unbox<BatchDrag> info.data,destination,pt))
+                finally this.notifyEnd()
             | :? DragCapturedState,Some _ ->
                 this.release()
                 this.notifyEnd()
@@ -407,24 +519,22 @@ type DragAction(info:DragActionInfo) =
             onBegin = fun() ->
                 animationWindowCell.value <-
                     let animationWindow = AnimationWindow(os)
-                    // The image carries its own see-through window; the tab on it stays solid.
-                    animationWindow.setAlpha(byte(0xFF))
-                    // The image comes drawn at the size it shows: its window small, its tab
-                    // readable. The window's picture may follow a moment later, from another
-                    // thread: printed before the drag could start, a large window held it up.
-                    let invoker = InvokerService.invoker
-                    let later (image:Img) =
-                        invoker.asyncInvoke(fun () ->
-                            match animationWindowCell.value with
-                            | Some window when not finished -> window.setImage image
-                            | _ -> image.bitmap.Dispose())
-                    try animationWindow.setImage(info.image later)
+                    try animationWindow.setImage(info.image())
                     with _ -> ()
                     Some(animationWindow)
                 info.targets.values.iter <| fun target -> target.dragBegin()
                 info.notifications.items.iter <| fun n -> n.dragBegin()
                 info.onBegin()
-                this.dragEnter(info.initialHwnd, info.initialPt, true)
+                match info.data with
+                | :? BatchDrag as batch ->
+                    let aim pt bounds =
+                        let hit,owner = DragRouting.windowsAt pt
+                        DragRouting.batchSlot info.targets info.layoutTargets batch.members pt hit owner bounds
+                    let source = info.targets.find(batch.source) :?> IBatchSlot
+                    let state = BatchDragState(batch,source,aim,animationWindowCell.value.Value,info.imageOffset)
+                    this.setNextState state
+                    (state :> IDragState).mouseMove ptScreenCell.value
+                | _ -> this.dragEnter(info.initialHwnd, info.initialPt, true)
         })
 
     member this.start() =

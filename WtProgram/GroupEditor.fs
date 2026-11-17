@@ -200,6 +200,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// The group of the row expanded, by its strip, or by its first tab for a group made here.
     let mutable expandedKey : (IntPtr option * IntPtr) option =
         expanded |> Option.bind(fun index -> draft.groups |> List.tryItem index) |> Option.map(fun g -> g.group,List.head g.tabs)
+    let selection = TabSelection()
+    let ordered() = (current.groups |> List.collect(fun g -> g.tabs)) @ current.loose @ current.closing
+    let mutable batch = []
+    let mutable modifiedPress = false
     let mutable selected = IntPtr.Zero
     /// The cell the keys moved the focus to, in place of the selected tab's.
     let mutable cellFocus : PanePath option = None
@@ -689,6 +693,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         else
             use brush = new SolidBrush(fill)
             g.FillPath(brush,shape)
+            if selection.contains hwnd then
+                use edge = new Pen(accent,float32(scale 2))
+                g.DrawPath(edge,shape)
             let iconSize = scale GroupEditorMetrics.iconSize
             let iconBounds = Rectangle(r.X+scale 8,r.Y+(r.Height-iconSize)/2,iconSize,iconSize)
             drawIconOn g (iconOf hwnd) iconBounds
@@ -1210,10 +1217,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// The drag image: one window for the popup's life, up with the tab's picture while a tab is
     /// in hand, moved with the pointer, hidden on the drop and gone with the popup.
     let mutable dragImage : GroupEditorDragImage option = None
-    let mutable dragPicture : (Bitmap * IntPtr) option = None
+    let mutable dragPicture : ((Bitmap * Pt) * IntPtr) option = None
     let hideDragImage() =
         dragImage |> Option.iter(fun window -> window.Hide())
-        dragPicture |> Option.iter(fun (image,_) -> image.Dispose())
+        dragPicture |> Option.iter(fun ((image,_),_) -> image.Dispose())
         dragPicture <- None
     let closeDragImage() =
         hideDragImage()
@@ -1228,15 +1235,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     let window = new GroupEditorDragImage(form)
                     dragImage <- Some window
                     window
-            let image =
+            let image,offset =
                 match dragPicture with
                 | Some(image,hwnd) when hwnd=d.hwnd -> image
                 | _ ->
-                    dragPicture |> Option.iter(fun (image,_) -> image.Dispose())
-                    let image = dragImageFor d.hwnd
+                    dragPicture |> Option.iter(fun ((image,_),_) -> image.Dispose())
+                    let tabs = if batch.IsEmpty then [d.hwnd] else batch
+                    let layout = tabs |> List.map(fun h -> h,Sz(tabWidth h,scale GroupEditorMetrics.tabHeight))
+                                      |> DragTabs.layout false (Screen.FromControl(form).WorkingArea.Width)
+                    let offset = fst layout |> List.find(fun (h,_) -> h=d.hwnd) |> snd
+                    let image = (DragTabs.render dragImageFor layout).bitmap,offset.location
                     dragPicture <- Some(image,d.hwnd)
                     image
-            window.Show(image,form.PointToScreen(Point(view.X-d.offset.X,view.Y-d.offset.Y)))
+            window.Show(image,form.PointToScreen(Point(view.X-d.offset.X-offset.x,view.Y-d.offset.Y-offset.y)))
 
     let releaseThumbnails() =
         for KeyValue(_,thumb) in thumbs do DwmApi.DwmUnregisterThumbnail(thumb) |> ignore
@@ -1639,14 +1650,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     /// A press at the point: the empty cell's cross, the split button and its shapes, the buttons,
     /// the row's menu button; else a tab taken in hand.
-    let mouseDown (pt:Point) =
+    let mouseDown (keys:Keys) (pt:Point) =
       if not closed then
         let l = layout()
         let view = pt
         let pt = unscroll pt
         let take hwnd (r:Rectangle) =
-            drag <- Some {hwnd=hwnd; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)
-                          origin=current; originSelected=selected}
+            modifiedPress <- keys.HasFlag Keys.Shift || keys.HasFlag Keys.Control
+            selection.press(ordered(),hwnd,keys.HasFlag Keys.Shift,keys.HasFlag Keys.Control,selected)
+            batch <- selection.items (ordered())
+            form.Invalidate()
+            if selection.contains hwnd then
+                drag <- Some {hwnd=hwnd; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)
+                              origin=current; originSelected=selected}
         let expandedIndex = expandedRow()
         let shapes = expandedIndex |> Option.bind(fun i -> l.rows |> List.tryItem i) |> Option.map(fun row -> row.shapes) |> Option.defaultValue []
         let track = viewBody l
@@ -1736,7 +1752,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         | Some d ->
             let threshold = SystemInformation.DragSize
             let begun = d.begun || abs(pt.X-d.start.X)>threshold.Width/2 || abs(pt.Y-d.start.Y)>threshold.Height/2
-            if begun then
+            if begun && batch.Length>1 then
+                drag <- Some {d with at=pt; begun=true}
+                form.Invalidate()
+            elif begun then
                 let l = layout()
                 let before = tabLooks l
                 // Carried off the rows, the tab goes back to where it was taken from, as if it had
@@ -1853,7 +1872,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let before = tabsNow()
             drag <- None
             lifted <- false
-            if d.begun then
+            if d.begun && batch.Length>1 then
+                let l = layout()
+                if not(offRows l view pt) then
+                    match aimAt l pt d.hwnd with
+                    | Some(StripSlot(row,_)) ->
+                        let tabs = l.rows.[row].tabs |> List.filter(fun (h,_) -> not(selection.contains h))
+                        moved (DesktopDraft.moveBlock batch row (slotAt tabs pt d.hwnd) current) d.hwnd
+                    | Some NewGroupRow ->
+                        let next = DesktopDraft.newGroup batch.Head current
+                        moved (DesktopDraft.moveBlock batch (next.groups.Length-1) 0 next) d.hwnd
+                    | Some CloseRow -> moved (List.fold(fun d h -> DesktopDraft.moveToClosing h d) current batch) d.hwnd
+                    | _ -> ()
+            elif d.begun then
                 let l = layout()
                 match (if offRows l view pt then None else aimAt l pt d.hwnd) with
                 | Some aim ->
@@ -1867,7 +1898,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         cellFocus <- None
                     | _ -> ()
                 | None -> ()
-            else
+            elif not modifiedPress then
+                selection.single d.hwnd
                 // A click on a tab: in a folded row, the row expands on it; in the expanded row it
                 // is selected, or, selected already, folds the row.
                 match DesktopDraft.find d.hwnd current,expandedRow() with
@@ -1927,7 +1959,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         if (DateTime.UtcNow-menuClosedAt).TotalMilliseconds<500.0 then
             menuClosedAt <- DateTime.MinValue
             if button=MouseButtons.Right then menuAt pt else closingClick <- true
-        elif button=MouseButtons.Left then mouseDown pt
+        elif button=MouseButtons.Left then mouseDown Control.ModifierKeys pt
         elif button=MouseButtons.Right then menuAt pt
     let buttonUp (button:MouseButtons) (pt:Point) =
         if closingClick then closingClick <- false
@@ -2030,7 +2062,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.Sliding = sliding
     /// Whether a row is still growing or folding.
     member _.Morphing = morph.IsSome
-    member _.MouseDown(pt:Point) = mouseDown pt
+    member _.MouseDown(pt:Point,?keys:Keys) = mouseDown (defaultArg keys Keys.None) pt
     member _.MouseMove(pt:Point) = mouseMove pt
     /// The caption after the title.
     member _.Summary = summary()
