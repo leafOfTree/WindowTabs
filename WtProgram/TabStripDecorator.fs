@@ -479,7 +479,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         match Services.tryGet<ISplitPanePicker>() with
         | Some picker when not entries.IsEmpty ->
             let target = this.ts.hwnd
-            picker.showForMerge(prompt,entries,fun hwnd -> Services.desktop.addExistingWindow(target,hwnd))
+            picker.showForMerge(target,prompt,entries,fun hwnd -> Services.desktop.addExistingWindow(target,hwnd))
         | Some _ -> Notice.show prompt (tr Strings.TabMenu.splitNoWindows)
         | None -> ()
 
@@ -908,7 +908,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             callbackRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
             callbackRef := None)
         let contextMenuVisibleCell = propCell("contextMenuVisible", false)
-        let numberBadgeKeysCell = propCell("numberBadgeKeys", SettingsCatalog.textDefault "numberLeaderKeys")
+        let numberBadgeKeysCell = propCell("numberBadgeKeys", (SettingsCatalog.textDefault "numberLeaderKeys",""))
         Cell.listen(fun() -> this.ts.numberBadgeKeys <- numberBadgeKeysCell.value)
         let numberBadgesCell = propCell("numberBadges", false)
         Cell.listen(fun() -> this.ts.numberBadges <- numberBadgesCell.value)

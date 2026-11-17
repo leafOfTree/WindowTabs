@@ -50,6 +50,7 @@ type TreeListChip = { Text: string; Icon: Image; Removable: bool; Faded: bool; N
 type TreeListItem(text:string) =
     let children = ResizeArray<TreeListItem>()
     member val Text = text with get,set
+    member val HintKey = "" with get,set
     /// Drawn but not owned by the list.
     member val Icon : Image = null with get,set
     /// Further icons after Icon, side by side, such as the other apps of a group. Not owned either.
@@ -922,6 +923,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         g.FillEllipse(fill,dot)
                         use edge = new Pen(Color.FromArgb(60,p.text))
                         g.DrawEllipse(edge,dot)
+                    if not hidesIcon && item.HintKey<>"" then
+                        NumberBadgeSprite.drawHint g iconBox item.HintKey this.BackColor
                     if not editing then
                         let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
                         if item.Suffix="" && item.NameSwatch.IsNone then SettingsTreeList.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p,item.Dimmed)

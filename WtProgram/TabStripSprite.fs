@@ -190,6 +190,18 @@ type IconSprite = {
         member this.children = List2()
 
 type NumberBadgeSprite = { label:string; size:Sz; background:Color; foreground:Color } with
+    static member create label size surface =
+        let dark = Theme.darkBar surface
+        { label=label; size=size; background=(if dark then Color.White else Color.Black)
+          foreground=(if dark then Color.Black else Color.White) }
+    static member drawHint (g:Graphics) (slot:Rectangle) (label:string) surface =
+        let side = min slot.Height (Dpi.scale 16)
+        use font = TabMetrics.font (side-2) FontStyle.Bold
+        let width = max side (int (ceil (g.MeasureString(label,font).Width)))
+        let badge = NumberBadgeSprite.create label (Sz(width,side)) surface
+        use bitmap = ((badge :> ISprite).image).bitmap
+        let overlap = side/3
+        g.DrawImageUnscaled(bitmap,max 0 (slot.Left-overlap),max 0 (slot.Top-overlap))
     interface ISpriteHitTest with member _.containsPoint _ = false
     interface ISprite with
         member this.image =
@@ -206,11 +218,18 @@ type NumberBadgeSprite = { label:string; size:Sz; background:Color; foreground:C
             shape.AddArc(w-diameter,h-diameter,diameter,diameter,0.0f,90.0f)
             shape.AddArc(0.0f,h-diameter,diameter,diameter,90.0f,90.0f)
             shape.CloseFigure()
+            // The outer edges fall half a pixel beyond the first and last pixel centres.
+            g.TranslateTransform(-0.5f,-0.5f)
             g.FillPath(bg,shape)
-            use font = TabMetrics.font (this.size.height-2) FontStyle.Bold
+            g.ResetTransform()
+            use font = TabMetrics.font (this.size.height-1) FontStyle.Bold
             use brush = new SolidBrush(TextContrast.readable this.foreground this.background)
-            use format = new StringFormat(Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center)
-            g.DrawString(this.label,font,brush,RectangleF(0.0f,0.0f,float32 this.size.width,float32 this.size.height),format)
+            use format = StringFormat.GenericTypographic
+            use glyphs = new GraphicsPath()
+            glyphs.AddString(this.label,font.FontFamily,int font.Style,font.SizeInPoints*g.DpiY/72.0f,PointF.Empty,format)
+            let ink = glyphs.GetBounds()
+            g.TranslateTransform((w-1.0f-ink.Width)/2.0f-ink.X,(h-1.0f-ink.Height)/2.0f-ink.Y)
+            g.FillPath(brush,glyphs)
             img
         member _.children = List2()
 
@@ -664,15 +683,29 @@ type TabSprite<'id> = {
 
     member private this.iconSize =
         let side = TabMetrics.iconSide this.appearance.tabHeight
-        Sz(side, side)
+        Sz(side,side)
 
     member private this.iconLocation =
-        // Centre against the icon's own height. This used to divide by a
-        // hardcoded 16, which left the icon off centre once it was scaled.
-        let y = this.contentTop + (this.contentHeight - this.iconSize.height) / 2
-        // Alone in the tab, the icon is centred.
-        let x = if this.onlyIcon then (this.size.width - this.iconSize.width) / 2 else this.edgeWidth
-        Pt(x, y)
+        let side = this.iconSize.width
+        let x = if this.onlyIcon then (this.size.width-side)/2 else this.edgeWidth
+        Pt(x,this.contentTop+(this.contentHeight-side)/2)
+
+    /// Float beside the icon, aligned to its vertical centre.
+    member private this.hintSprite =
+        match this.displayInfo.numberBadge with
+        | Some label when not this.isTop ->
+            let side = min this.contentHeight (TabMetrics.scaled this.appearance.tabHeight 14)
+            let width =
+                if label.Length=1 then side
+                else
+                    use bitmap = new Bitmap(1,1)
+                    use graphics = Graphics.FromImage(bitmap)
+                    use font = TabMetrics.font (side-2) FontStyle.Bold
+                    max side (int (ceil (graphics.MeasureString(label,font).Width)))
+            let x = max 0 (this.iconLocation.x - width - Dpi.scale 1)
+            let point = Pt(x,this.iconLocation.y+(this.iconSize.height-side)/2)
+            Some(point,NumberBadgeSprite.create label (Sz(width,side)) this.fillColor :> ISprite)
+        | _ -> None
 
     // Beside a centred icon there is room only for a smaller button.
     member private this.closeButtonSize =
@@ -805,17 +838,10 @@ type TabSprite<'id> = {
             img
         member this.children = 
             List2([
-                (match this.displayInfo.numberBadge with
-                 | Some label when not this.isTop ->
-                     let side = min (this.size.height-2) (TabMetrics.scaled this.size.height 20)
-                     let point = this.iconLocation.add(Pt((this.iconSize.width-side)/2,(this.iconSize.height-side)/2))
-                     let background = if Theme.darkBar this.fillColor then Color.White else Color.Black
-                     let foreground = if background=Color.White then Color.Black else Color.White
-                     Some(point,({label=label;size=Sz(side,side);background=background;foreground=foreground} : NumberBadgeSprite) :> ISprite)
-                 | _ ->
-                     let icon = this.iconSprite
-                     let pad = (icon :?> IconSprite).padding
-                     Some(this.iconLocation.add(Pt(-pad,-pad)),icon))
+                this.hintSprite
+                (let icon = this.iconSprite
+                 let pad = (icon :?> IconSprite).padding
+                 Some(this.iconLocation.add(Pt(-pad,-pad)),icon))
                 (if this.showCloseButton then Some(this.closeButtonLocation, this.closeButtonSprite)
                  // A row of icons stays a row of icons.
                  elif this.displayInfo.isPinned && not this.onlyIcon then

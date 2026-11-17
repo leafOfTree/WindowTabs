@@ -462,6 +462,17 @@ let main() =
         check (leader.key (IntPtr(1)) now 0x39 3 "123456789" = (true,None)) "Missing leader digit must be consumed without activation"
         leader.arm (IntPtr(1)) now
         check (leader.key (IntPtr(1)) now 0x62 3 "123456789" = (true,Some 1) && not leader.active) "Leader ignored a number-pad digit"
+        leader.arm (IntPtr(1)) now
+        check (leader.key (IntPtr(1)) now 0x4C 13 "ASDFGHJKL"=(true,None) && leader.active && leader.hintPrefix="L") "Overflow prefix ended tab selection"
+        check (leader.key (IntPtr(1)) now 0x47 13 "ASDFGHJKL"=(true,Some 12)) "Last overflow tab was unreachable"
+        let homeKeys = "ASDFGHJKL;"
+        for count in [19;20;33;100;101] do
+            let _,labels = NumberLeaderKeys.hints homeKeys count
+            let expectedLength = if count<=100 then 2 else 3
+            check (labels.Length=count && (labels |> Array.map String.length |> Array.max)=expectedLength)
+                  "Home-row hints required an unnecessary key or lost a tab"
+            check (labels |> Array.forall(fun label -> (labels |> Array.filter(fun other -> other.StartsWith(label,StringComparison.Ordinal))).Length=1))
+                  "A completed hint was also the start of another hint"
         // Switching focus disarms the leader, but the captured key stays owned through release.
         for vk in [0x41;0xBA;0x1B] do
             let held = NumericShortcutCapture()

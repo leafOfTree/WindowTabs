@@ -25,7 +25,6 @@ type GeneralView() =
         updateShowOnSwitch()
         autoHide.SelectedIndexChanged.Add(fun _ -> updateShowOnSwitch())
         // After auto-hide, as the tab menu lists them.
-        SettingsBindings.toggleRow behaviour "icons-only"
         SettingsBindings.choiceRow behaviour "title-bar-drop" |> ignore
         let taskbar = SettingsUi.sectionCard table (tr Strings.General.taskbar)
         SettingsBindings.toggleRow taskbar "combine-taskbar-icons"
@@ -36,8 +35,9 @@ type GeneralView() =
         SettingsUi.settingRow switcher "use-windowtabs-for-alt-tab" enabled
         let style = SettingsBindings.choiceRow switcher "switcher-style"
         let groupedRow = SettingsUi.settingRowControl switcher "group-windows-in-the-switcher" grouped
-        // Both only matter while WindowTabs handles Alt+Tab.
-        let dependents = [style.Parent :?> SettingsRow;groupedRow]
+        let shortcuts = SettingsUi.settingRowControl switcher "switcher-shortcuts" (SettingsBindings.settingToggle "switcherShortcuts")
+        // These only matter while WindowTabs handles Alt+Tab.
+        let dependents = [style.Parent :?> SettingsRow;groupedRow;shortcuts]
         dependents |> List.iter SettingsUi.indentDependentRow
         let update() = for row in dependents do row.Collapsed <- not enabled.Checked
         update()

@@ -872,7 +872,7 @@ type SettingsThemeTile(mode:string) as this =
                 drawMini true
             else drawMini (mode="dark")
             e.Graphics.Restore(state)
-            use border = new Pen((if this.Checked then p.text else p.border),(if this.Checked then 2.0f else 1.0f))
+            use border = new Pen((if this.Checked then p.accent else p.border),(if this.Checked then 2.0f else 1.0f))
             e.Graphics.DrawPath(border,shape)
             let label = Rectangle(0,this.Height-Dpi.scale 28,this.Width,Dpi.scale 26)
             TextRenderer.DrawText(e.Graphics,this.Text,this.Font,label,(if this.Checked && this.Enabled then p.text else p.muted),

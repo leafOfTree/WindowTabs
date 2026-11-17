@@ -236,8 +236,8 @@ module Strings =
         let autoHide = { caption={ en="Auto-hide tabs"; zh="自动隐藏标签"; ja="タブを自動的に隠す"; ar="إخفاء علامات التبويب تلقائيًا"; ko="탭 자동 숨기기" }
                          description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。"; ar="يبقى شريط رفيع فقط حتى تمرّر المؤشر فوقه."; ko="마우스를 올리기 전까지 얇은 띠만 표시합니다." }
                          keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ"; ko="접기 숨기기" } }
-        let titleBarDrop = { caption={ en="Group by dragging a title bar"; zh="拖动标题栏来分组"; ja="タイトルバーのドラッグでグループ化"; ar="التجميع بسحب شريط العنوان"; ko="제목 표시줄을 끌어 그룹화" }
-                             description={ en="Drop a window on another one's tabs or title bar to join them."; zh="把窗口拖到另一个窗口的标签或标题栏上即可合并。"; ja="ウィンドウを別のウィンドウのタブかタイトルバーに落とすと結合します。"; ar="أفلت نافذة على علامات تبويب نافذة أخرى أو شريط عنوانها لضمّها."; ko="창을 다른 창의 탭이나 제목 표시줄에 놓으면 합쳐집니다." }
+        let titleBarDrop = { caption={ en="Drag title bars to group windows"; zh="拖动标题栏分组"; ja="タイトルバーをドラッグしてグループ化"; ar="اسحب شريط العنوان لتجميع النوافذ"; ko="제목 표시줄을 끌어 창 그룹화" }
+                             description={ en="Drag a window by its title bar until its tab is near another window’s tab, then release."; zh="拖动窗口的标题栏，让它的标签靠近另一个窗口的标签，再松手。"; ja="タイトルバーをドラッグし、そのウィンドウのタブを別のウィンドウのタブに近づけてから離します。"; ar="اسحب النافذة من شريط عنوانها حتى يقترب تبويبها من تبويب نافذة أخرى، ثم أفلتها."; ko="제목 표시줄을 끌어 창의 탭을 다른 창의 탭에 가까이 가져간 후 놓으세요." }
                              keywords={ en="drag drop window merge"; zh="拖放 窗口 合并"; ja="ドラッグ ドロップ ウィンドウ 結合"; ar="سحب إفلات نافذة دمج"; ko="끌기 놓기 창 합치기" } }
         let iconsOnly = { caption={ en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示"; ar="إظهار الأيقونات فقط"; ko="아이콘만 표시" }
                           description={ en="Tabs show their icons without titles."; zh="标签只显示图标，不显示标题。"; ja="タブにタイトルを出さず、アイコンだけを表示します。"; ar="تعرض علامات التبويب أيقوناتها دون عناوين."; ko="탭에 제목 없이 아이콘만 표시합니다." }
@@ -264,6 +264,9 @@ module Strings =
         let switcherStyle = { caption={ en="Switcher style"; zh="切换器样式"; ja="スイッチャーの表示"; ar="نمط المبدّل"; ko="작업 전환 스타일" }
                               description={ en="Large icons in a row, or a list with full window titles."; zh="一排大图标，或显示完整窗口标题的列表。"; ja="大きなアイコンを横に並べるか、ウィンドウ タイトルを一覧で表示します。"; ar="أيقونات كبيرة في صف، أو قائمة تعرض عناوين النوافذ كاملة."; ko="큰 아이콘을 한 줄로 표시하거나, 전체 창 제목을 목록으로 표시합니다." }
                               keywords={ en="layout"; zh="布局"; ja="レイアウト"; ar="التخطيط"; ko="레이아웃 모양" } }
+        let switcherShortcuts = { caption={ en="Use switcher shortcuts"; zh="使用切换器快捷键"; ja="切り替えショートカットを使う"; ar="استخدام اختصارات المبدّل"; ko="전환기 단축키 사용" }
+                                  description={ en="Press Q to search or F to show window keys."; zh="按 Q 搜索，按 F 显示窗口选择键。"; ja="Q で検索、F でウィンドウの選択キーを表示します。"; ar="اضغط Q للبحث أو F لعرض مفاتيح اختيار النوافذ."; ko="Q를 누르면 검색하고 F를 누르면 창 선택 키를 표시합니다." }
+                                  keywords={ en="Alt+Tab"; zh="Alt+Tab"; ja="Alt+Tab"; ar="Alt+Tab"; ko="Alt+Tab" } }
         let groupWindowsInSwitcher = { caption={ en="Group windows in Alt+Tab"; zh="在 Alt+Tab 中按分组显示"; ja="Alt+Tab でグループをまとめる"; ar="تجميع النوافذ في Alt+Tab"; ko="Alt+Tab에서 창 그룹화" }
                                        description={ en="Each group appears as one item, with the icon its taskbar button has."; zh="每个分组只显示一项，图标与任务栏按钮相同。"; ja="各グループを、タスク バーのボタンと同じアイコンの 1 項目として表示します。"; ar="تظهر كل مجموعة كعنصر واحد بالأيقونة نفسها التي يحملها زر شريط المهام."; ko="각 그룹을 작업 표시줄 버튼과 같은 아이콘의 항목 하나로 표시합니다." }
                                        keywords={ en="switcher"; zh="切换器"; ja="切り替え"; ar="المبدّل"; ko="작업 전환 그룹" } }
@@ -460,7 +463,7 @@ module Strings =
         let tabTextBold = { caption={ en="Bold tab text"; zh="标签文字加粗"; ja="タブの文字を太字にする"; ar="نص علامات التبويب بخط عريض"; ko="탭 텍스트 굵게" }
                             description={ en="Which tab titles show in a heavier weight."; zh="哪些标签的标题以粗体显示。"; ja="どのタブのタイトルを太字で表示するか。"; ar="عناوين علامات التبويب التي تظهر بخط أثقل."; ko="굵게 표시할 탭 제목을 선택합니다." }
                             keywords=tabTextWords }
-        let tabAddButton = { caption={ en="Show new tab button (+)"; zh="显示新建标签按钮（+）"; ja="新しいタブボタン（+）を表示"; ar="إظهار زر علامة تبويب جديدة (+)"; ko="새 탭 버튼(+) 표시" }
+        let tabAddButton = { caption={ en="Show new tab button"; zh="显示新建标签按钮"; ja="新しいタブボタンを表示"; ar="إظهار زر علامة تبويب جديدة"; ko="새 탭 버튼 표시" }
                              description=TabMenu.addTabHint false
                              keywords={ en="plus add existing window hover show hide"; zh="加号 添加已有窗口 悬停 隐藏"; ja="プラス 追加 ウィンドウ ホバー 表示 非表示"; ar="زائد إضافة نافذة إظهار إخفاء"; ko="더하기 추가 창 마우스 오버 숨기기" } }
         let addButtonHover = { en="On hover"; zh="悬停时"; ja="ホバー時"; ar="عند التمرير"; ko="마우스 오버 시" }
@@ -612,6 +615,7 @@ module Strings =
         let dark = { en="Dark"; zh="深色"; ja="ダーク"; ar="داكن"; ko="어둡게" }
         let explorerPreview = { en="File Explorer theme preview"; zh="文件资源管理器主题预览"; ja="エクスプローラーのテーマのプレビュー"; ar="معاينة سمة مستكشف الملفات"; ko="파일 탐색기 테마 미리 보기" }
         let tabColors = { en="Tab colors"; zh="标签配色"; ja="タブの色"; ar="ألوان علامات التبويب"; ko="탭 색" }
+        let show = { en="Show"; zh="显示"; ja="表示"; ar="عرض"; ko="표시" }
         let colorPreset = { en="Color preset"; zh="配色预设"; ja="配色プリセット"; ar="مجموعة ألوان جاهزة"; ko="색 프리셋" }
         let custom = { en="Custom"; zh="自定义"; ja="カスタム"; ar="مخصص"; ko="사용자 지정" }
         /// Switcher styles: large icons in a row, or window titles in a column.
@@ -981,7 +985,6 @@ module Strings =
 
     /// The tab search box.
     module TabSearch =
-        let qToSearch = { en="Press Q to search"; zh="按 Q 搜索"; ja="Q で検索"; ar="اضغط Q للبحث"; ko="Q를 눌러 검색" }
         let prompt = { en="Type a title or app name to switch windows"; zh="输入标题或应用名，切换窗口"; ja="タイトルやアプリ名を入力してウィンドウを切り替え"; ar="اكتب عنوانًا أو اسم تطبيق للتبديل بين النوافذ"; ko="제목이나 앱 이름을 입력해 창 전환" }
         let noMatches = { en="No matching windows."; zh="没有匹配的窗口。"; ja="一致するウィンドウはありません。"; ar="لا توجد نوافذ مطابقة."; ko="일치하는 창이 없습니다." }
         /// Beside a window on another virtual desktop that has no name of its own.

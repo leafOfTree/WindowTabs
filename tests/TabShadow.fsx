@@ -344,9 +344,33 @@ let main () =
     check (({ pinnedRow with slide=Some(1,pinnedRow.size.width) }).movedTab=Some(1,0)) "A pinned tab dragged right left the pinned tabs"
     for appearance in [Theme.light;Theme.dark] do
         for icons in [false;true] do
-            let badges = { ts with appearance=appearance;onlyIcons=icons;tabs=Map2(List2([1,{info "One" with numberBadge=Some "1"};2,{info "Ten" with numberBadge=Some "A"}])) }
+            let badges = { ts with appearance=appearance;onlyIcons=icons;tabs=Map2(List2([1,{info "One" with numberBadge=Some "1"};2,{info "Ten" with numberBadge=Some "LA"}])) }
             let drawn = badges.sprite.children.list |> List.collect(fun (_,tab) -> tab.children.list) |> List.choose(fun (_,child) -> match child with :? NumberBadgeSprite as badge -> Some badge | _ -> None)
-            check (drawn.Length=1 && drawn.Head.label="A") "Active tab hint was shown or inactive letter hint was missing"
+            check (drawn.Length=1 && drawn.Head.label="LA") "Active tab hint was shown or inactive letter hint was missing"
+            check (drawn.Head.size.width < 2*drawn.Head.size.height) "Two-letter hint still reserves two full squares"
+            use hint = ((drawn.Head :> ISprite).image).bitmap
+            let ink = [| for y in 0..hint.Height-1 do
+                             for x in 0..hint.Width-1 do
+                                 let pixel = hint.GetPixel(x,y)
+                                 if pixel.A>200uy && abs(int pixel.R-int drawn.Head.foreground.R)<100 then yield x,y |]
+            let centred length coords = abs (Array.min coords + Array.max coords - (length-1)) <= 2
+            check (ink.Length>0 && centred hint.Width (Array.map fst ink) && centred hint.Height (Array.map snd ink))
+                  "Visible hint letters were off-centre"
+            for y in [0;hint.Height-1] do
+                let alpha x = int (hint.GetPixel(x,y).A)
+                check (alpha 0 < 128 && abs (alpha 0-alpha (hint.Width-1)) < 20)
+                      "The hint's left and right corners have different coverage"
+            let children = (spriteOf badges 2 :> ISprite).children.list
+            let badgePoint = children |> List.pick(fun (pt,s) -> match s with :? NumberBadgeSprite -> Some pt | _ -> None)
+            let iconBounds (tab:TabSprite<int>) =
+                (tab :> ISprite).children.list |> List.pick(fun (pt,s) -> match s with :? IconSprite as icon -> Some(pt.add(Pt(icon.padding,icon.padding)),icon.size) | _ -> None)
+            let hinted = spriteOf badges 2
+            let plain = { hinted with displayInfo={hinted.displayInfo with numberBadge=None} }
+            let iconPoint,iconSize = iconBounds hinted
+            check (abs (2*(badgePoint.y-iconPoint.y)+drawn.Head.size.height-iconSize.height)<=1) "Floating hint missed the icon's vertical centre"
+            check (badgePoint.x < iconPoint.x && iconBounds hinted = iconBounds plain &&
+                   hinted.textLocation = plain.textLocation && hinted.textSize = plain.textSize)
+                  "Floating hint shifted the tab contents or missed the left side of the icon"
     for appearance in [Theme.light;Theme.dark] do
         for style in [JoinedTabs;FolderTabs;FloatingTabs] do
             let plain = { ts with appearance={appearance with tabStyle=style} }

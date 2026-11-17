@@ -137,7 +137,8 @@ let main() =
         Services.register<ISplitPanePicker>({new ISplitPanePicker with
             member _.show(_,_,windows,_) = picks.Enqueue windows.Length
             member _.showWithin(_,_,windows,_) = picks.Enqueue windows.Length
-            member _.showForMerge(prompt,windows,choose) =
+            member _.showForMerge(strip,prompt,windows,choose) =
+                check (WinUserApi.IsWindow strip) "The merge picker needs its originating tab strip"
                 check (prompt=tr Strings.TabMenu.addExisting) "Wrong prompt for the merge picker"
                 windows |> List.tryHead |> Option.iter(fun (hwnd,_,_) -> choose hwnd)})
         // Groups whose taskbar button would be the real one get a stand-in, as no taskbar is needed here.
@@ -1223,6 +1224,13 @@ let main() =
         api.setValue("tabStyle",box before)
         pump 100
         let candidates = [for i in 1..6 -> TabSearch.create (nativeint i) (string i) (string i) ""]
+        for screen in Screen.AllScreens do
+            use strip = new Form(StartPosition=FormStartPosition.Manual,Bounds=Rectangle(screen.WorkingArea.Location,Size(100,50)))
+            let before = Application.OpenForms |> Seq.cast<Form> |> Seq.toArray
+            (SplitPanePicker() :> ISplitPanePicker).showForMerge(strip.Handle,"Pick",[(1n,"Window","App")],ignore)
+            let popup = Application.OpenForms |> Seq.cast<Form> |> Seq.find(fun f -> f.Visible && not(Array.contains f before))
+            check (Screen.FromHandle(popup.Handle).DeviceName=screen.DeviceName) "Merge picker opened on another strip's monitor"
+            popup.Close()
         let mutable picked = []
         let merge = TabSearchForm(candidates,[],pickMany=(fun ids -> picked <- ids))
         merge.Show()

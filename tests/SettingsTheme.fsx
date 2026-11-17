@@ -489,6 +489,7 @@ let main() =
         let appearance = AppearanceView() :> ISettingsView
         check (controls general.control |> Seq.forall(fun c -> c.Name<>"tabColumnWidth")) "Column width remains on General"
         check ((SettingsCatalog.find "tabColumnWidth").page=AppearanceSettings) "Column width search opens the wrong page"
+        check ((SettingsCatalog.find "icons-only").page=AppearanceSettings) "Icons-only search should open Appearance"
         let width = controls appearance.control |> Seq.pick(function :? SettingsNumberInput as c when c.Name="tabColumnWidth" -> Some c | _ -> None)
         check (width.Width=Dpi.scale 144 && position.Width=width.Width) "Number and short-choice editors do not share their default width"
         check (position.ItemText(0)=tr Strings.TabMenu.top) "Tab position still labels the top strip as horizontal"
@@ -1035,6 +1036,7 @@ let main() =
                         let firstFrames = ResizeArray<int option>()
                         let mutable selected = None
                         let view = {new ITaskSwitchView with
+                            member _.showHints _ = ()
                             member _.beginSearch(_,_) = ()
                             member _.navigationSteps = 1,1
                             member _.replaceRows _ = ()
@@ -1064,7 +1066,9 @@ let main() =
             do
                 use input = new Control()
                 let mutable filterRows = ignore
+                let mutable displayedHints : string array = [||]
                 let view = {new ITaskSwitchView with
+                    member _.showHints labels = displayedHints <- labels
                     member _.beginSearch(changed,_) = filterRows <- changed
                     member _.navigationSteps = 1,1
                     member _.replaceRows _ = ()
@@ -1079,6 +1083,21 @@ let main() =
                 let action = TaskSwitchAction(List2([TaskWindowItem(IntPtr 1,None);TaskWindowItem(IntPtr 2,None)]),"List",view=view,activate=activated.Add)
                 action.switchEnd(false)
                 check (Seq.toList activated=[IntPtr 2]) (sprintf "The switcher did not hand the window chosen to the desktop: %A" (Seq.toList activated))
+                let follow = TaskSwitchAction(List2([for i in 1..5 -> TaskWindowItem(nativeint i,None)]),"List",view=view,activate=activated.Add)
+                check (follow.enterHints("AS")) "F did not enter hint mode"
+                check (displayedHints = [|"AA";"AS";"SA";"SSA";"SSS"|]) "Switcher did not keep the earliest hints short at the two-key capacity boundary"
+                follow.releaseAlt()
+                check (follow.hintKey(int Keys.S) && follow.hintKey(int Keys.S) && follow.hintKey(int Keys.S)) "Multi-key hint was not handled"
+                check (activated.[activated.Count-1]=5n) "Hint did not activate its window after Alt was released"
+                activated.RemoveAt(activated.Count-1)
+                let cancelHints = TaskSwitchAction(List2([TaskWindowItem(1n,None)]),"Icons",view=view,activate=activated.Add)
+                check (cancelHints.enterHints("123")) "The switcher did not show hints"
+                cancelHints.releaseAlt()
+                check (not (cancelHints.hintKey(int Keys.CapsLock)) && not cancelHints.browsingWithoutAlt)
+                    "CapsLock must reach the remapper before its Escape cancels hints"
+                check (cancelHints.hintKey(int Keys.Escape) && cancelHints.browsingWithoutAlt && cancelHints.enterHints("123") && Seq.toList activated=[2n])
+                      "Esc in hint mode should leave the current window active"
+                cancelHints.switchEnd(true)
                 let browse = TaskSwitchAction(List2([TaskWindowItem(1n,None);TaskWindowItem(2n,None)]),"List",view=view,activate=activated.Add,search=(fun () -> fun _ -> [{window=TaskWindowItem(3n,None);title="Matched";highlights=[]}]))
                 let chord = SwitchSearchChord()
                 let key message vk alt = chord.Handle(message,int vk,alt,browse.enterSearch)
@@ -1179,7 +1198,8 @@ let main() =
                     (badged :> ITaskSwitchView).hide()
                 let three = TaskSwitchIconView(items 3)
                 let crowd = TaskSwitchIconView(items 60)
-                let wide = TaskSwitchIconView(items 12,search=ignore) :> ITaskSwitchView
+                let wideIcons = TaskSwitchIconView(items 12,search=ignore)
+                let wide = wideIcons :> ITaskSwitchView
                 try
                     wide.show()
                     let host = wide.inputControl.FindForm()
@@ -1189,6 +1209,9 @@ let main() =
                     let field = controls host |> Seq.pick(function :? SettingsSearchBox as box -> Some box | _ -> None)
                     let left = host.PointToClient(field.PointToScreen(Point.Empty)).X
                     let expected = min (Dpi.scale 768) (host.ClientSize.Width-2*Dpi.scale 20)
+                    let firstRowY = host.PointToClient(field.PointToScreen(Point(0,field.Height))).Y+Dpi.scale 8
+                    let hasIcon y = seq {0..host.ClientSize.Width-1} |> Seq.exists(fun x -> (wideIcons.IndexAt(Point(x,y))).IsSome)
+                    check (not (hasIcon (firstRowY-1)) && hasIcon firstRowY) "The search divider needs a gap before the first icon row"
                     check (host.Bounds=before && abs(field.Width-expected)<=1 && left=host.ClientSize.Width-left-field.Width)
                           (sprintf "Search layout: before %A after %A field %d expected %d left %d" before host.Bounds field.Width expected left)
                     let area = Screen.FromHandle(host.Handle).WorkingArea
@@ -1396,6 +1419,10 @@ let main() =
         Application.DoEvents()
         check (api.getValue("tabThemeMode") :?> string = "light") "Theme tile does not apply its mode"
         check (tiles |> List.filter(fun tile -> tile.Checked) |> List.length = 1) "Theme tiles are not mutually exclusive"
+        use tileImage = new Bitmap(lightTile.Width,lightTile.Height)
+        lightTile.DrawToBitmap(tileImage,Rectangle(Point.Empty,tileImage.Size))
+        check (tileImage.GetPixel(tileImage.Width/2,2).ToArgb()=(SettingsColors.current()).accent.ToArgb())
+              "The selected theme tile should have an accent border"
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()
         // Text that would be hard to read on a tab colour is adjusted there, and the page says where.

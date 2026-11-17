@@ -47,10 +47,10 @@ module SettingsCatalog =
         // Always by default: a first-time user groups and splits by dragging a title bar with nothing changed.
         { id="title-bar-drop"; page=GeneralSettings; text=Strings.Settings.titleBarDrop; binding=Choice("titleBarDrop",["Always";"Shift";"Ctrl";"Off"],"Off") }
         { id="show-tabs-on-switch"; page=GeneralSettings; text=Strings.Settings.showTabsOnSwitch; binding=Toggle("showTabsOnSwitch",true,true) }
-        { id="icons-only"; page=GeneralSettings; text=Strings.Settings.iconsOnly; binding=Toggle("showIconsOnly",false,false) }
         { id="combine-taskbar-icons"; page=GeneralSettings; text=Strings.Settings.combineTaskbarIcons; binding=Toggle("combineIconsInTaskbar",false,true) }
         { id="use-windowtabs-for-alt-tab"; page=GeneralSettings; text=Strings.Settings.replaceAltTab; binding=Toggle("replaceAltTab",false,false) }
         { id="group-windows-in-the-switcher"; page=GeneralSettings; text=Strings.Settings.groupWindowsInSwitcher; binding=Toggle("groupWindowsInSwitcher",false,false) }
+        { id="switcher-shortcuts"; page=GeneralSettings; text=Strings.Settings.switcherShortcuts; binding=Toggle("switcherShortcuts",true,true) }
         { id="switcher-style"; page=GeneralSettings; text=Strings.Settings.switcherStyle; binding=Choice("switcherStyle",["Icons";"List"],"Icons") }
         { id="pause-in-full-screen"; page=HotKeySettings; text=Strings.Settings.pauseInFullScreen; binding=Toggle("pauseInFullScreen",false,false) }
         { id="next-tab"; page=HotKeySettings; text=Strings.Settings.nextTab; binding=Shortcut("nextTab",3623) }
@@ -107,6 +107,7 @@ module SettingsCatalog =
         // Kept with the tab sizes in the "tabAppearance" object, not at the top of the file.
         { id="tabStyle"; page=AppearanceSettings; text=Strings.Settings.tabStyle; binding=Choice("tabStyle",TabStyle.names,"joined") }
         { id="tab-text-bold"; page=AppearanceSettings; text=Strings.Settings.tabTextBold; binding=Choice("tabTextWeight",["Never";"Active";"All"],"Active") }
+        { id="icons-only"; page=AppearanceSettings; text=Strings.Settings.iconsOnly; binding=Toggle("showIconsOnly",false,false) }
         { id="tab-add-button"; page=AppearanceSettings; text=Strings.Settings.tabAddButton; binding=Choice("tabAddButton",["Never";"Hover";"Always"],"Hover") }
         { id="tab-close-button"; page=AppearanceSettings; text=Strings.Settings.tabCloseButton; binding=Choice("tabCloseButton",["Never";"Active";"ActiveAndHover"],"ActiveAndHover") }
         { id="tabOpacity"; page=AppearanceSettings; text=Strings.Settings.tabOpacity; binding=Number(opacityRange) }

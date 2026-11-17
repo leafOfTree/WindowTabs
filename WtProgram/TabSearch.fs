@@ -318,7 +318,7 @@ module private TabSearchNative =
 /// windows, or in their place with windows false; scope: the one to open on.
 type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISettings,
                    ?pick:IntPtr -> unit, ?pickMany:IntPtr list -> unit, ?within:Rectangle, ?prompt:string, ?rows:int, ?width:int,
-                   ?pages:PalettePage list, ?scope:PaletteScope, ?windows:bool,
+                   ?pages:PalettePage list, ?scope:PaletteScope, ?windows:bool, ?screen:Screen,
                    ?windowShortcut:TabSearchEntry -> ShortcutAssignment option, ?windowShortcutText:TabSearchEntry -> string) =
     let rowHeight = TabSearchMetrics.rowHeight
     let visibleRows = defaultArg rows TabSearchMetrics.visibleRows
@@ -336,7 +336,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let area =
         match within with
         | Some box -> Screen.FromRectangle(box).WorkingArea
-        | None -> Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
+        | None -> (screen |> Option.defaultWith(fun () -> Screen.FromHandle(WinUserApi.GetForegroundWindow()))).WorkingArea
     let padding = Dpi.scale 12
     let radius = Dpi.scale 12
     let boxHeight = Dpi.scale 40

@@ -48,6 +48,7 @@ type SettingsRec = {
     showIconsOnly: bool
     enableTabbingByDefault: bool
     replaceAltTab: bool
+    switcherShortcuts: bool
     groupWindowsInSwitcher: bool
     enableCtrlNumberHotKey: bool
     enableNumberLeader: bool

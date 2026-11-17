@@ -24,7 +24,7 @@ type SplitPanePicker() =
         search.Show()
     interface ISplitPanePicker with
         member _.show(owner,_,windows,choose) = open' (owner.RectangleToScreen(owner.ClientRectangle)) (tr Strings.TabMenu.splitSearch) windows choose
-        member _.showForMerge(prompt,windows,choose) =
-            let search = TabSearchForm(SplitPaneList.entries windows,[],pickMany=List.iter choose,prompt=prompt)
+        member _.showForMerge(strip,prompt,windows,choose) =
+            let search = TabSearchForm(SplitPaneList.entries windows,[],pickMany=List.iter choose,prompt=prompt,screen=Screen.FromHandle(strip))
             search.Show()
         member _.showWithin(within,prompt,windows,choose) = open' within prompt windows choose
