@@ -398,7 +398,7 @@ type SettingsLink(text:string, kind:SettingsLinkKind) as this =
 type SettingsIcon =
     | RefreshIcon
     | CopyIcon
-    | WindowListIcon
+    | WindowDetailsIcon
     | SwapIcon
 
 /// A small square icon button with hover help. As a toggle it stays highlighted while on.
@@ -447,8 +447,14 @@ type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
         let x0,y0 = (float32 this.Width-s)/2.0f,(float32 this.Height-s)/2.0f
         let at (fx:float32) (fy:float32) = PointF(x0+s*fx,y0+s*fy)
         // Windows' icon font where there is one, as WinUI's buttons; else drawn by hand.
-        let code = match icon with RefreshIcon -> 0xE72C | CopyIcon -> 0xE8C8 | WindowListIcon -> 0xE8FD | SwapIcon -> 0xE8AB
-        if not (UiFace.glyph g code (RectangleF(x0,y0,s,s)) color) then
+        let glyph code = UiFace.glyph g code (RectangleF(x0,y0,s,s)) color
+        let drawn =
+            match icon with
+            | RefreshIcon -> glyph 0xE72C
+            | CopyIcon -> glyph 0xE8C8
+            | SwapIcon -> glyph 0xE8AB
+            | WindowDetailsIcon -> false
+        if not drawn then
             match icon with
             | RefreshIcon ->
                 // A near-full clockwise circle, the arrowhead at its open end pointing along it.
@@ -469,12 +475,13 @@ type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
                 use cover = new SolidBrush(if hovering || isChecked then (if isChecked then Color.FromArgb(56,p.accent) else p.hover) else (if isNull this.Parent then p.surface else this.Parent.BackColor))
                 g.FillPath(cover,front)
                 g.DrawPath(pen,front)
-            | WindowListIcon ->
-                // A window frame with rows: the report's per-window details.
-                use frame = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.12f,s*0.88f,s*0.76f)) (s*0.1f)
+            | WindowDetailsIcon ->
+                use frame = SettingsShapes.rounded (RectangleF(x0+s*0.04f,y0+s*0.08f,s*0.92f,s*0.84f)) (s*0.06f)
                 g.DrawPath(pen,frame)
-                g.DrawLine(pen,at 0.06f 0.34f,at 0.94f 0.34f)
-                for fy in [0.52f;0.7f] do g.DrawLine(pen,at 0.24f fy,at 0.76f fy)
+                g.DrawLine(pen,at 0.04f 0.28f,at 0.96f 0.28f)
+                for y in [0.49f;0.73f] do
+                    g.DrawLine(pen,at 0.20f y,at 0.36f y)
+                    g.DrawLine(pen,at 0.55f y,at 0.81f y)
             | SwapIcon ->
                 // Two arrows passing each other: one right along the top, one left along the bottom.
                 // Small heads and a gap between the rows keep it as light as the arrow beside it.
