@@ -119,6 +119,11 @@ module TabNavigation =
     let currentForeground (order:IntPtr list) event actual =
         if actual<>event && List.contains actual order then actual else event
 
+    /// A late reorder from a follower can arrive after the placement queue has gone idle.
+    let focusedOrder (order:List2<IntPtr>) focused =
+        if order.tryHead<>Some focused && order.contains((=) focused) then order.where((<>) focused).prepend focused
+        else order
+
     /// Foreground events are asynchronous. Prefer current OS focus when it is in
     /// this group; a background group can still navigate from its last top tab.
     let targetIndex (order:IntPtr list) foreground previousTop next =
@@ -691,6 +696,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Looks again, a frame at a time, whether a closed tab's hidden window has gone or been kept
     /// past the grace; the group hears nothing of a window it has let go.
     let hiddenCloseTimer = new System.Windows.Forms.Timer(Interval=16)
+    let nativeZorderTimer = new System.Windows.Forms.Timer(Interval=250)
     /// The active tab that joined the group in the foreground, and the tab active before it.
     let mutable opener : (IntPtr * IntPtr) option = None
     /// The last switch between tabs not made by WindowTabs: from, to and when, with the opener before it.
@@ -715,11 +721,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let isVisibleCell = Cell.create(false)
     let locationGate = obj()
     let pendingLocations = Collections.Generic.HashSet<IntPtr>()
+    let mutable lastNativeLocation : int64 option = None
+    let mutable nativePlacementVersion = 0
+    let mutable nativeZorderVersion = 0
     let pendingMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool * int64>()
     let requestedMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool>()
     let minimizeStateTimer = new System.Windows.Forms.Timer(Interval=16)
     let mutable reconcileMinimizeState = false
     let mutable reconcilePlacementState = false
+    /// The active tab that Windows temporarily replaced while completing a native resize.
+    let mutable nativeTransitionOwner : IntPtr option = None
     /// The tab the group was last minimized from, which comes back first.
     let mutable minimizedFrom : IntPtr option = None
     let transitionClock = Stopwatch.StartNew()
@@ -819,7 +830,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // One window fills the group now: the images that covered the change can go.
                 if not this.isSplit then this.settleTransition()
                 this.withUpdate(fun () -> this.updateIsVisible())
-                if not this.isEmpty then this.setTsParent(this.topWindow)
+                this.restoreTabStrip()
+                this.checkNativeZorder()
+                nativeTransitionOwner |> Option.iter(fun owner ->
+                    nativeTransitionOwner <- None
+                    if this.windows.contains(owner) && not(isMinimized owner) && not(this.windows.contains(this.os.foreground.hwnd)) then
+                        this.setZorder(zorderCell.value.where((<>) owner).prepend owner)
+                        this.os.windowFromHwnd(owner).setForeground(true))
             if splitPending && FollowerPlacement.queue.isIdle(placementOwner) then this.checkSplitSettled()
             if pendingMinimizeStates.Count=0 then minimizeStateTimer.Stop()
 
@@ -839,10 +856,25 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     this.withUpdate(fun () -> this.saveZorder()))
         timer.Start()
 
+    /// Native snap events arrive for every follower. Wait for them to go quiet before fixing
+    /// their transient Z-order, so a subsequent arrow-key snap is never interrupted.
+    member private this.checkNativeZorder() =
+        nativeZorderVersion <- nativePlacementVersion
+        nativeZorderTimer.Stop()
+        nativeZorderTimer.Start()
+
     member this.init(ts:TabStrip) =
         _ts := Some(ts)
         splitSettleTimer.Tick.Add(fun _ -> this.checkSplitSettled())
         captureTimer.Tick.Add(fun _ -> this.captureFront())
+        nativeZorderTimer.Tick.Add(fun _ ->
+            nativeZorderTimer.Stop()
+            if nativeZorderVersion=nativePlacementVersion && FollowerPlacement.queue.isIdle(placementOwner) && not reconcilePlacementState && groupLayout=GroupLayout.Single then
+                let focused = this.os.foreground.hwnd
+                if this.windows.contains(focused) && not(isMinimized focused) then
+                    let order = zorderCell.value.where((<>) focused).prepend focused
+                    this.setZorder(order)
+                    this.os.setZorder(order))
         hiddenCloseTimer.Tick.Add(fun _ ->
             hiddenCloseTimer.Stop()
             if not isDestroyed.value then this.withUpdate(fun () -> this.settleClosedTab()))
@@ -1041,17 +1073,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             (inMoveSize.value.not || moveFrameCell.value.IsSome)
         this.updateSplitChrome()
 
+    /// A snap or maximize can hide the owned strip after its desired visibility stayed true.
+    /// Ask the strip to reconcile its native HWND and put it back over the selected window.
+    member private this.restoreTabStrip() =
+        this.ts.visible <- isVisibleCell.value
+        if isVisibleCell.value && not this.isEmpty then this.setTsParent(this.topWindow)
+
     member private this.updatePlacements() = this.applyLayout()
 
     member private this.adjustChildWindows = fun() ->
         this.updatePlacements()
-        
-    member private this.makeTopWindowForeground() =
-        match zorderCell.value.tryFind(isMinimized >> not) with
-        | Some(top) -> 
-            let window = this.os.windowFromHwnd(top)
-            window.setForeground(false)
-        | None -> ()
 
     member private this.hasFixedWindow =
         this.windows.items.any(fun hwnd -> IndependentWindowParking.fixedSize(this.os.windowFromHwnd hwnd))
@@ -1129,7 +1160,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // actual foreground change may select another tab while that work is pending.
             if not reconcilePlacementState || selected then
                 let order = this.inZorder(this.windows.items)
-                this.setZorder(if reconcilePlacementState then order.where((<>) focused).prepend focused else order)
+                let preferFocus = reconcilePlacementState || (groupLayout=GroupLayout.Single && not(isMinimized focused))
+                this.setZorder(if preferFocus then TabNavigation.focusedOrder order focused else order)
 
     member private this.setWindows(newWindows) =
         windowsCell.set(newWindows)
@@ -1457,7 +1489,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// What the panes go just below: the divider, which lies over their edges, or else the strip.
     member private this.paneAnchor =
         if dividerShown then System.Threading.Volatile.Read(&dividerHandle) else this.ts.hwnd
-        
     member this.isIconOnly 
         with get() = this.ts.isIconOnly
         and set(value) = this.ts.isIconOnly <- value
@@ -2614,17 +2645,21 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         liveResize <- false
         this.saveTopWindowPlacement()
         this.adjustChildWindows()
-        if this.windows.contains(this.os.foreground.hwnd) then this.makeTopWindowForeground()
         this.updateIsVisible()
         this.syncPinnedFrameOrder()
 
     member this.main(hwnd, evt) =
         let location = evt = WinEvent.EVENT_OBJECT_LOCATIONCHANGE
-        let post = not location || lock locationGate (fun () -> pendingLocations.Add(hwnd))
+        let post = not location || lock locationGate (fun () ->
+            lastNativeLocation <- Some(transitionClock.ElapsedMilliseconds)
+            nativePlacementVersion <- nativePlacementVersion+1
+            pendingLocations.Add(hwnd))
         if post then
             this.invokeAsync(fun () ->
                 if location then lock locationGate (fun () -> pendingLocations.Remove(hwnd) |> ignore)
-                if not isDestroyed.value && not (this.isRefreshing(hwnd,evt)) then this.handleWindowEvent(hwnd,evt))
+                if not isDestroyed.value && not (this.isRefreshing(hwnd,evt)) then
+                    this.handleWindowEvent(hwnd,evt)
+                    if location then this.checkNativeZorder())
 
     /// EXPERIMENTAL (ScaleChangeRefresh): a tab moved maximized to a monitor of another scale is
     /// minimized and maximized again, without the animation, as it comes in front; the only
@@ -2778,15 +2813,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 if window.isInMoveSize then
                     this.onEnterMoveSize()
                 else
-                    let isForeground = this.os.foreground.hwnd = hwnd
                     this.saveTopWindowPlacement()
                     this.adjustChildWindows()
-                    if isForeground then
-                        this.makeTopWindowForeground()
                     this.foreground <- this.os.foreground.hwnd
                     isMaximizedExport.update()
                     // Maximized or restored, a window rises over a strip it does not own.
                     this.liftUnownedStrip hwnd
+                    this.restoreTabStrip()
             | _ -> ()
         // The command palette in front over the group: none of the rest, which would follow a
         // closed tab or reorder the group for a foreground the group is not leaving.
@@ -2803,6 +2836,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // In front, a tab asking for attention has it, however it was brought there: by
                 // its shortcut or the switcher as much as by a click, which clears it on its own.
                 this.flashTab(Tab(hwnd), false)
+            let nativeTransition =
+                lock locationGate (fun () ->
+                    lastNativeLocation |> Option.exists(fun at -> transitionClock.ElapsedMilliseconds-at<=250L))
+            if nativeTransition && not(this.windows.contains(hwnd)) && this.windows.contains(foregroundCell.value) then
+                nativeTransitionOwner <- Some foregroundCell.value
             this.foreground <- hwnd
             this.followClosedTab(this.os.foreground.hwnd)
             this.saveZorder()
@@ -3105,6 +3143,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             splitSettleTimer.Dispose()
             captureTimer.Dispose()
             hiddenCloseTimer.Dispose()
+            nativeZorderTimer.Dispose()
             (captures :> IDisposable).Dispose()
             this.unwatchOrder()
             this.unwatchAppBars()
@@ -3219,6 +3258,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if dropped && this.windows.contains hwnd && WinUserApi.IsWindow hwnd then
                 if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
                 let window = this.os.windowFromHwnd hwnd
+                let oldTop = this.topWindow
+                let aboveTarget =
+                    if oldTop=hwnd || this.windows.contains(this.os.foreground.hwnd) then None
+                    else
+                        let previous = (this.os.windowFromHwnd oldTop).prevZorder
+                        Some(if previous.hwnd=this.ts.hwnd then previous.prevZorder.hwnd else previous.hwnd)
                 match landing with
                 | Some place when this.keepSizes && placement.value.IsSome && not (window.isMaximized || window.isMinimized) ->
                     let origin = (place window).add(window.bounds.location.sub(window.visibleBounds.location))
@@ -3227,7 +3272,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 dragReleasedEvent.Trigger hwnd
                 // Placement can already expose the dropped window. Fading the previous tab
                 // over it here briefly brings that tab back after the drop.
-                this.activate(hwnd,true,false)
+                this.activate(hwnd,true,false,?aboveTarget=aboveTarget)
     member this.dragReleased = dragReleasedEvent.Publish
 
     /// The tab after a closed one. No fade: the window shown is the one Windows brought up for
@@ -3239,7 +3284,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.tabActivate(Tab(hwnd), force) = this.activate(hwnd,force,true)
 
-    member private this.activate(hwnd, force, fade, ?shortcut:bool) =
+    member private this.activate(hwnd, force, fade, ?shortcut:bool, ?aboveTarget:IntPtr) =
         if defaultArg shortcut false && zorderCell.value.tryHead<>Some hwnd then this.ts.prepareShortcutMove(Tab hwnd)
         else this.ts.cancelShortcutMove()
         let window = this.os.windowFromHwnd(hwnd)
@@ -3265,8 +3310,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows
         // are raised with their owner, so hand the strip over before activating.
         if this.windows.contains(hwnd) then this.setTsOwner(window)
-        window.setForegroundOrRestore(force)
-        window.bringToTop()
+        match aboveTarget with
+        | Some above -> if above<>hwnd then window.insertAfter(above)
+        | None ->
+            window.setForegroundOrRestore(force)
+            window.bringToTop()
         // Activated but still under the other tabs when its owner is a combined taskbar's preview;
         // only once it is in front, as a refused activation leaves the strip with the real top window.
         if this.os.foreground.hwnd=hwnd then window.raise()

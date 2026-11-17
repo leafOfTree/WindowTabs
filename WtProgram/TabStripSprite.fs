@@ -1448,7 +1448,7 @@ type TabStripSprite<'id> when 'id : equality = {
             [bounds.Location.Pt,({drawSurface=drawSurface; size=slot.size; background=slot.fillColor; foreground=ink} :> ISprite)]
         | _ -> []
 
-    member private this.bodySprite =
+    member private this.bodySpriteAt(position:'id -> Pt -> Pt) =
         {
             new ISprite with
             member x.image = this.bgImage
@@ -1457,7 +1457,7 @@ type TabStripSprite<'id> when 'id : equality = {
             // as it is pressed in a group behind, nor while carried into another strip, it went
             // under the tabs it passed.
             member x.children =
-                let tabs = this.tabSprites.list |> List.filter(fun (location,tab) ->
+                let tabs = this.tabSprites.list |> List.map(fun (pt,tab) -> position tab.id pt,tab) |> List.filter(fun (location,tab) ->
                     not this.isVertical || (location.y<this.size.height && location.y+tab.size.height>0))
                 let tabs =
                     match this.slide with
@@ -1468,6 +1468,8 @@ type TabStripSprite<'id> when 'id : equality = {
                 List2(this.junction @ this.feet @ (tabs |> List.map(fun (location,tab) -> location,tab :> ISprite)))
         }
 
+    member private this.bodySprite = this.bodySpriteAt(fun _ pt -> pt)
+
     member this.sprite =
         let body = this.bodySprite
         { new ISprite with
@@ -1476,9 +1478,9 @@ type TabStripSprite<'id> when 'id : equality = {
 
     member this.renderTab tab = this.tabSprite(tab).render
 
-    member this.render =
+    member this.renderAt(position) =
         let clip = if this.reserveAddButton || this.rowButtonWidth>0 then Some(Rectangle(0,0,this.tabAreaWidth,this.tabAreaHeight)) else None
-        let image = this.bodySprite.renderWithin(clip)
+        let image = (this.bodySpriteAt position).renderWithin(clip)
         if this.isVertical then
             use graphics = image.graphics
             use outline = this.columnOutline(this.columnFrame)
@@ -1501,6 +1503,8 @@ type TabStripSprite<'id> when 'id : equality = {
             g.DrawImageUnscaled(glyph,point.x-bounds.X,point.y-bounds.Y)
             surface
         | [] -> image
+
+    member this.render = this.renderAt(fun _ pt -> pt)
 
     member this.collapsedHeight = max 1 (min this.size.height (Dpi.scale 4))
 
