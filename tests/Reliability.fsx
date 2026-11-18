@@ -631,7 +631,7 @@ let main() =
         check (Localization.plain Strings.TabMenu.close=expected) ("Language override ignored: "+code)
         let parts = (Localization.plain Strings.General.settingsImportFiles).Split('|')
         check (parts.Length=4 && parts.[1]="*.json;*.txt" && parts.[3]="*.*") ("Invalid settings import filter: "+code)
-        use toggle = new SettingsIconButton(WindowListIcon,"",toggle=true)
+        use toggle = new SettingsIconButton(WindowDetailsIcon,"",toggle=true)
         check (toggle.AccessibleDescription=tr Strings.TabSearch.off) ("Missing initial toggle state: "+code)
         toggle.Checked <- true
         check (toggle.AccessibleDescription=tr Strings.TabSearch.on) ("Missing enabled toggle state: "+code)

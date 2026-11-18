@@ -1284,20 +1284,33 @@ module Strings =
                                    ko="지원하지 않는 작업 공간 버전입니다. 저장된 작업 공간은 수정되지 않습니다." }
 
     module Diagnostics =
+        let rawReport = { en="View raw JSON"; zh="查看原始 JSON"; ja="元の JSON を表示"; ar="عرض JSON الخام"; ko="원본 JSON 보기" }
+        let taskbarSummary = { en="Taskbar grouping"; zh="任务栏分组"; ja="タスクバーのグループ化"; ar="تجميع شريط المهام"; ko="작업 표시줄 그룹화" }
+        let combinedCount a b = { en=sprintf "Combined groups: %d/%d" a b; zh=sprintf "已合并 %d/%d 个分组" a b; ja=sprintf "結合済みグループ: %d/%d" a b; ar=sprintf "المجموعات المدمجة: %d/%d" a b; ko=sprintf "합쳐진 그룹: %d/%d" a b }
+        let noGroups = { en="No multi-window groups"; zh="没有多窗口分组"; ja="複数ウィンドウのグループなし"; ar="لا توجد مجموعات متعددة النوافذ"; ko="창이 여러 개인 그룹 없음" }
+        let groupLine i n = { en=sprintf "Group %d (%d windows)" i n; zh=sprintf "分组 %d（%d 个窗口）" i n; ja=sprintf "グループ %d（ウィンドウ %d 個）" i n; ar=sprintf "المجموعة %d (%d نوافذ)" i n; ko=sprintf "그룹 %d (창 %d개)" i n }
+        let combined = { en="Combined"; zh="已合并"; ja="結合済み"; ar="مدمجة"; ko="합쳐짐" }
+        let singleWindow = { en="Single window"; zh="单个窗口"; ja="単一ウィンドウ"; ar="نافذة واحدة"; ko="단일 창" }
+        let displays = { en="Displays and scaling"; zh="显示器与缩放"; ja="ディスプレイと拡大率"; ar="الشاشات والتحجيم"; ko="디스플레이 및 배율" }
+        let display i = { en=sprintf "Display %d" i; zh=sprintf "显示器 %d" i; ja=sprintf "画面 %d" i; ar=sprintf "الشاشة %d" i; ko=sprintf "디스플레이 %d" i }
+        let primary = { en="Primary"; zh="主显示器"; ja="メイン"; ar="الرئيسية"; ko="주 디스플레이" }
+        let unknown = { en="Unknown"; zh="未知"; ja="不明"; ar="غير معروف"; ko="알 수 없음" }
+        let environmentTitle = { en="Runtime environment"; zh="运行环境"; ja="実行環境"; ar="بيئة التشغيل"; ko="실행 환경" }
+        let recentCrashes = { en="Recent crashes"; zh="最近崩溃"; ja="最近のクラッシュ"; ar="الأعطال الأخيرة"; ko="최근 충돌" }
         let description = { en="Safe to share: no window titles, file paths or other personal information."
                             zh="可放心分享：不含窗口标题、文件路径等任何个人信息。"
                             ja="安心して共有できます：ウィンドウのタイトルやファイルのパスなどの個人情報は含まれません。"
                             ar="آمن للمشاركة: لا يحتوي على عناوين النوافذ أو مسارات الملفات أو معلومات شخصية أخرى."
                             ko="안심하고 공유할 수 있습니다. 창 제목, 파일 경로 등 개인 정보는 포함되지 않습니다." }
-        let copyReport = { en="Copy the report, to paste into an issue"; zh="复制报告，以便粘贴到问题报告中"; ja="レポートをコピー（問題の報告に貼り付け）"; ar="نسخ التقرير للصقه في بلاغ مشكلة"; ko="보고서 복사(이슈에 붙여넣기용)" }
+        let copyReport = { en="Copy report as JSON"; zh="复制 JSON 报告"; ja="レポートを JSON としてコピー"; ar="نسخ التقرير بصيغة JSON"; ko="보고서를 JSON으로 복사" }
         let includeWindowsHelp = { en="Include window details: each window's program, class and whether it gets tabs. Never titles."
                                    zh="包含窗口详情：每个窗口的程序、窗口类，以及是否会加上标签。不含标题。"
                                    ja="ウィンドウの詳細を含める：各ウィンドウのプログラム、クラス、タブが付くかどうか。タイトルは含みません。"
                                    ar="تضمين تفاصيل النوافذ: برنامج كل نافذة وفئتها وما إذا كانت تستخدم علامات تبويب. لا يتضمن العناوين أبدًا."
                                    ko="창 세부 정보 포함: 각 창의 프로그램, 클래스, 탭 사용 여부. 제목은 포함하지 않습니다." }
         let refreshReport = { en="Refresh the report"; zh="刷新报告"; ja="レポートを更新"; ar="تحديث التقرير"; ko="보고서 새로 고침" }
-        let reportCopied = { en="Report copied."; zh="报告已复制。"; ja="レポートをコピーしました。"; ar="تم نسخ التقرير."; ko="보고서를 복사했습니다." }
-        let reportRefreshed = { en="Report refreshed."; zh="报告已刷新。"; ja="レポートを更新しました。"; ar="تم تحديث التقرير."; ko="보고서를 새로 고쳤습니다." }
+        let reportCopied = { en="Report copied"; zh="报告已复制"; ja="レポートをコピーしました"; ar="تم نسخ التقرير"; ko="보고서를 복사했습니다" }
+        let reportRefreshed = { en="Report refreshed"; zh="报告已刷新"; ja="レポートを更新しました"; ar="تم تحديث التقرير"; ko="보고서를 새로 고쳤습니다" }
         let reportTitle = { en="Troubleshooting report"; zh="故障排查报告"; ja="トラブルシューティング レポート"; ar="تقرير استكشاف الأخطاء وإصلاحها"; ko="문제 해결 보고서" }
         let projectPage = { en="Project page"; zh="项目主页"; ja="プロジェクトページ"; ar="صفحة المشروع"; ko="프로젝트 페이지" }
         let reportIssue = { en="Report an issue"; zh="报告问题"; ja="問題を報告"; ar="الإبلاغ عن مشكلة"; ko="문제 보고" }
