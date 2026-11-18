@@ -65,15 +65,6 @@ and DragColumn = {
     /// The tab's top-left from the window's.
     member this.tabAt(window:Sz) = this.columnAt(window).add(this.tabInColumn)
 
-/// The image a dragged tab carries: its window at this scale, the tab itself at full size, so
-/// the tab stays readable over a window shown small.
-and DragImage =
-    static member windowScale = 0.5
-    /// Room round the window, in logical pixels, for the soft shadow that lifts it off what lies
-    /// under it, as Windows 11 lifts a window: drawn solid and rounded, a see-through picture read
-    /// as a screenshot, greyed over light windows.
-    static member shadow = 12
-
 and TabStripPlacment = {
     showInside: bool
     bounds: Rect
@@ -156,3 +147,33 @@ and TabAppearanceInfo = {
     tabIndentFlipped : int
     tabIndentNormal : int
     }
+
+/// Pack only the carried tabs, wrapping at the screen edge. The pointer keeps its
+/// place within the grabbed tab even when earlier tabs join it in the picture.
+module DragTabs =
+    let layout vertical limit tabs =
+        let mutable along,cross,depth = 0,0,0
+        let placed = tabs |> List.map(fun (tab,size:Sz) ->
+            let step,extent = if vertical then size.height,size.width else size.width,size.height
+            if along>0 && along+step>limit then
+                cross <- cross+depth
+                along <- 0
+                depth <- 0
+            let pt = if vertical then Pt(cross,along) else Pt(along,cross)
+            along <- along+step
+            depth <- max depth extent
+            tab,Rect(pt,size))
+        let size = Sz(placed |> List.map(fun (_,r) -> r.right) |> List.max,placed |> List.map(fun (_,r) -> r.bottom) |> List.max)
+        placed,size
+
+    let render (draw:'a -> Bitmap) (placed:('a * Rect) list,size:Sz) =
+        let image = Img(size)
+        try
+            use g = image.graphics
+            for tab,r in placed do
+                use bitmap = draw tab
+                g.DrawImageUnscaled(bitmap,r.location.Point)
+            image
+        with _ ->
+            image.bitmap.Dispose()
+            reraise()

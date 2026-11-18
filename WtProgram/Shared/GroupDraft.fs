@@ -1,6 +1,62 @@
 namespace Bemo
 open System
 
+type TabSelection(?explicitMarks:bool) =
+    let explicitMarks = defaultArg explicitMarks false
+    let mutable anchor = None
+    let mutable marked = Set.empty<IntPtr>
+    let mutable selectionPress = false
+    member _.clear() = marked <- Set.empty; anchor <- None
+    member _.canDoubleClickRename(shift,ctrl) = not(selectionPress || shift || ctrl)
+    member _.contains hwnd = marked.Contains hwnd
+    member _.items order = List.filter marked.Contains order
+    member this.contextTargets(order,hwnd) =
+        if marked.Contains hwnd then this.items order else [hwnd]
+    member _.press(order, hwnd, shift, ctrl, fallback) =
+        marked <- Set.intersect marked (set order)
+        // The first release can collapse the selection before Windows reports the double-click.
+        selectionPress <- shift || ctrl || marked.Count>1
+        if not explicitMarks && anchor.IsNone && ctrl && List.contains fallback order then marked <- Set.singleton fallback
+        if shift && anchor.IsNone then anchor <- Some fallback
+        let range =
+            let start = anchor |> Option.filter(fun h -> List.contains h order) |> Option.defaultValue fallback
+            match List.tryFindIndex ((=) start) order,List.tryFindIndex ((=) hwnd) order with
+            | Some a,Some b -> order |> List.skip(min a b) |> List.take(abs(a-b)+1) |> set
+            | _ -> Set.singleton hwnd
+        if shift then marked <- if ctrl then Set.union marked range else range
+        elif ctrl then marked <- if marked.Contains hwnd then marked.Remove hwnd else marked.Add hwnd
+        elif not(marked.Contains hwnd) then marked <- if explicitMarks then Set.empty else Set.singleton hwnd
+        if not shift then anchor <- Some hwnd
+    /// Keep the whole selection in hand until release distinguishes a click from a drag.
+    member this.beginPress(order,hwnd,shift,ctrl,fallback) =
+        let apply() = this.press(order,hwnd,shift,ctrl,fallback)
+        if (shift || ctrl) && this.contains hwnd then
+            selectionPress <- true
+            apply
+        else
+            apply()
+            ignore
+    member _.single hwnd = anchor <- Some hwnd; marked <- if explicitMarks then Set.empty else Set.singleton hwnd
+
+type BatchDrag = { source:IntPtr; members:IntPtr list; grabbed:TabDragInfo; infos:(Tab * TabInfo) list }
+type BatchHitFrame = {
+    order:IntPtr list
+    motion:Pt
+    painted:Map<Tab,Rect>
+    next:Map<Tab,Rect> }
+type BatchRowPreview = {
+    location:Pt
+    positions:Pt -> Map<Tab,Pt>
+    screenBounds:Map<Tab,Pt> -> Map<Tab,Rect>
+    draw:Map<Tab,Pt> -> Img }
+type IBatchSlot =
+    abstract endBatch : unit -> unit
+    abstract mask : hidden:Tab list * covered:bool -> unit
+    abstract slot : Pt * IntPtr list * BatchHitFrame option -> (IntPtr * IntPtr list) option
+    abstract picture : BatchDrag * IntPtr list -> BatchRowPreview
+type IBatchMove =
+    abstract drop : BatchDrag * (IntPtr * IntPtr list) option * Pt -> unit
+
 /// The strip's order the group editor asks for: the windows named, in that order, then the rest
 /// as they were; the pinned ones first either way.
 module StripOrder =
@@ -298,6 +354,16 @@ module DesktopDraft =
             match find hwnd draft with
             | InGroup at when at=target -> updateGroup target (GroupDraft.moveTab hwnd (defaultArg index Int32.MaxValue)) draft
             | _ -> lift hwnd draft |> updateGroup target (GroupDraft.addTab hwnd index) |> prune
+    /// Keep the destination row stable until every arrival has left its source.
+    let moveBlock members target slot draft =
+        let g = draft.groups.[target]
+        let rest = g.tabs |> List.filter(fun h -> not(List.contains h members))
+        let at = min rest.Length (max 0 slot)
+        let order = List.take at rest @ members @ List.skip at rest
+        let arrivals = members |> List.filter(fun h -> not(List.contains h g.tabs))
+        let lifted = List.fold(fun d h -> lift h d) draft arrivals
+        lifted |> updateGroup target (fun row -> GroupDraft.normalize {row with tabs=order}) |> prune
+
     /// The window leaves its group and stands on its own.
     let moveToLoose hwnd draft =
         match find hwnd draft with

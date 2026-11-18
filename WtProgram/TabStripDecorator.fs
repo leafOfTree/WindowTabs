@@ -144,6 +144,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// Whether the press that began the drag parked the panes, in a group in front: shown before
     /// it, they come back as the tab leaves; parked earlier, the tab shown before comes back instead.
     let mutable dragParked = false
+    let selection = TabSelection(explicitMarks=true)
     let mutable dragSource : IntPtr option = None
     let mutable dragStartIndex : int option = None
     let mutable dragStartFrame : (IntPtr * OSWindowPlacement * Pt) option = None
@@ -155,6 +156,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     member this.ts = _ts
     member private this.mouse = mouseEvent.Publish
     member private this.init() =
+        Services.registerLocal(this)
         Services.registerLocal(_ts)
         group.init(this.ts)
 
@@ -201,8 +203,10 @@ type TabStripDecorator(group:WindowGroup) as this =
         this.mouse.Add <| fun(hwnd, btn, action, pt) ->
             match action, btn with
             | MouseDblClick, MouseLeft ->
-                group.isIconOnly <- false
-                this.beginRename(hwnd)
+                let keys = Control.ModifierKeys
+                if selection.canDoubleClickRename(keys.HasFlag Keys.Shift,keys.HasFlag Keys.Control) then
+                    group.isIconOnly <- false
+                    this.beginRename(hwnd)
             | MouseUp, MouseRight ->
                 let ptScreen = this.ts.toScreen(pt)
                 group.bb.write("contextMenuVisible", true)
@@ -347,6 +351,26 @@ type TabStripDecorator(group:WindowGroup) as this =
             let area = Screen.FromPoint(pointer.Point).WorkingArea
             Pt(between (area.Left,max area.Left (area.Right-frame.width)) x,frame.y)
 
+    /// Place the new group using its own final tab order, width and dock.
+    member this.landBatch(drag:TabDragInfo, pointer:Pt) =
+        if this.ts.tabs.contains drag.tab && group.windows.contains group.topWindow then
+            DragOutPlacement.monitorAt pointer |> Option.iter(fun monitor ->
+                let window = os.windowFromHwnd group.topWindow
+                let bounds,visible = window.bounds,window.visibleBounds
+                let work = monitor.workRect
+                let size = DragOutPlacement.size visible.size work
+                let align (frame:Rect) =
+                    let strip,_ = this.placementFor(frame,false)
+                    let grip = strip.bounds.location.add(this.ts.dropOffset(drag,strip))
+                    DragOutPlacement.fit work (Rect(frame.location.add(pointer.sub(grip)),size))
+                let frame = Rect(pointer,size) |> align |> align
+                let border,extra =
+                    if window.isMaximized || window.isMinimized then Pt(),Sz()
+                    else visible.location.sub(bounds.location),Sz(bounds.width-visible.width,bounds.height-visible.height)
+                let origin = frame.location.sub(border).sub(work.location.sub(monitor.displayRect.location))
+                window.setPlacement({ window.placement with showCmd=ShowWindowCommands.SW_SHOWNOACTIVATE
+                                                            rcNormalPosition=Rect(origin,Sz(frame.width+extra.width,frame.height+extra.height)) }))
+
     member this.beginRename(hwnd) =
         let tab = Tab(hwnd)
         let offset, sprite =
@@ -359,7 +383,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         let fill = if highContrast then SystemColors.Window else sprite.fillColor
         let ink = if highContrast then SystemColors.WindowText else sprite.textColor
         // The outline of a focused field, in the colour the selected name is drawn with.
-        let accent = SystemColors.Highlight
+        let accent = SettingsColors.current().accent
         // The field starts this far left of the name, so the name stays where the tab drew it.
         let padding = Dpi.scale 4
         let height = min text.size.height (max (font.Height + Dpi.scale 2) (min (text.size.height - Dpi.scale 4) (font.Height + Dpi.scale 6)))
@@ -778,13 +802,15 @@ type TabStripDecorator(group:WindowGroup) as this =
             })
                  
         let closeTabItem = 
-            let shortcut = SettingsShortcut.text (Services.program.getHotKey "closeTab")
+            let targets = selection.contextTargets(group.lorder.list,hwnd)
+            let multiple = targets.Length>1
+            let shortcut = if multiple then "" else SettingsShortcut.text (Services.program.getHotKey "closeTab")
             CmiRegular({
                 // Under Close, so named in full as the shortcut's setting is.
-                text = tr Strings.Settings.closeTab.caption + (if shortcut = "" then "" else "\t" + shortcut)
+                text = tr (if multiple then Strings.TabMenu.closeSelected else Strings.Settings.closeTab.caption) + (if shortcut = "" then "" else "\t" + shortcut)
                 image = None
-                click = fun() -> this.onCloseWindow hwnd
-                flags = List2()
+                click = fun() -> if multiple then this.closeTogether(List2(targets |> List.filter group.windows.contains)) else this.onCloseWindow hwnd
+                flags = if multiple && List.forall PinnedTabs.contains targets then List2([MenuFlags.MF_GRAYED]) else List2()
             })
 
         let closeOtherTabsItem =
@@ -955,7 +981,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 this.ts.isShrunk <- false
 
     interface ITabStripMonitor with
-        member x.tabClick((btn, tab, part, action, pt)) =
+        member x.tabClick((btn, tab, part, action, pt, keys)) =
             let (Tab(hwnd)) = tab
             let ptScreen = this.ts.toScreen(pt)
             // The button between a split's tabs is not its tab: no activation, drag, rename or tab menu.
@@ -976,6 +1002,10 @@ type TabStripDecorator(group:WindowGroup) as this =
                 | MouseRight ->
                     os.windowFromHwnd(group.topWindow).setForeground(false)
                 | MouseLeft ->
+                    let modified = keys.HasFlag Keys.Shift || keys.HasFlag Keys.Control
+                    let completeClick = selection.beginPress(group.lorder.list,hwnd,keys.HasFlag Keys.Shift,keys.HasFlag Keys.Control,group.topWindow)
+                    let members = selection.items group.lorder.list
+                    this.ts.markTabs(List.map Tab members)
                     dragPartner <- group.topWindow
                     dragSource <- Some hwnd
                     dragStartIndex <- group.lorder.list |> List.tryFindIndex ((=) hwnd)
@@ -985,26 +1015,24 @@ type TabStripDecorator(group:WindowGroup) as this =
                     // group up over the one it was taken to.
                     let inFront = group.windows.contains(os.foreground.hwnd)
                     dragParked <- inFront && (match group.layout with Split _ -> true | _ -> false)
-                    if part = TabClose || inFront then group.tabActivate(tab, false)
-                    if part <> TabClose then
+                    if part = TabClose || (inFront && not modified) then group.tabActivate(tab, false)
+                    if part <> TabClose && (not modified || selection.contains hwnd) then
+                        let members = if members.IsEmpty then [hwnd] else members
                         let dragOffset = pt.sub(this.ts.tabLocation tab)
                         let _,sprite = this.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
-                        // The image shows the window at the size it lands at on this monitor, and the
-                        // tab where the strip will put it over that width.
-                        let window = os.windowFromHwnd(hwnd)
-                        let landing =
-                            DragOutPlacement.monitorAt ptScreen
-                            |> Option.map(fun mon -> DragOutPlacement.size window.visibleBounds.size mon.workRect)
-                            |> Option.defaultValue window.visibleBounds.size
-                        let info = { sourceInFront = inFront; tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab); tabShift = 0
-                                     tabAlignment = this.ts.dragAlignment; column = this.ts.dragColumn tab }
-                        let shift = info.shiftFor landing.width
-                        // The tab at full size by its window shown small: the pointer keeps the
-                        // point of the tab it pressed.
-                        let dragImage = fun later -> this.ts.dragImage(tab,landing,later)
-                        let dragInfo = box({ info with tabShift = shift })
-                        let clicked() = if not inFront then this.invokeAsync(fun () -> if group.windows.contains hwnd then group.tabActivate(tab, false))
-                        Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset.add(this.ts.dragTabAt(tab,landing)), ptScreen, dragInfo, clicked)
+                        let info = { sourceInFront=inFront; tab=tab; tabOffset=dragOffset; tabSize=sprite.size; tabInfo=this.ts.tabInfo(tab); tabShift=0
+                                     tabAlignment=this.ts.dragAlignment; column=this.ts.dragColumn tab }
+                        let dragInfo = if members.Length>1 then box {source=this.ts.hwnd; members=members; grabbed=info; infos=members |> List.map(fun h -> Tab h,this.ts.tabInfo(Tab h))} else box info
+                        let offset,draw = this.ts.dragTabs(List.map Tab members,tab)
+                        let clicked() =
+                            if modified then this.invokeSync(fun () ->
+                                completeClick()
+                                this.ts.markTabs(selection.items group.lorder.list |> List.map Tab))
+                            else this.invokeSync(fun () ->
+                                selection.single hwnd
+                                this.ts.markTabs []
+                                if not inFront && group.windows.contains hwnd then group.tabActivate(tab,false))
+                        Services.dragDrop.beginDrag(this.ts.hwnd, draw, dragOffset.add(offset), ptScreen, dragInfo, clicked)
                 | MouseMiddle ->
                     group.tabActivate(tab, false)
             | _ -> ()
@@ -1103,10 +1131,11 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// width, or a column's whole height, the strip took in a tab carried anywhere over the
     /// window's title bar or along its side. The rest of the window's edge offers a split, once
     /// the pointer rests there.
-    member private this.nearTabs(pt:Pt) =
-        let sprites = this.ts.tabSprites.list
-        if not sprites.IsEmpty && this.ts.visible && WinUserApi.IsWindowVisible this.ts.hwnd then
-            let rects = sprites |> List.map(fun (location:Pt,sprite) -> Rect(this.ts.toScreen(location),sprite.size))
+    member private this.screenTabBounds() =
+        this.ts.tabSprites.list |> List.map(fun (point,sprite) -> sprite.id,Rect(this.ts.toScreen point,sprite.size)) |> Map.ofList
+
+    member private this.nearBounds(pt:Pt,rects:Rect list) =
+        if not rects.IsEmpty && this.ts.visible && WinUserApi.IsWindowVisible this.ts.hwnd then
             let margin,reach = Dpi.scale DragRouting.stripMargin,Dpi.scale DragRouting.stripReach
             // Along a row only: down a column, past its last tab is where a tab is dragged out.
             let dx,dy = if this.ts.isVertical then margin,margin else reach,margin
@@ -1114,6 +1143,75 @@ type TabStripDecorator(group:WindowGroup) as this =
             let top,bottom = (rects |> List.map(fun r -> r.top) |> List.min)-dy,(rects |> List.map(fun r -> r.bottom) |> List.max)+dy
             if pt.x>=left && pt.x<right && pt.y>=top && pt.y<bottom then Some this.ts.hwnd else None
         else None
+
+    member private this.nearTabs(pt:Pt) =
+        this.nearBounds(pt,this.ts.rowTabs)
+
+    interface IBatchSlot with
+        member this.endBatch() =
+            if WinUserApi.IsWindow this.ts.hwnd then this.invokeSync(fun () ->
+                this.ts.maskBatch([],false)
+                selection.clear()
+                this.ts.markTabs [])
+        member this.mask(hidden,covered) =
+            if WinUserApi.IsWindow this.ts.hwnd then this.invokeSync(fun () -> this.ts.maskBatch(hidden,covered))
+        member this.slot(pt,members,preview) =
+            if not(WinUserApi.IsWindow this.ts.hwnd) then None
+            else this.invokeSync(fun () ->
+                let bounds = preview |> Option.map(fun frame -> frame.painted) |> Option.defaultWith this.screenTabBounds
+                if this.nearBounds(pt,bounds |> Map.toList |> List.map snd).IsNone then None else
+                let rest = group.lorder.list |> List.filter(fun h -> not(List.contains h members))
+                let vertical = this.ts.isVertical
+                let midpoint (r:Rect) = if vertical then r.top+r.height/2 else r.left+r.width/2
+                let insert (rest:IntPtr list) (members:IntPtr list) =
+                  if members.IsEmpty then rest else
+                  let index =
+                    match preview with
+                    | Some frame when List.filter(fun h -> List.contains h rest) frame.order=rest ->
+                        let before = frame.order |> List.takeWhile(fun h -> not(List.contains h members)) |> List.filter(fun h -> List.contains h rest) |> List.length
+                        let motion = if vertical then frame.motion.y else frame.motion.x
+                        let carried = members |> List.map(fun h -> frame.next.[Tab h])
+                        // Wait for the sliding neighbour's settled midpoint on a reversal.
+                        if motion>0 then
+                            let edge = carried |> List.map(fun r -> if vertical then r.bottom else r.right) |> List.max
+                            let crossed = rest |> List.skip before |> List.takeWhile(fun h ->
+                                edge >= max (midpoint bounds.[Tab h]) (midpoint frame.next.[Tab h]))
+                            before+crossed.Length
+                        elif motion<0 then
+                            let edge = carried |> List.map(fun r -> if vertical then r.top else r.left) |> List.min
+                            let crossed = rest |> List.take before |> List.rev |> List.takeWhile(fun h ->
+                                edge <= min (midpoint bounds.[Tab h]) (midpoint frame.next.[Tab h]))
+                            before-crossed.Length
+                        else before
+                    | _ ->
+                        let pointer = if vertical then pt.y else pt.x
+                        rest |> List.takeWhile(fun h -> bounds.TryFind(Tab h) |> Option.forall(fun r -> pointer>=midpoint r)) |> List.length
+                  List.take index rest @ members @ List.skip index rest
+                let pinned,ordinary = List.partition PinnedTabs.contains rest
+                let pinnedBatch,ordinaryBatch = List.partition PinnedTabs.contains members
+                Some(this.ts.hwnd,insert pinned pinnedBatch @ insert ordinary ordinaryBatch))
+
+        member this.picture(batch,order) = this.invokeSync(fun () ->
+            let sprite = this.ts.carriedRowSprite(batch.infos,List.map Tab order,batch.grabbed.tab,true)
+            let origin = this.ts.toScreen Pt.empty
+            let vertical = sprite.isVertical
+            let axis (p:Pt) = if vertical then p.y else p.x
+            let members = batch.members |> List.map Tab |> Set.ofList
+            let positions = sprite.lorder.list |> List.map(fun tab -> tab,sprite.tabLocation tab) |> Map.ofList
+            let sizes = positions |> Map.map(fun tab _ -> (sprite.tabBounds tab).Size.Sz)
+            let grabbed = sprite.tabBounds batch.grabbed.tab
+            let grip = grabbed.Location.Pt.add(batch.grabbed.offsetIn grabbed.Size.Sz)
+            let bounds = members |> Seq.map sprite.tabBounds |> Seq.reduce(fun a b -> Rectangle.Union(a,b))
+            let first,last,extent =
+                if vertical then bounds.Top,bounds.Bottom,sprite.tabAreaHeight
+                else bounds.Left,bounds.Right,sprite.tabAreaWidth
+            { location=origin.add(sprite.renderBounds.Location.Pt)
+              screenBounds=Map.map(fun tab point -> Rect(origin.add point,sizes.[tab]))
+              positions=fun pointer ->
+                let delta = between (-first,max (-first) (extent-last)) (axis (pointer.sub origin)-axis grip)
+                let offset = if vertical then Pt(0,delta) else Pt(delta,0)
+                positions |> Map.map(fun tab point -> if members.Contains tab then point.add offset else point)
+              draw=fun points -> this.invokeSync(fun () -> sprite.renderAt(fun tab pt -> points |> Map.tryFind tab |> Option.defaultValue pt)) })
 
     interface ITitleBarDropTarget with
         member this.titleBarDrag(starting,report) =

@@ -56,6 +56,7 @@ module Strings =
 
     /// Tab context menu.
     module TabMenu =
+        let closeSelected = { en="Close selected tabs"; zh="关闭选中的标签"; ja="選択したタブを閉じる"; ar="إغلاق علامات التبويب المحددة"; ko="선택한 탭 닫기" }
         let windowBehavior = { en="Window behavior"; zh="窗口行为"; ja="ウィンドウの動作"; ar="سلوك النوافذ"; ko="창 동작" }
         let groupTopmost = { en="Pin group on top"; zh="分组置顶"; ja="グループを常に手前に表示"; ar="إبقاء المجموعة في المقدمة"; ko="그룹을 항상 위에 고정" }
         let keepWindowSizes = { en="Keep each window’s size and position"; zh="保留各窗口的大小和位置"; ja="各ウィンドウのサイズと位置を保持"; ar="الاحتفاظ بحجم كل نافذة وموضعها"; ko="각 창의 크기와 위치 유지" }
@@ -694,7 +695,7 @@ module Strings =
         let restoreDefaults = { en="Restore default shortcuts"; zh="恢复默认快捷键"; ja="既定のショートカットに戻す"; ar="استعادة الاختصارات الافتراضية"; ko="기본 단축키로 되돌리기" }
         let inUse = { en="Shortcut already in use"; zh="快捷键已被占用"; ja="ショートカットは使用中です"; ar="الاختصار مستخدم بالفعل"; ko="이미 사용 중인 단축키" }
         /// A key pressed for one command that another had: it moves, and the other is left without.
-        let takenFrom name = { en=sprintf "Taken from %s" name; zh=sprintf "已从“%s”移过来" name; ja=sprintf "「%s」から移しました" name; ar=sprintf "نُقل من «%s»" name; ko=sprintf "‘%s’에서 옮겨 옴" name }
+        let takenFrom name = { en=sprintf "Taken from %s" name; zh=sprintf "已从“%s”移过来" name; ja=sprintf "「%s」から移しました" name; ar=sprintf "نُقل من «%s»" name; ko=sprintf "‘%s’에서 가져왔습니다" name }
         // Shortcut field messages are kept short to fit.
         let alreadySet = { en="Already set"; zh="已是当前快捷键"; ja="設定済み"; ar="هذا هو الاختصار الحالي"; ko="이미 설정됨" }
         /// A key pressed, then what was said of it, as "Alt+J: Used by Next tab".
@@ -913,15 +914,18 @@ module Strings =
         let noGroup = { en="The window in front is in no group."; zh="当前窗口不在任何分组里。"; ja="手前のウィンドウはどのグループにもありません。"; ar="النافذة الأمامية ليست في أي مجموعة."; ko="현재 창은 그룹에 속해 있지 않습니다." }
         /// What saving did.
         let applied moved detached made closed =
-            let parts (en:string list) = System.String.Join(", ",en |> List.filter(fun part -> part<>""))
-            { en=parts [ (if moved=0 then "" elif moved=1 then "1 window moved" else sprintf "%d windows moved" moved)
-                         (if detached=0 then "" elif detached=1 then "1 window taken out" else sprintf "%d windows taken out" detached)
-                         (if made=0 then "" elif made=1 then "1 group made" else sprintf "%d groups made" made)
-                         (if closed=0 then "" elif closed=1 then "1 window closed" else sprintf "%d windows closed" closed) ]
-              zh=parts [ (if moved=0 then "" else sprintf "移动 %d 个窗口" moved); (if detached=0 then "" else sprintf "移出 %d 个窗口" detached); (if made=0 then "" else sprintf "新建 %d 个分组" made); (if closed=0 then "" else sprintf "关闭 %d 个窗口" closed) ]
-              ja=parts [ (if moved=0 then "" else sprintf "%d 個のウィンドウを移動" moved); (if detached=0 then "" else sprintf "%d 個のウィンドウを外しました" detached); (if made=0 then "" else sprintf "%d 個のグループを作成" made); (if closed=0 then "" else sprintf "%d 個のウィンドウを閉じました" closed) ]
-              ar=parts [ (if moved=0 then "" else sprintf "نُقلت %d نافذة" moved); (if detached=0 then "" else sprintf "أُخرجت %d نافذة" detached); (if made=0 then "" else sprintf "أُنشئت %d مجموعة" made); (if closed=0 then "" else sprintf "أُغلقت %d نافذة" closed) ]
-              ko=parts [ (if moved=0 then "" else sprintf "창 %d개 이동" moved); (if detached=0 then "" else sprintf "창 %d개 떼어 냄" detached); (if made=0 then "" else sprintf "그룹 %d개 만듦" made); (if closed=0 then "" else sprintf "창 %d개 닫음" closed) ] }
+            let parts separator = List.filter ((<>) "") >> String.concat separator
+            { en=parts ", " [ (if moved=0 then "" elif moved=1 then "1 window moved" else sprintf "%d windows moved" moved)
+                              (if detached=0 then "" elif detached=1 then "1 window taken out" else sprintf "%d windows taken out" detached)
+                              (if made=0 then "" elif made=1 then "1 group made" else sprintf "%d groups made" made)
+                              (if closed=0 then "" elif closed=1 then "1 window closed" else sprintf "%d windows closed" closed) ]
+              zh=String.concat "，" [ if moved<>0 then yield sprintf "移动了 %d 个窗口" moved
+                                     if detached<>0 then yield sprintf "移出了 %d 个窗口" detached
+                                     if made<>0 then yield sprintf "新建了 %d 个分组" made
+                                     if closed<>0 then yield sprintf "关闭了 %d 个窗口" closed ]
+              ja=parts "。" [ (if moved=0 then "" else sprintf "%d 個のウィンドウを移動しました" moved); (if detached=0 then "" else sprintf "%d 個のウィンドウを外しました" detached); (if made=0 then "" else sprintf "%d 個のグループを作成しました" made); (if closed=0 then "" else sprintf "%d 個のウィンドウを閉じました" closed) ]
+              ar=parts "، " [ (if moved=0 then "" else sprintf "نُقلت %d نافذة" moved); (if detached=0 then "" else sprintf "أُخرجت %d نافذة" detached); (if made=0 then "" else sprintf "أُنشئت %d مجموعة" made); (if closed=0 then "" else sprintf "أُغلقت %d نافذة" closed) ]
+              ko=parts ". " [ (if moved=0 then "" else sprintf "창 %d개를 이동했습니다" moved); (if detached=0 then "" else sprintf "창 %d개를 그룹에서 분리했습니다" detached); (if made=0 then "" else sprintf "그룹 %d개를 만들었습니다" made); (if closed=0 then "" else sprintf "창 %d개를 닫았습니다" closed) ] }
         let nothingChanged = { en="Nothing changed."; zh="没有改动。"; ja="変更はありません。"; ar="لم يتغير شيء."; ko="변경된 내용이 없습니다." }
         let dropHere = { en="Drop a window here"; zh="拖窗口到这里"; ja="ここにウィンドウをドロップ"; ar="أفلت نافذة هنا"; ko="여기에 창 놓기" }
         /// Said in the footer while the split button's slots are still empty.
@@ -951,6 +955,7 @@ module Strings =
         /// The tab's menu: into another row, listed by their first tabs.
         let moveTo = { en="Move to"; zh="移到"; ja="移動先"; ar="نقل إلى"; ko="이동할 위치" }
         let closeOnSave = { en="Close on save"; zh="保存时关闭"; ja="保存時に閉じる"; ar="إغلاق عند الحفظ"; ko="저장 시 닫기" }
+        let closeSelectedOnSave = { en="Close selected windows on save"; zh="保存时关闭选中的窗口"; ja="保存時に選択したウィンドウを閉じる"; ar="إغلاق النوافذ المحددة عند الحفظ"; ko="저장 시 선택한 창 닫기" }
         /// A window in the bin, kept open after all: back among those with no group.
         let keepOpen = { en="Keep open"; zh="保留，不关闭"; ja="閉じない"; ar="إبقاؤها مفتوحة"; ko="열어 두기" }
         /// The tab menu's first item: the window itself to the front.
@@ -1046,7 +1051,7 @@ module Strings =
         let holdToDrag = { en="Hold still a moment, or hold Shift, Ctrl or Alt, for the app's own right button"; zh="按住不动片刻，或按住 Shift、Ctrl、Alt，右键就交给应用"; ja="少し止めるか Shift・Ctrl・Alt を押すと、右ボタンはアプリのものになります"; ar="اثبت لحظة أو اضغط Shift أو Ctrl أو Alt ليصبح الزر الأيمن للتطبيق"; ko="잠시 멈추거나 Shift, Ctrl, Alt를 누르면 오른쪽 버튼이 앱으로 전달됩니다" }
         /// By the pointer once a right press held still is given back to the app: dragging is then
         /// the app's right-drag, and letting go its menu.
-        let passedToApp = { en="Right button to the app"; zh="右键已交给应用"; ja="右ボタンをアプリへ"; ar="الزر الأيمن للتطبيق"; ko="오른쪽 버튼을 앱으로 전달" }
+        let passedToApp = { en="Right-click passed to the app"; zh="右键已交给应用"; ja="右ボタンの入力をアプリに渡しました"; ar="أُرسل ضغط الزر الأيمن إلى التطبيق"; ko="오른쪽 버튼 입력을 앱에 전달했습니다" }
         let browserPreset = { en="browser preset"; zh="浏览器预设"; ja="ブラウザーのプリセット"; ar="الإعداد المسبق للمتصفح"; ko="브라우저 프리셋" }
         let explorerPreset = { en="File Explorer preset"; zh="资源管理器预设"; ja="エクスプローラーのプリセット"; ar="الإعداد المسبق لمستكشف الملفات"; ko="파일 탐색기 프리셋" }
         let presetFilled (preset:LocalizedText) =

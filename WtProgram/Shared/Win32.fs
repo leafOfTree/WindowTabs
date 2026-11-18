@@ -58,7 +58,7 @@ type MouseButton =
 
 type MouseEvent =
     | MouseMove of Pt
-    | MouseClick of (Pt * MouseButton * MouseAction)
+    | MouseClick of (Pt * MouseButton * MouseAction * Keys)
     | MouseLeave
 
 type OSMouse = {
@@ -805,6 +805,20 @@ module GroupTopmost =
             if not window.isTopMost then window.makeTopMost()
             if window.isTopMost then WinUserApi.RemoveProp(window.hwnd,key) |> ignore
         | _ -> ()
+
+/// Remember which windows the drag hid so a replacement instance can show them again.
+module BatchDragWindows =
+    let private key = "WindowTabs.HiddenForDrag.v1"
+    let private visibility hwnd flag =
+        WinUserApi.SetWindowPos(hwnd,IntPtr.Zero,0,0,0,0,flag ||| SetWindowPosFlags.SWP_NOACTIVATE |||
+            SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOZORDER |||
+            SetWindowPosFlags.SWP_NOOWNERZORDER ||| SetWindowPosFlags.SWP_ASYNCWINDOWPOS)
+    let restore hwnd =
+        if WinUserApi.GetProp(hwnd,key)<>IntPtr.Zero && visibility hwnd SetWindowPosFlags.SWP_SHOWWINDOW then
+            WinUserApi.RemoveProp(hwnd,key) |> ignore
+    let hide hwnd =
+        if WinUserApi.IsWindowVisible hwnd && not(WinUserApi.IsIconic hwnd) && WinUserApi.SetProp(hwnd,key,IntPtr(1)) then
+            if not(visibility hwnd SetWindowPosFlags.SWP_HIDEWINDOW) then WinUserApi.RemoveProp(hwnd,key) |> ignore
 
 /// Store the return point on the foreign window so a replacement instance can recover it.
 module IndependentWindowParking =

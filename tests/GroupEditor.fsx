@@ -24,6 +24,12 @@ let pumpUntil description predicate =
 /// The group editor's model, its plan and the apply pipeline: the pure parts on handles that
 /// stand for windows, then the pipeline on real hidden windows through the production desktop.
 let main() =
+    check ((Strings.GroupEditor.applied 2 0 1 3).zh="移动了 2 个窗口，新建了 1 个分组，关闭了 3 个窗口")
+          "The Chinese save summary did not describe completed changes"
+    let summary = Strings.GroupEditor.applied 2 0 1 0
+    check (summary.ja="2 個のウィンドウを移動しました。1 個のグループを作成しました" &&
+           summary.ko="창 2개를 이동했습니다. 그룹 1개를 만들었습니다")
+          "The Japanese or Korean save summary lost its completed actions"
     let a,b,c,d,e,f = IntPtr 11,IntPtr 22,IntPtr 33,IntPtr 44,IntPtr 55,IntPtr 66
     let pair x y = {tree={axis=SideBySide;ratio=0.5;first=Leaf(Occupied x);second=Leaf(Occupied y)};focused=[First]}
     let occupied hwnd = Leaf(Occupied hwnd)
@@ -118,6 +124,31 @@ let main() =
     let g2 = GroupDraft.ofGroup (IntPtr 2) [d] Set.empty GroupLayout.Single
     let desk = DesktopDraft.ofDesktop [g1;g2] [e;f;a]
     check (desk.loose=[e;f] && DesktopDraft.find a desk=InGroup 0 && DesktopDraft.find e desk=Loose && DesktopDraft.find (IntPtr 99) desk=Nowhere) "The desktop draft did not place its windows"
+    let selection = TabSelection()
+    let order = [a;b;c;d;e]
+    let strip = TabSelection(explicitMarks=true)
+    strip.press(order,a,false,false,a)
+    strip.single a
+    for clicked in [a;c] do
+        strip.press(order,clicked,false,true,a)
+        check (strip.items order=[clicked]) "Ctrl-click should mark only the clicked tab, including the active one"
+        strip.press(order,clicked,false,true,a)
+        check (strip.items order=[]) "A second Ctrl-click should clear the mark"
+    selection.press(order,c,false,true,a)
+    check (selection.items order=[a;c]) "Ctrl-click did not keep the active window"
+    selection.press(order,e,true,false,a)
+    check (selection.items order=[c;d;e]) "Shift-click did not extend from the anchor"
+    selection.press(order,d,false,true,a)
+    check (selection.items order=[c;e]) "Ctrl-click did not remove the clicked window"
+    check (not(selection.canDoubleClickRename(false,false))) "Releasing Ctrl before the second click allowed rename"
+    selection.press(order,c,false,false,a)
+    selection.single c
+    check (not(selection.canDoubleClickRename(false,false))) "Collapsing a multi-selection on release allowed rename"
+    selection.press(order,c,false,false,a)
+    check (selection.canDoubleClickRename(false,false) && not(selection.canDoubleClickRename(true,false)) && not(selection.canDoubleClickRename(false,true)))
+          "Only an unmodified double-click on a single tab should rename it"
+    let block = DesktopDraft.moveBlock [a;b;c;e] 1 0 desk
+    check (block.groups.Length=1 && block.groups.Head.tabs=[a;b;c;e;d] && block.loose=[f]) "A batch lost its destination when its source row emptied"
     let m = DesktopDraft.moveToGroup c 1 (Some 0) desk
     check (m.groups.[0].tabs=[a;b] && m.groups.[1].tabs=[c;d]) "A tab moved to another row did not land at its index"
     let m2 = DesktopDraft.moveToGroup d 0 None desk
@@ -425,6 +456,54 @@ let main() =
             check (image.Height=l.height) "The overview picture is not its own height"
             let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
             let tabIn (row:GroupEditorRowLayout) hwnd = row.tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
+            let multi = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a};{group=Some(IntPtr 2); frame=frame; active=d}],shown,None)
+            let point h = centre (tabIn multi.Layout.rows.[0] h)
+            multi.MouseDown(point a,Keys.Control)
+            multi.MouseUp(point a)
+            multi.MouseDown(point c,Keys.Shift)
+            multi.MouseUp(point c)
+            check (multi.MarkedTabs=[a;b;c]) "Shift-click did not paint a contiguous mark set"
+            multi.MouseDown(point b)
+            let drop = centre multi.Layout.newGroup
+            multi.MouseMove(drop)
+            multi.MouseUp(drop)
+            check ((multi.Draft.groups |> List.map(fun g -> g.tabs))=[[d];[a;b;c]]) "Dragging a range by its middle did not create one group in strip order"
+            multi.Show()
+            let opened = multi.Handle
+            let window = OS().windowFromHwnd opened
+            window.minimize()
+            multi.ActivateEditor()
+            check (multi.Handle=opened && window.isVisible && not window.isMinimized && multi.Draft.groups.Head.tabs=[d])
+                  "Returning to a minimized editor lost its window or its draft"
+            window.hide()
+            check (not window.isVisible) "The native hide fixture stayed visible"
+            multi.ActivateEditor()
+            check (multi.Handle=opened && window.isVisible && multi.Draft.groups.Head.tabs=[d])
+                  "Returning to a natively hidden editor did not show its existing draft"
+            Control.FromHandle(opened).Hide()
+            multi.ActivateEditor()
+            check (window.isVisible && multi.Draft.groups.Head.tabs=[d])
+                  "Returning to a managed-hidden editor did not show its existing draft"
+            check (multi.MarkedTabs.IsEmpty && multi.Drag.IsNone) "A completed batch leaked into the next drag"
+            let loaded = new Bitmap(12,12)
+            multi.SetLoadedIcons [a,loaded]
+            check ((multi.Draft.groups |> List.map(fun g -> g.tabs))=[[d];[a;b;c]]) "Loading icons discarded an edit made after opening"
+            for row,h in [0,d;1,b] do
+                let pt = centre (tabIn multi.Layout.rows.[row] h)
+                multi.MouseDown(pt,Keys.Control)
+                multi.MouseUp(pt)
+            let menuAction h caption =
+                multi.TabMenu h |> List.pick(function CmiRegular item when item.text=tr caption -> Some item.click | _ -> None)
+            menuAction a Strings.GroupEditor.closeOnSave |> ignore
+            menuAction b Strings.GroupEditor.closeSelectedOnSave ()
+            check (multi.Draft.closing=[d;b] && multi.Draft.groups.Head.tabs=[a;c] && multi.MarkedTabs.IsEmpty)
+                  "Close selected on save did not stage exactly the marked windows across rows"
+            multi.Close()
+            let late = new Bitmap(12,12)
+            multi.SetLoadedIcons [b,late]
+            for image in [loaded;late] do
+                let disposed = try ignore image.Width; false with :? ArgumentException -> true
+                check disposed "The editor retained an icon after closing"
             let tabsOf i = editor.Draft.groups.[i].tabs
             let clickTab (row:GroupEditorRowLayout) hwnd = editor.MouseDown(centre (tabIn row hwnd)); editor.MouseUp(centre (tabIn row hwnd))
             // A tab dragged to another row's tabs joins it there as the pointer arrives, the drop changing nothing more.

@@ -517,7 +517,7 @@ let main() =
         for dpi in [96;144] do
             Dpi.set dpi
             api.setValue("enableHoverActivate",box false)
-            let clicks = ResizeArray<MouseButton * Tab * TabPart * MouseAction * Pt>()
+            let clicks = ResizeArray<MouseButton * Tab * TabPart * MouseAction * Pt * Keys>()
             let closes,activations = ResizeArray<Tab>(),ResizeArray<Tab>()
             let monitor = { new ITabStripMonitor with
                                 member _.tabClick args = clicks.Add(args)
@@ -615,8 +615,25 @@ let main() =
                 send WindowMessages.WM_LBUTTONDOWN background
                 send WindowMessages.WM_LBUTTONUP background
                 check (clicks.Count=2) "Background click callbacks were lost"
-                let button,_,part,action,point = clicks.[0]
+                let button,_,part,action,point,_ = clicks.[0]
                 check (button=MouseLeft && part=TabBackground && action=MouseDown && point=background) "Drag-start callback changed"
+                let active = strip.zorder.head
+                let rect = strip.rowTab active
+                let point = Pt(rect.left+rect.width/2,rect.top+rect.height/2).sub(strip.toScreen Pt.empty)
+                let ctrl message =
+                    WinUserApi.SendMessage(strip.hwnd,message,IntPtr(MouseMessageKeyStateMask.MK_CONTROL),
+                                           IntPtr((point.y <<< 16) ||| point.x)) |> ignore
+                let firstClick = clicks.Count
+                ctrl WindowMessages.WM_LBUTTONDOWN
+                ctrl WindowMessages.WM_LBUTTONUP
+                ctrl WindowMessages.WM_LBUTTONDBLCLK
+                ctrl WindowMessages.WM_LBUTTONUP
+                let actions = clicks |> Seq.skip firstClick |> Seq.map(fun (_,tab,_,action,_,keys) -> tab,action,keys) |> Seq.toList
+                check (actions=[for action in [MouseDown;MouseUp;MouseDown;MouseUp] -> active,action,Keys.Control])
+                      (sprintf "Two Ctrl-clicks on the active tab did not deliver two selection presses: %A" actions)
+                send WindowMessages.WM_LBUTTONDBLCLK point
+                let _,_,_,plainDouble,_,_ = clicks.[clicks.Count-1]
+                check (plainDouble=MouseDblClick) "An ordinary double-click lost its rename action"
 
                 let buttons() =
                     strip.sprite.children.list |> List.choose(fun (pt,sprite) ->
@@ -625,7 +642,16 @@ let main() =
                         | _ -> None)
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 let restingTabs = strip.rowTabs
+                let drawnBounds = strip.tabSprites.list |> List.map(fun (pt,tab) -> Rect(strip.toScreen pt,tab.size))
+                check (restingTabs.Length=drawnBounds.Length && restingTabs |> List.forall(fun r -> List.contains r drawnBounds))
+                      "Drag hit testing disagreed with the rendered tab bounds"
                 strip.addButtonMode <- "Always"
+                let carriedTabs = strip.lorder.list |> List.take 2
+                let _,drawCarried = strip.dragTabs(carriedTabs,carriedTabs.Head)
+                use carriedPicture = (drawCarried()).bitmap
+                let outerY = if strip.direction=TabUp then 0 else carriedPicture.Height-1
+                check (carriedPicture.GetPixel(0,outerY).A<32uy && carriedPicture.GetPixel(carriedPicture.Width-1,outerY).A<32uy)
+                      "The floating selection kept a square end from the source row"
                 check (buttons().Length=1 && (strip.tryHit(snd (buttons().Head)) |> Option.exists(fun (_,part) -> part=TabNew)))
                       "The permanent button was not clickable with the pointer away"
                 strip.addButtonMode <- "Never"
@@ -672,7 +698,7 @@ let main() =
                                            WindowMessages.WM_RBUTTONDOWN,WindowMessages.WM_RBUTTONUP,MouseRight] do
                         send down pt
                         send up pt
-                        let actual,_,hit,action,_ = clicks.[clicks.Count-1]
+                        let actual,_,hit,action,_,_ = clicks.[clicks.Count-1]
                         check (actual=button && hit=part && action=MouseUp) "An add button click reached the wrong action"
                 // The screenshot case: the native strip is full before hover. Its layered
                 // window must grow beyond that viewport for the button to actually receive input.
@@ -687,7 +713,7 @@ let main() =
                 send WindowMessages.WM_MOUSEMOVE outside
                 send WindowMessages.WM_RBUTTONDOWN outside
                 send WindowMessages.WM_RBUTTONUP outside
-                let mouse,_,hit,released,_ = clicks.[clicks.Count-1]
+                let mouse,_,hit,released,_,_ = clicks.[clicks.Count-1]
                 check (mouse=MouseRight && hit=TabNew && released=MouseUp) "The extended surface lost the add button click"
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 check (strip.bounds.size=packed) "The floating surface stayed after hover ended"
@@ -744,7 +770,7 @@ let main() =
                     let rowLength() =
                         let first,(last,lastSprite) = strip.tabSprites.head,strip.tabSprites.list |> List.last
                         last.x+lastSprite.size.width-(fst first).x
-                    let menuClicks() = clicks |> Seq.filter(fun (button,_,_,action,_) -> button=MouseRight && action=MouseUp) |> Seq.length
+                    let menuClicks() = clicks |> Seq.filter(fun (button,_,_,action,_,_) -> button=MouseRight && action=MouseUp) |> Seq.length
                     let span() = size.width-rowLength()
                     let opened = menuClicks()
                     send WindowMessages.WM_RBUTTONDOWN (at 20)
@@ -1023,34 +1049,17 @@ let main() =
                     for inside in [false;true] do
                         strip.setPlacement(placement start columnSize inside)
                         strip.isShrunk <- false
-                        // A tab dragged from a column carries its window shown small, with the tab in
-                        // a column of its own on the same side, as the window lands; it carried the
-                        // tab alone. Let go, the window lands so that the tab is still under the
-                        // pointer, its column outside the window's edge and in the work area with it.
                         if not inside then
                             do
-                                let dragged = strip.lorder.list.Head
+                                let tabs = strip.lorder.list |> List.take 2
+                                let dragged = List.last tabs
                                 let landing = Sz(400,300)
-                                let shown = Sz(200,150)
                                 let column = (strip.dragColumn dragged).Value
-                                // The window's picture comes from another thread, a moment later. Composed
-                                // there from the strip's live state, it failed and never came.
-                                let arrived = ref false
-                                let image = strip.dragImage(dragged,landing,fun later -> arrived.Value <- true; later.bitmap.Dispose())
-                                let until = DateTime.Now.AddSeconds 3.0
-                                while not arrived.Value && DateTime.Now<until do
-                                    Application.DoEvents()
-                                    Threading.Thread.Sleep 20
-                                check arrived.Value (sprintf "A tab dragged from a %A column never got its window's picture" dock)
-                                try
-                                    // With room all round for the window's shadow.
-                                    let m = Dpi.scale DragImage.shadow
-                                    check (image.width=shown.width+column.width-column.seam+2*m && image.height>=shown.height+2*m)
-                                          (sprintf "A tab dragged from a %A column carries no window beside its column: %A" dock image.size)
-                                    let at = strip.dragTabAt(dragged,landing)
-                                    check (if dock=TabDockRight then at.x>=shown.width-column.seam+m else at.x<column.width+m)
-                                          (sprintf "The dragged tab is not on the %A of its window: %A" dock at)
-                                finally image.bitmap.Dispose()
+                                let at,draw = strip.dragTabs(tabs,dragged)
+                                use picture = (draw()).bitmap
+                                let first,last = strip.rowTab tabs.Head,strip.rowTab dragged
+                                check (at=Pt(0,first.height) && picture.Width=last.width && picture.Height=first.height+last.height)
+                                      "The drag image did not carry both tabs at their actual sizes with the grabbed tab under the pointer"
                                 let drag = { sourceInFront=true; tab=dragged; tabOffset=Pt(12,9); tabSize=Sz(100,30); tabInfo=strip.tabInfo dragged; tabShift=0; tabAlignment=TabLeft; column=Some column }
                                 let pointer = Pt(900,400)
                                 let frame = DragOutPlacement.landing pointer drag landing Pt.empty None

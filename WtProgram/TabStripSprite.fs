@@ -981,7 +981,7 @@ type TabStripSprite<'id> when 'id : equality = {
         if this.isVertical then 0
         elif this.reserveAddButton then this.addButtonSide
         else TabAddButton.hoverReserve this.size this.buttonScreen
-    member private this.tabAreaWidth = this.size.width-this.rowButtonWidth
+    member this.tabAreaWidth = this.size.width-this.rowButtonWidth
     member this.tabAreaHeight =
         if this.reserveAddButton && this.isVertical then this.size.height-min this.rowStep (this.size.height/2)
         else this.size.height
@@ -1503,6 +1503,10 @@ type TabStripSprite<'id> when 'id : equality = {
             member _.children = List2(this.addButtons @ body.children.list) }
 
     member this.renderTab tab = this.tabSprite(tab).render
+
+    member this.renderCarriedTab(tab,first,last) =
+        let sprite = this.tabSpriteOf tab
+        ({sprite with roundLeft=first || this.isSpaced; roundRight=last || this.isSpaced} :> ISprite).render
 
     member this.renderAt(position) =
         let clip = if this.reserveAddButton || this.rowButtonWidth>0 then Some(Rectangle(0,0,this.tabAreaWidth,this.tabAreaHeight)) else None

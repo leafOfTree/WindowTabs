@@ -6,7 +6,7 @@ param([ValidateRange(1, 3600)][int]$TimeoutSeconds = 120, [switch]$Coverage,
       [switch]$NoRetry,
       # Run the suites on the current desktop instead of a hidden one, to watch them.
       [switch]$VisibleDesktop,
-      [ValidateSet('Reliability', 'Architecture', 'SplitView', 'GroupEditor', 'StartupGrouping', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'GroupOperations', 'CommandPalette', 'PopupRendering', 'TabInteraction', 'TaskbarPreview', 'PrintWindowProbe', 'MouseGestures', 'SplitViewDesktop')]
+      [ValidateSet('Reliability', 'Architecture', 'SplitView', 'GroupEditor', 'StartupGrouping', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'GroupOperations', 'CommandPalette', 'PopupRendering', 'TabInteraction', 'TaskbarPreview', 'PrintWindowProbe', 'MouseGestures', 'SplitViewDesktop', 'GroupEditorDesktop')]
       [string[]]$Suites = @('Reliability', 'Architecture', 'SplitView', 'GroupEditor', 'StartupGrouping', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'GroupOperations', 'CommandPalette', 'PopupRendering', 'TabInteraction', 'TaskbarPreview', 'PrintWindowProbe', 'MouseGestures'))
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent

@@ -179,11 +179,18 @@ type GroupEditorDragImage(owner:Form) =
             (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
              WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TRANSPARENT)
     let window = os.windowFromHwnd(helper.hwnd)
+    let mutable shown : Bitmap option = None
     do window.setParent(os.windowFromHwnd(owner.Handle))
     member _.Show(image:Bitmap,at:Point) =
-        Win32Helper.UpdateLayeredWindow(helper.hwnd,at,image,255uy)
-        window.showNoActivate()
-    member _.Hide() = window.hide()
+        match shown with
+        | Some previous when obj.ReferenceEquals(previous,image) -> window.updateLocation(at.Pt)
+        | _ ->
+            Win32Helper.UpdateLayeredWindow(helper.hwnd,at,image,255uy)
+            window.showNoActivate()
+            shown <- Some image
+    member _.Hide() =
+        window.hide()
+        shown <- None
     interface IDisposable with
         member _.Dispose() = (helper :?> IDisposable).Dispose()
 
@@ -200,6 +207,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// The group of the row expanded, by its strip, or by its first tab for a group made here.
     let mutable expandedKey : (IntPtr option * IntPtr) option =
         expanded |> Option.bind(fun index -> draft.groups |> List.tryItem index) |> Option.map(fun g -> g.group,List.head g.tabs)
+    let selection = TabSelection(explicitMarks=true)
+    let ordered() = (current.groups |> List.collect(fun g -> g.tabs)) @ current.loose @ current.closing
+    let mutable batchSlot : (int * int) option = None
+    let mutable batch = []
+    let mutable completeClick : unit -> unit = ignore
+    let mutable modifiedPress = false
     let mutable selected = IntPtr.Zero
     /// The cell the keys moved the focus to, in place of the selected tab's.
     let mutable cellFocus : PanePath option = None
@@ -267,9 +280,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         morph <- None
     let ended = Event<unit>()
     let saved = Event<DesktopPlan>()
+    let mutable loadedIcons : Map<IntPtr,Image> = Map.empty
     let byHwnd = windows |> List.map(fun window -> window.hwnd,window) |> Map.ofList
     let nameOf hwnd = byHwnd.TryFind hwnd |> Option.map(fun window -> window.name) |> Option.defaultValue ""
-    let iconOf hwnd = byHwnd.TryFind hwnd |> Option.bind(fun window -> window.icon)
+    let iconOf hwnd = loadedIcons.TryFind hwnd |> Option.orElseWith(fun () -> byHwnd.TryFind hwnd |> Option.bind(fun window -> window.icon))
     let hasPicture hwnd = byHwnd.TryFind hwnd |> Option.exists(fun window -> not window.minimized)
     let fallbackFrame = rows |> List.tryHead |> Option.map(fun row -> row.frame) |> Option.defaultValue (Rect(Pt(),Sz(1600,900)))
     /// The screen the popup opens on: the one with the window in front, or the first row's.
@@ -453,7 +467,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let insertAt slot (tabs:IntPtr list) = let n = min slot tabs.Length in (List.take n tabs)@[ghostHwnd]@(List.skip n tabs)
         let inHand = if lifted then drag |> Option.map(fun d -> d.hwnd) else None
         let standing (tabs:IntPtr list) = match inHand with Some hwnd -> tabs |> List.filter((<>) hwnd) | None -> tabs
-        let rowTabs index (g:GroupDraft) = match ghost with Some(GhostInRow(row,slot)) when row=index -> insertAt slot (standing g.tabs) | _ -> standing g.tabs
+        let rowTabs index (g:GroupDraft) =
+            match batchSlot with
+            | Some(row,slot) when row=index ->
+                let rest = g.tabs |> List.filter(fun hwnd -> not(List.contains hwnd batch))
+                let at = min slot rest.Length
+                List.take at rest @ batch @ List.skip at rest
+            | _ -> match ghost with Some(GhostInRow(row,slot)) when row=index -> insertAt slot (standing g.tabs) | _ -> standing g.tabs
         let paneOf (g:GroupDraft) = let panes = GroupDraft.paneWindows g in fun hwnd -> List.contains hwnd panes
         let looseNow = match ghost with Some(GhostInLoose slot) -> insertAt slot (standing current.loose) | _ -> standing current.loose
         let vacatedRects = ResizeArray<Rectangle>()
@@ -689,6 +709,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         else
             use brush = new SolidBrush(fill)
             g.FillPath(brush,shape)
+            if selection.contains hwnd then
+                use edge = new Pen(accent,float32(scale 2))
+                g.DrawPath(edge,shape)
             let iconSize = scale GroupEditorMetrics.iconSize
             let iconBounds = Rectangle(r.X+scale 8,r.Y+(r.Height-iconSize)/2,iconSize,iconSize)
             drawIconOn g (iconOf hwnd) iconBounds
@@ -703,7 +726,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// Every tab of the layout with how it is drawn now.
     let ghostLook (rect:Rectangle) (band:Color) = {rect=rect; selected=false; seamAfter=false; onContent=false; blank=false; ghost=true; band=band; hot=false}
     let tabLooks (l:GroupEditorLayout) =
-        let inHand hwnd = drag |> Option.exists(fun d -> d.begun && d.hwnd=hwnd)
+        let inHand hwnd = drag |> Option.exists(fun d -> d.begun && (d.hwnd=hwnd || List.contains hwnd batch))
         (l.rows |> List.collect(fun row ->
             let g = (groupAt row.index).Value
             let inPane = GroupDraft.paneWindows g
@@ -714,7 +737,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             // the split is one piece, the content being all of theirs.
             let split = List.contains shown inPane
             row.tabs |> List.map(fun (hwnd,r) ->
-                let ghost = ghostHere && inHand hwnd
+                let ghost = inHand hwnd && (ghostHere || (batchSlot |> Option.exists(fun (target,_) -> target<>row.index)))
                 let selected = row.expanded && (hwnd=shown || (split && List.contains hwnd inPane))
                 hwnd,{rect=r; selected=selected; seamAfter=GroupDraft.seamAfter hwnd g; onContent=row.expanded; blank=inHand hwnd && not ghost; ghost=ghost; band=rowFill; hot=false})))
         @(l.looseTabs |> List.map(fun (hwnd,r) ->
@@ -960,7 +983,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         match d.aim with
         | Some(StripSlot(index,slot)) ->
             l.rows |> List.tryItem index |> Option.iter(fun row ->
-                let others = row.tabs |> List.filter(fun (hwnd,_) -> hwnd<>d.hwnd)
+                let others = row.tabs |> List.filter(fun (hwnd,_) -> hwnd<>d.hwnd && not(List.contains hwnd batch))
                 let x,y,h =
                     match List.tryItem slot others,List.tryItem (slot-1) others with
                     | Some(_,r),_ -> r.X-scale GroupEditorMetrics.tabGap/2,r.Y,r.Height
@@ -1141,6 +1164,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable sizing = false
     let mutable userSized = false
     let mutable onResized : Size -> unit = ignore
+    let mutable onEscape : unit -> unit = ignore
     let form =
         let f =
             // An ordinary window with the system's title bar, not on top of everything: a tool to
@@ -1148,6 +1172,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             // dragging its edges or maximizing it, the rows taking the width and the expanded row's
             // content the height.
             { new Form() with
+                override this.ProcessCmdKey(msg,keys) =
+                    if (keys &&& Keys.KeyCode)=Keys.Escape then onEscape(); true
+                    else base.ProcessCmdKey(&msg,keys)
                 override this.OnResize(e) =
                     base.OnResize(e)
                     if placed && not sizing && this.WindowState<>FormWindowState.Minimized then onResized this.ClientSize
@@ -1210,10 +1237,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// The drag image: one window for the popup's life, up with the tab's picture while a tab is
     /// in hand, moved with the pointer, hidden on the drop and gone with the popup.
     let mutable dragImage : GroupEditorDragImage option = None
-    let mutable dragPicture : (Bitmap * IntPtr) option = None
+    let mutable dragPicture : ((Bitmap * Pt) * IntPtr) option = None
     let hideDragImage() =
         dragImage |> Option.iter(fun window -> window.Hide())
-        dragPicture |> Option.iter(fun (image,_) -> image.Dispose())
+        dragPicture |> Option.iter(fun ((image,_),_) -> image.Dispose())
         dragPicture <- None
     let closeDragImage() =
         hideDragImage()
@@ -1228,15 +1255,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     let window = new GroupEditorDragImage(form)
                     dragImage <- Some window
                     window
-            let image =
+            let image,offset =
                 match dragPicture with
                 | Some(image,hwnd) when hwnd=d.hwnd -> image
                 | _ ->
-                    dragPicture |> Option.iter(fun (image,_) -> image.Dispose())
-                    let image = dragImageFor d.hwnd
+                    dragPicture |> Option.iter(fun ((image,_),_) -> image.Dispose())
+                    let tabs = if batch.IsEmpty then [d.hwnd] else batch
+                    let layout = tabs |> List.map(fun h -> h,Sz(tabWidth h,scale GroupEditorMetrics.tabHeight))
+                                      |> DragTabs.layout false (Screen.FromControl(form).WorkingArea.Width)
+                    let offset = fst layout |> List.find(fun (h,_) -> h=d.hwnd) |> snd
+                    let image = (DragTabs.render dragImageFor layout).bitmap,offset.location
                     dragPicture <- Some(image,d.hwnd)
                     image
-            window.Show(image,form.PointToScreen(Point(view.X-d.offset.X,view.Y-d.offset.Y)))
+            window.Show(image,form.PointToScreen(Point(view.X-d.offset.X-offset.x,view.Y-d.offset.Y-offset.y)))
 
     let releaseThumbnails() =
         for KeyValue(_,thumb) in thumbs do DwmApi.DwmUnregisterThumbnail(thumb) |> ignore
@@ -1382,6 +1413,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             menu |> Option.iter(fun each -> each.Dispose())
             menu <- None
             releaseThumbnails()
+            for KeyValue(_,image) in loadedIcons do image.Dispose()
+            loadedIcons <- Map.empty
             form.Hide()
             ended.Trigger()
             plan |> Option.iter saved.Trigger
@@ -1480,7 +1513,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         // New group an item of its own under Move to: one action, with no list to open.
         let newGroup = if alone then [] else [ regular (tr Strings.GroupEditor.newGroup) (fun () -> takeOut hwnd) ]
         let moveTo = if rows.IsEmpty then [] else [ CmiPopUp({ text=tr Strings.GroupEditor.moveTo; image=None; items=List2(rows) }) ]
-        let close = [ CmiSeparator; regular (tr Strings.GroupEditor.closeOnSave) (fun () -> slid (fun () -> moved (DesktopDraft.moveToClosing hwnd current) hwnd)) ]
+        let targets = selection.contextTargets(ordered(),hwnd)
+        let closeText = if targets.Length>1 then Strings.GroupEditor.closeSelectedOnSave else Strings.GroupEditor.closeOnSave
+        let close = [ CmiSeparator; regular (tr closeText) (fun () -> slid (fun () ->
+                        let next = targets |> List.fold (fun state h -> DesktopDraft.moveToClosing h state) current
+                        if targets.Length>1 then selection.clear()
+                        moved next hwnd)) ]
         // The window itself first: to see which one the tab is, the editor staying up behind it.
         let goTo = [ regular (tr Strings.GroupEditor.goToWindow) (fun () -> Services.program.activateWindow hwnd); CmiSeparator ]
         List2(
@@ -1489,6 +1527,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 goTo @ moveTo @ newGroup @ (if inPane then [ regular (tr Strings.GroupEditor.leavePane) (fun () -> leavePane hwnd) ] else []) @ close
             | Loose -> goTo @ moveTo @ newGroup @ close
             | Closing -> goTo @ [ regular (tr Strings.GroupEditor.keepOpen) (fun () -> keepOpen hwnd) ] @ moveTo
+                         @ (if targets |> List.exists(fun h -> DesktopDraft.find h current<>Closing) then close else [])
             | Nowhere -> [])
 
     /// The row scrolled into sight, when the rows are taller than the popup shows.
@@ -1609,7 +1648,23 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// the mouse's.
     let press (keys:Keys) =
       if not closed && (keys &&& Keys.KeyCode)=Keys.Escape then
-        if flyout then (flyout <- false; refresh())
+        if drag.IsSome then
+            let d = drag.Value
+            current <- d.origin
+            selected <- d.originSelected
+            drag <- None
+            hideDragImage()
+            lifted <- false
+            vacated <- []
+            batchSlot <- None
+            layoutKey <- None
+            batch <- []
+            selection.clear()
+            refresh()
+        elif not((selection.items (ordered())).IsEmpty) then
+            selection.clear()
+            refresh()
+        elif flyout then (flyout <- false; refresh())
         elif (expandedRow()).IsSome then expand None
         else cancel()
 
@@ -1639,14 +1694,24 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     /// A press at the point: the empty cell's cross, the split button and its shapes, the buttons,
     /// the row's menu button; else a tab taken in hand.
-    let mouseDown (pt:Point) =
+    let mouseDown (keys:Keys) (pt:Point) =
       if not closed then
         let l = layout()
         let view = pt
         let pt = unscroll pt
         let take hwnd (r:Rectangle) =
-            drag <- Some {hwnd=hwnd; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)
-                          origin=current; originSelected=selected}
+            modifiedPress <- keys.HasFlag Keys.Shift || keys.HasFlag Keys.Control
+            completeClick <- selection.beginPress(ordered(),hwnd,keys.HasFlag Keys.Shift,keys.HasFlag Keys.Control,hwnd)
+            let marked = selection.items (ordered())
+            batch <- if marked.IsEmpty && not modifiedPress then [hwnd] else marked
+            refresh()
+            if not modifiedPress || selection.contains hwnd then
+                drag <- Some {hwnd=hwnd; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)
+                              origin=current; originSelected=selected}
+        let hitTab = (l.rows |> List.collect(fun row -> row.tabs)) @ l.looseTabs @ l.closingTabs
+        if not(hitTab |> List.exists(fun (_,r) -> r.Contains pt)) && not((selection.items (ordered())).IsEmpty) then
+            selection.clear()
+            refresh()
         let expandedIndex = expandedRow()
         let shapes = expandedIndex |> Option.bind(fun i -> l.rows |> List.tryItem i) |> Option.map(fun row -> row.shapes) |> Option.defaultValue []
         let track = viewBody l
@@ -1731,12 +1796,32 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             rowDrag <- Some {d with at=pt; aim=aim; begun=true}
             if form.IsHandleCreated then form.Invalidate()
 
+    let batchAim l view pt hwnd =
+        if offRows l view pt then None else
+        match aimAt l pt hwnd with
+        | Some(StripSlot(row,_)) ->
+            let rest = l.rows.[row].tabs |> List.filter(fun (h,_) -> not(List.contains h batch))
+            Some(StripSlot(row,slotAt rest pt hwnd))
+        | Some NewGroupRow -> Some NewGroupRow
+        | Some CloseRow -> Some CloseRow
+        | _ -> None
+
     let tabMove (view:Point) (pt:Point) =
         match drag with
         | Some d ->
             let threshold = SystemInformation.DragSize
             let begun = d.begun || abs(pt.X-d.start.X)>threshold.Width/2 || abs(pt.Y-d.start.Y)>threshold.Height/2
-            if begun then
+            if begun && batch.Length>1 then
+                let l = layout()
+                let aim = batchAim l view pt d.hwnd
+                drag <- Some {d with at=pt; begun=true; aim=aim}
+                if not d.begun || aim<>d.aim then
+                    let before = tabLooks l
+                    batchSlot <- match aim with Some(StripSlot(row,slot)) -> Some(row,slot) | _ -> None
+                    layoutKey <- None
+                    slide before
+                    refresh()
+            elif begun then
                 let l = layout()
                 let before = tabLooks l
                 // Carried off the rows, the tab goes back to where it was taken from, as if it had
@@ -1814,7 +1899,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 drag <- Some {d with at=pt; aim=aim; fits=fits; begun=true}
                 if reordered || restored || moved then slide before
                 // The picture itself changes only as the aim does; the tab in hand just moves over it.
-                if changed then refresh() elif form.IsHandleCreated then form.Invalidate()
+                if changed then refresh()
         | None ->
             let l = layout()
             let overTabRect = (l.rows |> List.collect(fun row -> row.tabs))@l.looseTabs@l.closingTabs |> List.tryFind(fun (_,r) -> r.Contains pt)
@@ -1851,9 +1936,24 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         match drag with
         | Some d ->
             let before = tabsNow()
+            let batchDrop =
+                if not d.begun || batch.Length<2 then None
+                elif pt=d.at then d.aim
+                else batchAim (layout()) view pt d.hwnd
             drag <- None
+            batchSlot <- None
+            layoutKey <- None
             lifted <- false
-            if d.begun then
+            if d.begun && batch.Length>1 then
+                match batchDrop with
+                | Some(StripSlot(row,slot)) ->
+                    moved (DesktopDraft.moveBlock batch row slot current) d.hwnd
+                | Some NewGroupRow ->
+                    let next = DesktopDraft.newGroup batch.Head current
+                    moved (DesktopDraft.moveBlock batch (next.groups.Length-1) 0 next) d.hwnd
+                | Some CloseRow -> moved (List.fold(fun d h -> DesktopDraft.moveToClosing h d) current batch) d.hwnd
+                | _ -> ()
+            elif d.begun then
                 let l = layout()
                 match (if offRows l view pt then None else aimAt l pt d.hwnd) with
                 | Some aim ->
@@ -1867,7 +1967,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         cellFocus <- None
                     | _ -> ()
                 | None -> ()
+            elif modifiedPress then completeClick()
             else
+                selection.single d.hwnd
                 // A click on a tab: in a folded row, the row expands on it; in the expanded row it
                 // is selected, or, selected already, folds the row.
                 match DesktopDraft.find d.hwnd current,expandedRow() with
@@ -1881,6 +1983,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     selected <- d.hwnd
                     refresh()
                 | _ -> ()
+            if d.begun then selection.clear()
             vacated <- []
             slide before
             refresh()
@@ -1901,6 +2004,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
              | _ when not d.begun -> expand (if expandedRow()=Some d.index then None else Some d.index)
              | _ -> if form.IsHandleCreated then form.Invalidate())
         | None -> tabUp view pt
+        batch <- []
+        modifiedPress <- false
+        completeClick <- ignore
 
     /// A right click on a tab of a group: a menu to take the window out of it; on a row's empty
     /// room, the row's menu.
@@ -1927,7 +2033,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         if (DateTime.UtcNow-menuClosedAt).TotalMilliseconds<500.0 then
             menuClosedAt <- DateTime.MinValue
             if button=MouseButtons.Right then menuAt pt else closingClick <- true
-        elif button=MouseButtons.Left then mouseDown pt
+        elif button=MouseButtons.Left then mouseDown Control.ModifierKeys pt
         elif button=MouseButtons.Right then menuAt pt
     let buttonUp (button:MouseButtons) (pt:Point) =
         if closingClick then closingClick <- false
@@ -1958,14 +2064,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             scrollFrame()
 
     do
-        form.KeyDown.Add(fun e ->
-            if e.KeyCode=Keys.Escape then
-                press e.KeyData
-                e.Handled <- true
-                e.SuppressKeyPress <- true)
+        onEscape <- fun () -> press Keys.Escape
         form.MouseDown.Add(fun e -> buttonDown e.Button e.Location)
         form.MouseMove.Add(fun e -> mouseMove e.Location)
         form.MouseUp.Add(fun e -> buttonUp e.Button e.Location)
+        form.MouseCaptureChanged.Add(fun _ ->
+            if drag.IsSome && not form.Capture then
+                form.BeginInvoke(Action(fun () ->
+                    if not closed && drag.IsSome && not form.Capture then press Keys.Escape)) |> ignore)
         form.MouseWheel.Add(fun e -> wheel e.Delta)
         form.MouseLeave.Add(fun _ ->
             pointTitle None
@@ -1993,6 +2099,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// The draft as edited so far.
     member _.Draft = current
     member _.Selected = selected
+    member _.MarkedTabs = selection.items (ordered())
     /// The row expanded, if one is.
     member _.Expanded = expandedRow()
     member _.Layout = layout()
@@ -2030,7 +2137,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.Sliding = sliding
     /// Whether a row is still growing or folding.
     member _.Morphing = morph.IsSome
-    member _.MouseDown(pt:Point) = mouseDown pt
+    member _.MouseDown(pt:Point,?keys:Keys) = mouseDown (defaultArg keys Keys.None) pt
     member _.MouseMove(pt:Point) = mouseMove pt
     /// The caption after the title.
     member _.Summary = summary()
@@ -2059,13 +2166,34 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.Ended = ended.Publish
     /// Saved: the plan to apply.
     member _.Saved = saved.Publish
-    member _.Show() =
+    /// Icons arrive after the first paint. The popup may already have been dismissed.
+    member _.SetLoadedIcons(icons:(IntPtr * Image) list) =
+        for hwnd,image in icons do
+            if closed then image.Dispose()
+            else
+                loadedIcons.TryFind hwnd |> Option.iter(fun previous -> previous.Dispose())
+                loadedIcons <- loadedIcons.Add(hwnd,image)
+        if not closed && not icons.IsEmpty then
+            let old = bitmap
+            bitmap <- render()
+            if not(isNull old) then old.Dispose()
+            form.Invalidate()
+
+    member _.ActivateEditor() =
+        if not closed then
+            // Native hiding can leave WinForms' Visible property out of sync.
+            form.Show()
+            let window = OS().windowFromHwnd(form.Handle)
+            if not window.isVisible then window.showNoActivate()
+            window.setForegroundOrRestore(true)
+            form.Activate()
+
+    member this.Show() =
         let l = layout()
         place l
         bitmap <- render()
         form.Show()
         form.Update()
-        OS().windowFromHwnd(form.Handle).setForegroundOrRestore(true)
-        form.Activate()
+        this.ActivateEditor()
         refresh()
         expandedRow() |> Option.iter showRow

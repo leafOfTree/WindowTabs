@@ -259,8 +259,7 @@ shapes, folds the expanded row, and from the overview cancels. (A full set of ke
 Tab between the rows to Ctrl+Enter, was tried and dropped: nobody reached for them, and
 the footer line listing them read as something to configure.) The
 popup stays up while the user works elsewhere, unlike the palette: it is a tool to come back
-to, so clicking outside it changes nothing, and it closes only by Save, Cancel, Esc or its
-own command again. Dragging its title, or the footer's free room, moves it, and it stays
+to. Running its command again restores the existing editor and brings its draft to the front. Dragging its title, or the footer's free room, moves it, and it stays
 where it was put. Every tab and row has an
 accessible name; the picture is a custom-drawn control, as the switcher's icon view is, not
 a tree of WinForms controls.
