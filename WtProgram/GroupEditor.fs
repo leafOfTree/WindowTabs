@@ -179,11 +179,18 @@ type GroupEditorDragImage(owner:Form) =
             (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
              WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TRANSPARENT)
     let window = os.windowFromHwnd(helper.hwnd)
+    let mutable shown : Bitmap option = None
     do window.setParent(os.windowFromHwnd(owner.Handle))
     member _.Show(image:Bitmap,at:Point) =
-        Win32Helper.UpdateLayeredWindow(helper.hwnd,at,image,255uy)
-        window.showNoActivate()
-    member _.Hide() = window.hide()
+        match shown with
+        | Some previous when obj.ReferenceEquals(previous,image) -> window.updateLocation(at.Pt)
+        | _ ->
+            Win32Helper.UpdateLayeredWindow(helper.hwnd,at,image,255uy)
+            window.showNoActivate()
+            shown <- Some image
+    member _.Hide() =
+        window.hide()
+        shown <- None
     interface IDisposable with
         member _.Dispose() = (helper :?> IDisposable).Dispose()
 
@@ -1808,7 +1815,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     layoutKey <- None
                     slide before
                     refresh()
-                else form.Invalidate()
             elif begun then
                 let l = layout()
                 let before = tabLooks l
@@ -1887,7 +1893,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 drag <- Some {d with at=pt; aim=aim; fits=fits; begun=true}
                 if reordered || restored || moved then slide before
                 // The picture itself changes only as the aim does; the tab in hand just moves over it.
-                if changed then refresh() elif form.IsHandleCreated then form.Invalidate()
+                if changed then refresh()
         | None ->
             let l = layout()
             let overTabRect = (l.rows |> List.collect(fun row -> row.tabs))@l.looseTabs@l.closingTabs |> List.tryFind(fun (_,r) -> r.Contains pt)

@@ -82,6 +82,11 @@ let main() =
         move (Point(last.X+80,last.Y))
         check (editor.Drag |> Option.exists(fun drag -> drag.begun)) "Real input did not start a drag"
         check (List.map fst editor.Layout.rows.[1].tabs=[d;a;b]) "The destination did not make room for the block before release"
+        pump 250
+        let mutable invalidations = 0
+        form.Invalidated.Add(fun _ -> invalidations <- invalidations+1)
+        editor.MouseMove(Point(last.X+81,last.Y))
+        check (invalidations=0) "Moving the drag image within the same slot invalidated the editor"
         button false
         key Keys.ControlKey false
         check (editor.MarkedTabs.IsEmpty && editor.Drag.IsNone && (editor.Draft.groups |> List.map(fun g -> g.tabs))=[[c];[d;a;b]]) "Batch release retained its drag or selection"

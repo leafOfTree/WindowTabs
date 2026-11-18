@@ -642,6 +642,9 @@ let main() =
                         | _ -> None)
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 let restingTabs = strip.rowTabs
+                let drawnBounds = strip.tabSprites.list |> List.map(fun (pt,tab) -> Rect(strip.toScreen pt,tab.size))
+                check (restingTabs.Length=drawnBounds.Length && restingTabs |> List.forall(fun r -> List.contains r drawnBounds))
+                      "Drag hit testing disagreed with the rendered tab bounds"
                 strip.addButtonMode <- "Always"
                 let carriedTabs = strip.lorder.list |> List.take 2
                 let _,drawCarried = strip.dragTabs(carriedTabs,carriedTabs.Head)

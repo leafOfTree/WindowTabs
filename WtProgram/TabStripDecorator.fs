@@ -1143,7 +1143,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         else None
 
     member private this.nearTabs(pt:Pt) =
-        this.nearBounds(pt,this.screenTabBounds() |> Map.toList |> List.map snd)
+        this.nearBounds(pt,this.ts.rowTabs)
 
     interface IBatchSlot with
         member this.endBatch() =
