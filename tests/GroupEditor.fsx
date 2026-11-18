@@ -456,12 +456,38 @@ let main() =
             multi.MouseUp(point a)
             multi.MouseDown(point c,Keys.Shift)
             multi.MouseUp(point c)
+            check (multi.MarkedTabs=[a;b;c]) "Shift-click did not paint a contiguous mark set"
             multi.MouseDown(point b)
             let drop = centre multi.Layout.newGroup
             multi.MouseMove(drop)
             multi.MouseUp(drop)
             check ((multi.Draft.groups |> List.map(fun g -> g.tabs))=[[d];[a;b;c]]) "Dragging a range by its middle did not create one group in strip order"
+            multi.Show()
+            let opened = multi.Handle
+            let window = OS().windowFromHwnd opened
+            window.minimize()
+            multi.ActivateEditor()
+            check (multi.Handle=opened && window.isVisible && not window.isMinimized && multi.Draft.groups.Head.tabs=[d])
+                  "Returning to a minimized editor lost its window or its draft"
+            window.hide()
+            check (not window.isVisible) "The native hide fixture stayed visible"
+            multi.ActivateEditor()
+            check (multi.Handle=opened && window.isVisible && multi.Draft.groups.Head.tabs=[d])
+                  "Returning to a natively hidden editor did not show its existing draft"
+            Control.FromHandle(opened).Hide()
+            multi.ActivateEditor()
+            check (window.isVisible && multi.Draft.groups.Head.tabs=[d])
+                  "Returning to a managed-hidden editor did not show its existing draft"
+            check (multi.MarkedTabs.IsEmpty && multi.Drag.IsNone) "A completed batch leaked into the next drag"
+            let loaded = new Bitmap(12,12)
+            multi.SetLoadedIcons [a,loaded]
+            check ((multi.Draft.groups |> List.map(fun g -> g.tabs))=[[d];[a;b;c]]) "Loading icons discarded an edit made after opening"
             multi.Close()
+            let late = new Bitmap(12,12)
+            multi.SetLoadedIcons [b,late]
+            for image in [loaded;late] do
+                let disposed = try ignore image.Width; false with :? ArgumentException -> true
+                check disposed "The editor retained an icon after closing"
             let tabsOf i = editor.Draft.groups.[i].tabs
             let clickTab (row:GroupEditorRowLayout) hwnd = editor.MouseDown(centre (tabIn row hwnd)); editor.MouseUp(centre (tabIn row hwnd))
             // A tab dragged to another row's tabs joins it there as the pointer arrives, the drop changing nothing more.

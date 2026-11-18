@@ -6,6 +6,7 @@ type TabSelection(?explicitMarks:bool) =
     let mutable anchor = None
     let mutable marked = Set.empty<IntPtr>
     let mutable selectionPress = false
+    member _.clear() = marked <- Set.empty; anchor <- None
     member _.canDoubleClickRename(shift,ctrl) = not(selectionPress || shift || ctrl)
     member _.contains hwnd = marked.Contains hwnd
     member _.items order = List.filter marked.Contains order
@@ -24,6 +25,15 @@ type TabSelection(?explicitMarks:bool) =
         elif ctrl then marked <- if marked.Contains hwnd then marked.Remove hwnd else marked.Add hwnd
         elif not(marked.Contains hwnd) then marked <- if explicitMarks then Set.empty else Set.singleton hwnd
         if not shift then anchor <- Some hwnd
+    /// Keep the whole selection in hand until release distinguishes a click from a drag.
+    member this.beginPress(order,hwnd,shift,ctrl,fallback) =
+        let apply() = this.press(order,hwnd,shift,ctrl,fallback)
+        if (shift || ctrl) && this.contains hwnd then
+            selectionPress <- true
+            apply
+        else
+            apply()
+            ignore
     member _.single hwnd = anchor <- Some hwnd; marked <- if explicitMarks then Set.empty else Set.singleton hwnd
 
 type BatchDrag = { source:IntPtr; members:IntPtr list; grabbed:TabDragInfo; infos:(Tab * TabInfo) list }
@@ -38,6 +48,7 @@ type BatchRowPreview = {
     screenBounds:Map<Tab,Pt> -> Map<Tab,Rect>
     draw:Map<Tab,Pt> -> Img }
 type IBatchSlot =
+    abstract endBatch : unit -> unit
     abstract mask : hidden:Tab list * covered:bool -> unit
     abstract slot : Pt * IntPtr list * BatchHitFrame option -> (IntPtr * IntPtr list) option
     abstract picture : BatchDrag * IntPtr list -> BatchRowPreview

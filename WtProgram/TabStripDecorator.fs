@@ -1001,7 +1001,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                     os.windowFromHwnd(group.topWindow).setForeground(false)
                 | MouseLeft ->
                     let modified = keys.HasFlag Keys.Shift || keys.HasFlag Keys.Control
-                    selection.press(group.lorder.list,hwnd,keys.HasFlag Keys.Shift,keys.HasFlag Keys.Control,group.topWindow)
+                    let completeClick = selection.beginPress(group.lorder.list,hwnd,keys.HasFlag Keys.Shift,keys.HasFlag Keys.Control,group.topWindow)
                     let members = selection.items group.lorder.list
                     this.ts.markTabs(List.map Tab members)
                     dragPartner <- group.topWindow
@@ -1023,7 +1023,10 @@ type TabStripDecorator(group:WindowGroup) as this =
                         let dragInfo = if members.Length>1 then box {source=this.ts.hwnd; members=members; grabbed=info; infos=members |> List.map(fun h -> Tab h,this.ts.tabInfo(Tab h))} else box info
                         let offset,draw = this.ts.dragTabs(List.map Tab members,tab)
                         let clicked() =
-                            if not modified then this.invokeSync(fun () ->
+                            if modified then this.invokeSync(fun () ->
+                                completeClick()
+                                this.ts.markTabs(selection.items group.lorder.list |> List.map Tab))
+                            else this.invokeSync(fun () ->
                                 selection.single hwnd
                                 this.ts.markTabs []
                                 if not inFront && group.windows.contains hwnd then group.tabActivate(tab,false))
@@ -1143,6 +1146,11 @@ type TabStripDecorator(group:WindowGroup) as this =
         this.nearBounds(pt,this.screenTabBounds() |> Map.toList |> List.map snd)
 
     interface IBatchSlot with
+        member this.endBatch() =
+            if WinUserApi.IsWindow this.ts.hwnd then this.invokeSync(fun () ->
+                this.ts.maskBatch([],false)
+                selection.clear()
+                this.ts.markTabs [])
         member this.mask(hidden,covered) =
             if WinUserApi.IsWindow this.ts.hwnd then this.invokeSync(fun () -> this.ts.maskBatch(hidden,covered))
         member this.slot(pt,members,preview) =

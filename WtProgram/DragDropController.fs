@@ -162,7 +162,7 @@ type BatchDragState(batch:BatchDrag, source:IBatchSlot, aim, floating:AnimationW
             preview <- None
             if row.IsValueCreated then row.Value.Dispose()
             uncover()
-            source.mask([],false)
+            source.endBatch()
 
 type DragCapturedStateInfo = {
     target : IDragDropTarget

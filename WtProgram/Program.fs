@@ -1114,13 +1114,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     /// The group editor over the desktop in view: every group there as a folded row, and the
     /// loose windows, centred on the screen of the window in front; each group's layout read on
-    /// its thread. One at a time, and opened again it closes.
+    /// its thread. Reuse the open editor on this desktop so its draft survives.
     member this.editGroups(hwnd:IntPtr) =
-        // The key puts the popup away; left open on another desktop, where it cannot be seen from
-        // this one, it goes and one for this desktop opens in its place at once.
         let elsewhere (editor:GroupEditorForm) = WindowCloaking.IsCloakedByShell editor.Handle
         match groupEditorCell.value with
-        | Some editor when not(elsewhere editor) -> editor.Close()
+        | Some editor when not(elsewhere editor) -> editor.ActivateEditor()
         | existing ->
             existing |> Option.iter(fun editor -> editor.Close())
             let nameOverride each = windowNameOverride.tryFind(each).bind(id)
@@ -1129,28 +1127,37 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     match group with
                     | :? GroupInfo as info when not info.isExited && not info.isRetiring && group.windows.count>0 -> Some info
                     | _ -> None)
-            // The windows on this desktop, groups first in the window search's order, then the loose ones.
-            let entries =
-                TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) (live |> List.map(fun info -> (info :> IGroup).windows.list))
-                |> List.filter(fun entry -> entry.desktop="")
-            let onDesktop = entries |> List.map(fun entry -> entry.hwnd) |> set
-            let groups = live |> List.filter(fun info -> (info :> IGroup).windows.list |> List.exists onDesktop.Contains)
-            let grouped = groups |> List.collect(fun info -> (info :> IGroup).windows.list) |> set
-            let loose = entries |> List.map(fun entry -> entry.hwnd) |> List.filter(fun each -> not(grouped.Contains each) && Services.filter.isTabbableWindow each)
+            let desktopWindows = os.windowsInZorder.list
+            let zorder = desktopWindows |> List.mapi(fun i w -> w.hwnd,i) |> Map.ofList
+            let grouped = live |> List.collect(fun info -> (info :> IGroup).windows.list) |> set
+            let titles = Dictionary<IntPtr,string>()
+            let title hwnd =
+                match titles.TryGetValue hwnd with
+                | true,name -> name
+                | _ ->
+                    let name = os.windowFromHwnd(hwnd).text
+                    titles.[hwnd] <- name
+                    name
+            let onDesktop hwnd = not(WindowCloaking.IsCloakedByShell hwnd) && not(String.IsNullOrEmpty(title hwnd))
+            let groups = live |> List.filter(fun info -> (info :> IGroup).windows.list |> List.exists onDesktop)
+            let loose = desktopWindows |> List.choose(fun window ->
+                let hwnd = window.hwnd
+                if not(grouped.Contains hwnd) && not(TaskbarProxies.contains hwnd) && window.isAltTabWindow &&
+                   onDesktop hwnd && title hwnd<>"Microsoft Text Input Application" && window.className<>"Windows.UI.Core.CoreWindow" &&
+                   Services.filter.isTabbableWindow hwnd then Some hwnd else None)
             if groups.IsEmpty && loose.IsEmpty then Notice.remind (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.noGroup)
             else
-                let zorder = this.hwndZorders()
-                let activeOf (info:GroupInfo) = (info :> IGroup).windows.list |> List.minBy(fun each -> zorder.tryFind(each).def(Int32.MaxValue))
+                let activeOf (info:GroupInfo) = (info :> IGroup).windows.list |> List.minBy(fun each -> zorder.TryFind each |> Option.defaultValue Int32.MaxValue)
                 // The tab's name as the strip shows it: the rename, or the last part of a path; a
                 // window with no title goes by its program.
                 let nameOf each =
                     let window = os.windowFromHwnd(each)
-                    match nameOverride each |> Option.defaultValue (WindowTitle.tabName window.text) with
+                    match nameOverride each |> Option.defaultValue (WindowTitle.tabName (title each)) with
                     | "" -> (try IO.Path.GetFileNameWithoutExtension(window.pid.exeName) with _ -> "")
                     | name -> name
                 let windowOf each =
                     let window = os.windowFromHwnd(each)
-                    { hwnd=each; name=nameOf each; icon=ImgHelper.knownWindowIcon window; minimized=window.isMinimized }
+                    { hwnd=each; name=nameOf each; icon=None; minimized=window.isMinimized }
                 // Rows by their first tab's name, and the loose windows by name: an order that
                 // holds from one opening to the next, where the window search's would shuffle them.
                 let byName (name:'a -> string) (a:'a) (b:'a) = String.Compare(name a,name b,StringComparison.CurrentCultureIgnoreCase)
@@ -1190,6 +1197,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                     Notice.show (tr Strings.GroupEditor.title) (tr (Strings.GroupEditor.applied outcome.moved outcome.detached outcome.made outcome.closed))))
                         groupEditorCell.set(Some editor)
                         editor.Show()
+                        let ui = InvokerService.invoker
+                        Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+                            let icons = windows |> List.choose(fun w ->
+                                try ImgHelper.knownWindowIcon(os.windowFromHwnd w.hwnd) |> Option.map(fun image -> w.hwnd,image)
+                                with _ -> None)
+                            ui.asyncInvoke(fun () -> editor.SetLoadedIcons icons)) |> ignore
                 for info in groups do
                     info.captureLayout(fun result ->
                         (match result with

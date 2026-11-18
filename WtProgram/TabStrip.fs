@@ -513,7 +513,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             else this.processMouse(MouseClick(mousePt(), btn, MouseUp, clickKeys()))
             msg.def()
         let mouseDblClick btn =
-            this.processMouse(MouseClick(mousePt(), btn, MouseDblClick, clickKeys()))
+            let keys = clickKeys()
+            // Windows sends a double-click in place of the second button-down.
+            let action = if btn=MouseLeft && keys<>Keys.None then MouseDown else MouseDblClick
+            this.processMouse(MouseClick(mousePt(), btn, action, keys))
             msg.def()
 
         //don't callback until the window has been created
