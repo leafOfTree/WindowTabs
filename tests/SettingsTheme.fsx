@@ -670,7 +670,23 @@ let main() =
                     check (charts.Picked |> Option.exists(fun time -> time>=latest-twoPixels))
                           (sprintf "At the right end, the chart picked %A, not near the latest reading %A (two pixels are %A)" charts.Picked latest twoPixels)
                     WinUserApi.SendMessage(charts.Handle,0x02A3,0,0) |> ignore
-                    check (report.Visible && page.ListShown) "Opening the report did not show it"
+                    let raw = folder Strings.Diagnostics.rawReport
+                    check (raw.Visible && not report.Visible && not page.ListShown) "The report did not offer raw JSON separately"
+                    let environment = controls form |> Seq.find(fun c -> c.Visible && c.Text.StartsWith(tr Strings.Diagnostics.environmentTitle) && c.Text.Contains(".NET"))
+                    let summary = environment.Parent.Parent
+                    let crashRow = (folder Strings.Diagnostics.recentCrashes).Parent
+                    let hasCrashes = (JObject.Parse(report.TextBox.Text)).getObject("crashes").IsSome
+                    check (crashRow.Visible=hasCrashes) "The recent crashes row did not match the report"
+                    use summaryImage = new Bitmap(summary.Width,summary.Height)
+                    summary.DrawToBitmap(summaryImage,Rectangle(Point.Empty,summary.Size))
+                    summaryImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "settings-report-summary-%s.png" mode),ImageFormat.Png)
+                    let displays = folder Strings.Diagnostics.displays
+                    displays.PerformClick()
+                    check (controls summary |> Seq.exists(fun c -> c.Visible && c.Text.Contains(" @ "))) "Display details did not show monitor coordinates"
+                    displays.PerformClick()
+                    raw.PerformClick()
+                    Application.DoEvents()
+                    check (report.Visible && page.ListShown) "Opening raw JSON did not show the report"
                     // Taller than the window, the page scrolls, and at its end the report shows whole.
                     // Its scroll bar is the settings pages' own, over the margin, not Windows' grey one.
                     let reportCard = report.Parent

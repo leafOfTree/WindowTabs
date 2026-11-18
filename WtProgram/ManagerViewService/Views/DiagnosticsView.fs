@@ -536,7 +536,7 @@ type DiagnosticsView() =
     do text.Font <- SettingsUi.font "Consolas" 10.5f FontStyle.Regular
     // Buttons are built before the page, which owns their dialogs.
     let mutable owner : IWin32Window = null
-    let includeWindows = new SettingsIconButton(WindowListIcon,tr Strings.Diagnostics.includeWindowsHelp,toggle=true)
+    let includeWindows = new SettingsIconButton(WindowDetailsIcon,tr Strings.Diagnostics.includeWindowsHelp,toggle=true)
     /// What decides whether each visible window of another program gets tabs. Program names,
     /// window classes and styles only: never titles or paths, so the report stays safe to share.
     let windowDetails() =
@@ -589,14 +589,17 @@ type DiagnosticsView() =
         // The longest part, and optional, comes last.
         if includeWindows.Checked then result.["windows"] <- windowDetails()
         result
-    let refresh() = text.Text <- (report()).ToString()
+    let mutable showSummary : JObject -> unit = ignore
+    let refresh() =
+        let snapshot = report()
+        showSummary snapshot
+        text.Text <- snapshot.ToString()
     let guarded action =
         try action()
         with error -> Alert.show AlertKind.Warning (tr Strings.Common.operationFailed) error.Message
-    // The report's tools float at its top-right corner, just left of its scrollbar.
     let tools =
         let strip = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
-                                        Margin=Padding.Empty,Padding=Padding.Empty,Tag="surface")
+                                        Margin=Padding.Empty,Padding=Padding.Empty)
         // A short note left of the icons confirms a click, then goes.
         let feedback = new Label(AutoSize=true,Visible=false,Tag="muted",UseMnemonic=false,Anchor=AnchorStyles.Left,
                                  Margin=Padding(0,0,Dpi.scale 6,0))
@@ -613,21 +616,16 @@ type DiagnosticsView() =
             let button = new SettingsIconButton(icon,help,Margin=Padding(Dpi.scale 2,0,0,0))
             button.Click.Add(fun _ -> guarded action)
             strip.Controls.Add(button)
-        tool RefreshIcon (tr Strings.Diagnostics.refreshReport) (fun () ->
-            refresh()
-            confirm (tr Strings.Diagnostics.reportRefreshed))
         tool CopyIcon (tr Strings.Diagnostics.copyReport) (fun () ->
             refresh()
             Clipboard.SetText(text.Text)
             confirm (tr Strings.Diagnostics.reportCopied))
+        tool RefreshIcon (tr Strings.Diagnostics.refreshReport) (fun () ->
+            refresh()
+            confirm (tr Strings.Diagnostics.reportRefreshed))
         includeWindows.Margin <- Padding(Dpi.scale 2,0,0,0)
         includeWindows.CheckedChanged.Add(fun _ -> guarded refresh)
         strip.Controls.Add(includeWindows)
-        view.Controls.Add(strip)
-        strip.BringToFront()
-        let place() = strip.Location <- Point(view.ClientSize.Width-strip.Width-Dpi.scale 20,Dpi.scale 6)
-        view.Resize.Add(fun _ -> place())
-        strip.SizeChanged.Add(fun _ -> place())
         strip
     let repository = "https://github.com/leafOfTree/WindowTabs"
     /// The page, once built, and how to fold its report: the report's card is the page's list.
@@ -754,13 +752,78 @@ type DiagnosticsView() =
         showResources true
         // The report, folded at first: its card is the page's list.
         let reportNote = new Label(Text=tr Strings.Diagnostics.description,AutoSize=true,Tag="muted",Margin=Padding(0,0,0,Dpi.scale 12))
+        let summary = new TableLayoutPanel(ColumnCount=1,AutoSize=true,Margin=Padding.Empty)
+        summary.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        let mutable rawHeading : Control = null
+        let mutable setRaw : bool -> unit = ignore
         let showReport = folding (tr Strings.Diagnostics.reportTitle) (SettingsUi.sectionFont()) 24 None None (fun opened ->
             reportNote.Visible <- opened
-            // Written when asked for, not with the page: it lists every process and window.
-            if opened then guarded refresh
-            listPage |> Option.iter(fun (page:SettingsListPage) -> page.ListShown <- opened))
+            summary.Visible <- opened
+            rawHeading.Visible <- opened
+            if opened then guarded refresh else setRaw false)
         reportNote.MaximumSize <- Size(Dpi.scale 550,0)
         SettingsUi.add table reportNote
+        SettingsUi.add table summary
+        let row caption =
+            let line = new TableLayoutPanel(ColumnCount=2,AutoSize=true,Margin=Padding.Empty)
+            let toggle = new SettingsExpanderButton(AccessibleName=tr caption,Anchor=AnchorStyles.Left)
+            let value = new Label(AutoSize=true,UseMnemonic=false,Anchor=AnchorStyles.Left)
+            line.Controls.Add(toggle,0,0)
+            line.Controls.Add(value,1,0)
+            line.ColumnStyles.Add(ColumnStyle(SizeType.Absolute,float32(Dpi.scale 32))) |> ignore
+            line.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+            SettingsUi.add summary line
+            let detail = new Label(AutoSize=true,UseMnemonic=false,Tag="muted",Margin=Padding(Dpi.scale 32,0,0,Dpi.scale 6))
+            SettingsUi.add summary detail
+            let toggleDetails() =
+                if detail.Text.Length>0 then
+                    toggle.Open <- not toggle.Open
+                    detail.Visible <- toggle.Open
+            toggle.Click.Add(fun _ -> toggleDetails())
+            value.Click.Add(fun _ -> toggleDetails())
+            fun brief (lines:string list) ->
+                line.Visible <- brief<>"" || not lines.IsEmpty
+                value.Text <- tr caption + "   " + brief
+                detail.Text <- String.concat Environment.NewLine lines
+                toggle.Visible <- not lines.IsEmpty
+                value.Cursor <- if lines.IsEmpty then Cursors.Default else Cursors.Hand
+                detail.Visible <- toggle.Open && not lines.IsEmpty
+        let runtime = row Strings.Diagnostics.environmentTitle
+        let monitors = row Strings.Diagnostics.displays
+        let taskbar = row Strings.Diagnostics.taskbarSummary
+        let crashes = row Strings.Diagnostics.recentCrashes
+        showSummary <- fun snapshot ->
+            let groups = snapshot.getObjectArray("taskbarGroups").Value.list
+            let status (group:JObject) = string group.["taskbar"]
+            let combined = groups |> List.filter(fun group -> status group="combined") |> List.length
+            taskbar (tr (if groups.IsEmpty then Strings.Diagnostics.noGroups else Strings.Diagnostics.combinedCount combined groups.Length))
+                (groups |> List.mapi(fun index group ->
+                    let state =
+                        match status group with
+                        | "combined" -> Strings.Diagnostics.combined
+                        | "single window" -> Strings.Diagnostics.singleWindow
+                        | "not combined: different permissions" -> Strings.TabMenu.combineBlockedPermissions
+                        | "not combined: virtual desktop unknown" -> Strings.TabMenu.combineBlockedDesktop
+                        | "not combined: placement on the virtual desktop failed" -> Strings.TabMenu.combineBlockedPlacement
+                        | _ -> Strings.TitleBarDrop.off
+                    tr (Strings.Diagnostics.groupLine (index+1) (group.getInt32("windows").Value)) + " · " + tr state))
+            let screens = snapshot.getObjectArray("monitors").Value.list
+            let display index = tr (Strings.Diagnostics.display (index+1))
+            monitors (screens |> List.mapi(fun index screen ->
+                let scale = string screen.["scale"]
+                display index + " " + (if scale="unknown" then tr Strings.Diagnostics.unknown else scale)) |> String.concat " · ")
+                (screens |> List.mapi(fun index screen ->
+                    let bounds = (string screen.["bounds"]).Replace(" at "," @ ")
+                    display index + " · " + bounds + (if screen.getBool("primary").Value then " · " + tr Strings.Diagnostics.primary else "")))
+            runtime (sprintf "WindowTabs %O · %O · .NET %O" snapshot.["version"] snapshot.["os"] snapshot.["dotNet"]) []
+            let recent = snapshot.getObject("crashes") |> Option.map(fun log -> log.getObjectArray("latest").Value.list) |> Option.defaultValue []
+            match recent with
+            | [] -> crashes "" []
+            | latest::_ ->
+                crashes (string latest.["time"]) (recent |> List.map(fun entry -> sprintf "%O · %O · %O" entry.["time"] entry.["exception"] entry.["source"]))
+        setRaw <- folding (tr Strings.Diagnostics.rawReport) (SettingsUi.subsectionFont()) 8 None (Some tools) (fun opened ->
+            listPage |> Option.iter(fun page -> page.ListShown <- opened))
+        rawHeading <- table.Controls.[table.Controls.Count-1]
         foldReport <- showReport
         table.ResumeLayout(true)
         table :> Control
@@ -781,7 +844,6 @@ type DiagnosticsView() =
         owner <- panel
         listPage <- Some panel
         foldReport false
-        tools |> ignore
     interface ISettingsView with
         member _.key = DiagnosticsSettings
         member _.title = tr Strings.Pages.diagnostics
