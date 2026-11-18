@@ -24,6 +24,12 @@ let pumpUntil description predicate =
 /// The group editor's model, its plan and the apply pipeline: the pure parts on handles that
 /// stand for windows, then the pipeline on real hidden windows through the production desktop.
 let main() =
+    check ((Strings.GroupEditor.applied 2 0 1 3).zh="移动了 2 个窗口，新建了 1 个分组，关闭了 3 个窗口")
+          "The Chinese save summary did not describe completed changes"
+    let summary = Strings.GroupEditor.applied 2 0 1 0
+    check (summary.ja="2 個のウィンドウを移動しました。1 個のグループを作成しました" &&
+           summary.ko="창 2개를 이동했습니다. 그룹 1개를 만들었습니다")
+          "The Japanese or Korean save summary lost its completed actions"
     let a,b,c,d,e,f = IntPtr 11,IntPtr 22,IntPtr 33,IntPtr 44,IntPtr 55,IntPtr 66
     let pair x y = {tree={axis=SideBySide;ratio=0.5;first=Leaf(Occupied x);second=Leaf(Occupied y)};focused=[First]}
     let occupied hwnd = Leaf(Occupied hwnd)
@@ -482,6 +488,16 @@ let main() =
             let loaded = new Bitmap(12,12)
             multi.SetLoadedIcons [a,loaded]
             check ((multi.Draft.groups |> List.map(fun g -> g.tabs))=[[d];[a;b;c]]) "Loading icons discarded an edit made after opening"
+            for row,h in [0,d;1,b] do
+                let pt = centre (tabIn multi.Layout.rows.[row] h)
+                multi.MouseDown(pt,Keys.Control)
+                multi.MouseUp(pt)
+            let menuAction h caption =
+                multi.TabMenu h |> List.pick(function CmiRegular item when item.text=tr caption -> Some item.click | _ -> None)
+            menuAction a Strings.GroupEditor.closeOnSave |> ignore
+            menuAction b Strings.GroupEditor.closeSelectedOnSave ()
+            check (multi.Draft.closing=[d;b] && multi.Draft.groups.Head.tabs=[a;c] && multi.MarkedTabs.IsEmpty)
+                  "Close selected on save did not stage exactly the marked windows across rows"
             multi.Close()
             let late = new Bitmap(12,12)
             multi.SetLoadedIcons [b,late]

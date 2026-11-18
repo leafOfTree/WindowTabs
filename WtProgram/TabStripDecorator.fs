@@ -802,13 +802,15 @@ type TabStripDecorator(group:WindowGroup) as this =
             })
                  
         let closeTabItem = 
-            let shortcut = SettingsShortcut.text (Services.program.getHotKey "closeTab")
+            let targets = selection.contextTargets(group.lorder.list,hwnd)
+            let multiple = targets.Length>1
+            let shortcut = if multiple then "" else SettingsShortcut.text (Services.program.getHotKey "closeTab")
             CmiRegular({
                 // Under Close, so named in full as the shortcut's setting is.
-                text = tr Strings.Settings.closeTab.caption + (if shortcut = "" then "" else "\t" + shortcut)
+                text = tr (if multiple then Strings.TabMenu.closeSelected else Strings.Settings.closeTab.caption) + (if shortcut = "" then "" else "\t" + shortcut)
                 image = None
-                click = fun() -> this.onCloseWindow hwnd
-                flags = List2()
+                click = fun() -> if multiple then this.closeTogether(List2(targets |> List.filter group.windows.contains)) else this.onCloseWindow hwnd
+                flags = if multiple && List.forall PinnedTabs.contains targets then List2([MenuFlags.MF_GRAYED]) else List2()
             })
 
         let closeOtherTabsItem =

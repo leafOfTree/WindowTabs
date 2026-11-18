@@ -10,6 +10,8 @@ type TabSelection(?explicitMarks:bool) =
     member _.canDoubleClickRename(shift,ctrl) = not(selectionPress || shift || ctrl)
     member _.contains hwnd = marked.Contains hwnd
     member _.items order = List.filter marked.Contains order
+    member this.contextTargets(order,hwnd) =
+        if marked.Contains hwnd then this.items order else [hwnd]
     member _.press(order, hwnd, shift, ctrl, fallback) =
         marked <- Set.intersect marked (set order)
         // The first release can collapse the selection before Windows reports the double-click.
