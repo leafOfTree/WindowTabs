@@ -57,7 +57,8 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'DesktopE2E.exe'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,WindowsBase
 $taskbarAutomationReferences = @([System.Windows.Automation.AutomationElement].Assembly.Location,[System.Windows.Automation.ControlType].Assembly.Location,[System.Windows.DependencyObject].Assembly.Location) | Select-Object -Unique | ForEach-Object { "/r:$_" }
-& $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /r:Accessibility.dll @taskbarAutomationReferences "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs') (Join-Path $PSScriptRoot 'DesktopE2E.VirtualDesktops.cs')
+# The driver writes to redirected streams; it must not create a console that can cover its fixtures.
+& $compiler /nologo /target:winexe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /r:Accessibility.dll @taskbarAutomationReferences "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs') (Join-Path $PSScriptRoot 'DesktopE2E.VirtualDesktops.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Desktop E2E compilation failed.' }
 & $hostExe --check-random-plan
 if ($LASTEXITCODE -ne 0) { throw 'Random action planner checks failed.' }
@@ -77,8 +78,9 @@ if ($env:GITHUB_ACTIONS -eq 'true') {
 '@
     $console = [IntPtr]::Zero
     while (($console = [E2E.Consoles]::FindWindowEx([IntPtr]::Zero, $console, 'ConsoleWindowClass', $null)) -ne [IntPtr]::Zero) {
-        # SW_MINIMIZE; local interactive runs retain the user's other windows.
-        if ([E2E.Consoles]::IsWindowVisible($console)) { [E2E.Consoles]::ShowWindow($console, 6) | Out-Null }
+        # SW_HIDE keeps a runner console out of minimize/restore activation fallback.
+        # Local interactive runs retain the user's other windows.
+        if ([E2E.Consoles]::IsWindowVisible($console)) { [E2E.Consoles]::ShowWindow($console, 0) | Out-Null }
     }
 }
 $process = Start-Process -FilePath $hostExe -ArgumentList $driverArguments -WorkingDirectory $stage -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $stage 'stdout.log') -RedirectStandardError (Join-Path $stage 'stderr.log')
