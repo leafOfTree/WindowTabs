@@ -809,7 +809,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                     // be taken over.
                     let owner = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)
                     let movedAway = adoptionAttempts.Contains hwnd && owner<>IntPtr.Zero && TaskbarProxies.contains owner && not(taskbarButton.ownsApplication hwnd)
-                    if not movedAway then
+                    if not movedAway && this.wtGroup.ownsWindow hwnd then
                         // Not while the group minimizes or restores: Windows restores the windows
                         // one by one, by their previews' order, and previews moved to an order
                         // passing by in the meantime swapped tabs behind as the group came back.

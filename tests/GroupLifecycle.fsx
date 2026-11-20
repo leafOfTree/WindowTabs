@@ -869,6 +869,14 @@ let main() =
                 pumpUntil "Owner handoff fixtures did not settle" (fun () ->
                     nativeOrder oldGroup=[a;b;c] && nativeOrder newGroup=[d;e] && (handles |> List.forall TaskbarProxies.ownsWindow))
                 let oldOwner = owner a
+                // Native ownership can be absent while the replacement prepares its previews.
+                // The runtime group claim must still keep a stale source refresh out.
+                FollowerPlacement.queue.claim(obj(),a)
+                WinUserApi.SetWindowLong(a,WindowLongFieldOffset.GWL_HWNDPARENT,IntPtr.Zero) |> ignore
+                forms.Head.Text <- "Claimed by the replacement group"
+                pumpUntil "The old group did not refresh the claimed window" (fun () ->
+                    onGroup oldGroup (fun group -> group.ts.tabInfo(Tab a).text.Contains("Claimed by the replacement group")))
+                check (owner a=IntPtr.Zero) "A stale group adopted a window claimed by its replacement while it had no native owner"
                 (newGroup :> IGroup).addWindow(a,false)
                 pumpUntil "Replacement group did not adopt the window" (fun () ->
                     nativeOrder newGroup=[d;e;a] && owner a<>oldOwner && TaskbarProxies.ownsWindow a)

@@ -42,6 +42,10 @@ move/placement operation. PID/thread identity checks reject closed foreign HWNDs
 Already-running Win32 calls cannot be interrupted: a new owner's placement waits
 behind that call, while its UI remains responsive. Releasing a group does not wait
 for native calls and releases queue entries when outstanding work ends.
+The same runtime claim guards taskbar adoption. A group claims a window before
+publishing its membership, so a delayed refresh in its former group cannot adopt
+it while the replacement's native taskbar owner is temporarily absent. Runtime
+claims are distinct even when a rebuilt group retains the same persisted token.
 
 Minimize/restore uses the same stream and acknowledges its own WinEvents to avoid
 feeding an older transition back into the group. Native animation settings are

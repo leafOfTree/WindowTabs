@@ -137,6 +137,10 @@ type WindowPlacementQueue<'a>(apply:IntPtr -> 'a -> (unit -> bool) -> unit, ?wor
         if not wasIdle && ownerIsIdle owner then Some owner else None)
       notifyIdle completed
     member _.isIdle(owner) = lock gate (fun () -> ownerIsIdle owner)
+    member _.ownsWindow(owner,hwnd) = lock gate (fun () ->
+        match entries.TryGetValue(hwnd) with
+        | true,entry -> owns owner entry
+        | _ -> false)
     member _.isWindowIdle(owner,hwnd) = lock gate (fun () ->
         match entries.TryGetValue(hwnd) with
         | true,entry when owns owner entry -> not entry.running && entry.pending.IsNone

@@ -795,6 +795,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         with get() = System.Threading.Volatile.Read(&token)
         and set value = System.Threading.Volatile.Write(&token,value)
 
+    /// Native owners can disappear during a transfer; the runtime claim remains authoritative.
+    member _.ownsWindow hwnd = FollowerPlacement.queue.ownsWindow(placementOwner,hwnd)
+
     member private this.finishPlacementReconciliation() =
         if not isDestroyed.value then
             // WinEvents report the start of restoration, before ShowWindow and its
@@ -2908,10 +2911,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if this.windows.isEmpty && GroupTopmost.marked hwnd then topmostChosen <- true
             if topmostChosen then GroupTopmost.pinAll [window]
             elif GroupTopmost.marked hwnd then GroupTopmost.release window
+            FollowerPlacement.queue.claim(placementOwner,hwnd)
             this.setWindows(this.windows.add hwnd)
             WindowGroupToken.save hwnd this.groupToken
             WindowGroupToken.saveMadeByHand hwnd isMadeByHand
-            FollowerPlacement.queue.claim(placementOwner,hwnd)
             if prevTop.value.IsNone then
                 prevTop.set(Some(hwnd))
                 this.saveTopWindowPlacement()
