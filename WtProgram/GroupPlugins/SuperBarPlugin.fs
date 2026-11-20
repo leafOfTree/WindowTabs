@@ -707,6 +707,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     let flashingTabs = Collections.Generic.HashSet<string>()
     /// The windows the taskbar window owns.
     let adopted = Collections.Generic.HashSet<IntPtr>()
+    let adoptionAttempts = Collections.Generic.HashSet<IntPtr>()
     /// Windows that kept no owner the group gave them, as a Store app's frame: each keeps its own button.
     let refusedOwner = Collections.Generic.HashSet<IntPtr>()
     /// The taskbar window last placed on the group's desktop.
@@ -807,29 +808,31 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                     // would take it as new; its removal clears that. A window new to this group may
                     // be taken over.
                     let owner = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)
-                    let movedAway = adopted.Contains hwnd && owner<>IntPtr.Zero && TaskbarProxies.contains owner && not(taskbarButton.ownsApplication hwnd)
+                    let movedAway = adoptionAttempts.Contains hwnd && owner<>IntPtr.Zero && TaskbarProxies.contains owner && not(taskbarButton.ownsApplication hwnd)
                     if not movedAway then
                         // Not while the group minimizes or restores: Windows restores the windows
                         // one by one, by their previews' order, and previews moved to an order
                         // passing by in the meantime swapped tabs behind as the group came back.
                         // Native ownership becomes visible before the call returns. Remember the
                         // attempt first, so a concurrent transfer cannot make a refresh look new.
-                        let firstAttempt = adopted.Add hwnd
+                        let firstAttempt = adoptionAttempts.Add hwnd
                         let owned = taskbarButton.adoptWindow(hwnd,not this.wtGroup.isChangingMinimizeState && not(WinUserApi.IsIconic hwnd),allowTakeover=firstAttempt)
                         // A window that keeps no owner of ours is not taken over: it keeps its own button.
                         if owned then refusedOwner.Remove hwnd |> ignore else refusedOwner.Add hwnd |> ignore
-                        if owned && firstAttempt then
+                        if owned && adopted.Add hwnd then
                             this.os.windowFromHwnd(hwnd).parkIfMinimized()
                             this.wtGroup.prepareMinimizeAnchor hwnd
             placed
         else false
 
     member private this.release(hwnd:IntPtr) =
+        adoptionAttempts.Remove hwnd |> ignore
         if adopted.Remove hwnd && taskbarButton<>null && taskbarButton.ownsApplication hwnd then
             WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, IntPtr.Zero) |> ignore
 
     member private this.releaseAll() =
         for hwnd in List.ofSeq adopted do this.release hwnd
+        adoptionAttempts.Clear()
 
     member private this.clearTaskbarButton() =
         if taskbarButton<>null then
