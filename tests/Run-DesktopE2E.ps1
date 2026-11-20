@@ -72,13 +72,15 @@ if ($env:GITHUB_ACTIONS -eq 'true') {
     # immediately before input starts, so restoring fixtures cannot leave a console over the tabs.
     Add-Type -Namespace E2E -Name Consoles -MemberDefinition @'
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
+    public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, IntPtr title);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
 '@
     function Hide-RunnerConsoles {
         $console = [IntPtr]::Zero
-        while (($console = [E2E.Consoles]::FindWindowEx([IntPtr]::Zero, $console, 'ConsoleWindowClass', $null)) -ne [IntPtr]::Zero) {
+        # PowerShell converts $null to an empty string for a string argument; a null pointer
+        # means any title, while an empty string matches only untitled console windows.
+        while (($console = [E2E.Consoles]::FindWindowEx([IntPtr]::Zero, $console, 'ConsoleWindowClass', [IntPtr]::Zero)) -ne [IntPtr]::Zero) {
             if ([E2E.Consoles]::IsWindowVisible($console)) {
                 [E2E.Consoles]::ShowWindow($console, 0) | Out-Null
                 Write-Host "$([DateTime]::UtcNow.ToString('o')) Hidden hosted runner console: $console"

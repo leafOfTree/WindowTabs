@@ -30,6 +30,9 @@ static partial class DesktopE2E
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr RemoveProp(IntPtr hwnd, string name);
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+    [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern IntPtr GetThreadDesktop(uint thread);
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -108,14 +111,28 @@ static partial class DesktopE2E
     static void Diagnose()
     {
         if(app==null || app.HasExited) return;
-        var all=Windows(app.Id).Concat(Helpers()).Select(h=> new { hwnd=h.ToInt64(),owner=GetWindow(h,4).ToInt64(),visible=IsWindowVisible(h),style=GetWindowLong(h,-16),extendedStyle=GetWindowLong(h,-20),windowClass=Class(h),bounds=Bounds(h) });
+        var own=new HashSet<IntPtr>(Windows(app.Id).Concat(Helpers()));
+        var all=Windows(0).Where(h=>own.Contains(h) || IsWindowVisible(h)).Select(WindowDetails);
         File.WriteAllText(Path.Combine(Root,"windows.json"),Json.Serialize(all.ToArray()));
+    }
+    static object WindowDetails(IntPtr h)
+    {
+        uint pid; uint thread=GetWindowThreadProcessId(h,out pid);
+        var desktop=new StringBuilder(256); uint needed;
+        GetUserObjectInformation(GetThreadDesktop(thread),2,desktop,512,out needed);
+        string processName=""; int session=-1;
+        try { using(var process=Process.GetProcessById((int)pid)) { processName=process.ProcessName; session=process.SessionId; } }
+        catch(Exception error) { processName="unavailable: "+error.GetType().Name; }
+        Rect bounds; bool hasBounds=GetWindowRect(h,out bounds);
+        return new { hwnd=h.ToInt64(),pid,thread,processName,session,desktop=desktop.ToString(),
+            parent=GetParent(h).ToInt64(),root=GetAncestor(h,2).ToInt64(),owner=GetWindow(h,4).ToInt64(),
+            visible=IsWindowVisible(h),style=GetWindowLong(h,-16),extendedStyle=GetWindowLong(h,-20),windowClass=Class(h),hasBounds,bounds };
     }
     static string Class(IntPtr h) { var s=new StringBuilder(256); GetClassName(h,s,s.Capacity); return s.ToString(); }
     static List<IntPtr> Windows(int pid)
     {
         var result=new List<IntPtr>();
-        EnumWindows((h,d) => { uint p; GetWindowThreadProcessId(h,out p); if(p==pid) result.Add(h); return true; },IntPtr.Zero);
+        EnumWindows((h,d) => { uint p; GetWindowThreadProcessId(h,out p); if(pid==0 || p==pid) result.Add(h); return true; },IntPtr.Zero);
         return result;
     }
     static List<IntPtr> Helpers() { return Forms.Where(f=>!f.IsDisposed).Select(f=>f.Handle).ToList(); }
@@ -209,7 +226,7 @@ static partial class DesktopE2E
         // Windows coming back from minimized are stacked again a moment after the foreground
         // settles; a strip still covered after that is the defect.
         try { await Until("Active window covers its tab strip",()=>WindowFromPoint(TabPoint(strip,0,3))==strip,1000); }
-        catch { var cover=WindowFromPoint(TabPoint(strip,0,3)); Log("strip="+strip+" covered by "+cover+" ("+Class(cover)+")"); throw; }
+        catch { var cover=WindowFromPoint(TabPoint(strip,0,3)); Log("strip="+strip+" covered by "+Json.Serialize(WindowDetails(cover))); throw; }
     }
     static async Task Drag(IntPtr source, IntPtr target, int targetCount)
     {

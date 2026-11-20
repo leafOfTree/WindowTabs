@@ -210,8 +210,10 @@ group. Those need separate scenarios.
 
 The staging directory contains `result.json`, `manifest.json` with the binary's
 SHA-256, stdout/stderr, portable settings and the application's crash log. Failures
-also capture `failure.txt` and app/helper HWND styles, ownership and bounds in
-`windows.json`. No unrelated window titles or desktop screenshots are collected.
+also capture `failure.txt` and app/helper and visible external HWNDs in
+`windows.json`, including process/session/desktop, styles, ownership and bounds.
+Occlusion failures record the covering HWND even if it disappears before that
+snapshot. No unrelated window titles or desktop screenshots are collected.
 The report also keeps the last 40 test actions, their intended targets and
 observed foreground HWND, the failing step and measured switching duration.
 Any nonempty application crash log, missed target, timeout, failed precondition,
