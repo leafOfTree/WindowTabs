@@ -339,7 +339,13 @@ static partial class DesktopE2E
                     Forms.Single(f=>!f.IsDisposed && f.Handle==order[current]).WindowState=FormWindowState.Maximized;
                     await Until("Random maximize did not place the strip inside the window",()=>Bounds(strip).Top<=area.Top+5);
                     Chord(0x12,0x31+selected); await Activated(order[selected],strip); totalSwitches++;
-                    Forms.Single(f=>!f.IsDisposed && f.Handle==order[selected]).WindowState=FormWindowState.Normal;
+                    var restoring=Forms.Single(f=>!f.IsDisposed && f.Handle==order[selected]);
+                    Remember("random restore requested",new { target=selected,state=restoring.WindowState.ToString() });
+                    // Foreground and strip ownership can precede asynchronous follower placement.
+                    // Setting Normal while still Normal is a no-op, followed by the pending maximize.
+                    await Until("Random restore target did not finish maximizing",()=>restoring.WindowState==FormWindowState.Maximized);
+                    Remember("random restore maximized target",new { target=selected,state=restoring.WindowState.ToString() });
+                    restoring.WindowState=FormWindowState.Normal;
                     await Until("Random restore did not restore all fixture windows",()=>Forms.Where(f=>!f.IsDisposed).All(f=>f.WindowState==FormWindowState.Normal) && Bounds(strip).Top>area.Top+5);
                     await Activated(order[selected],strip); break;
                 case 6:
@@ -532,9 +538,11 @@ static partial class DesktopE2E
             phase="cycle "+(cycle+1)+" maximized switching";
             Forms.Single(f=>!f.IsDisposed && f.Handle==GetForegroundWindow()).WindowState=FormWindowState.Maximized;
             await Until("Maximized group did not move the tabs inside the window",()=>Bounds(target).Top<=area.Top+5);
+            await Until("Maximized group did not maximize every fixture window",()=>Forms.Where(f=>!f.IsDisposed).All(f=>f.WindowState==FormWindowState.Maximized));
             await SwitchMany(target,order,30);
             Forms.Single(f=>!f.IsDisposed && f.Handle==GetForegroundWindow()).WindowState=FormWindowState.Normal;
             await Until("Restored group did not move back below the monitor edge",()=>Bounds(target).Top>area.Top+5);
+            await Until("Restored group left a fixture window maximized",()=>Forms.Where(f=>!f.IsDisposed).All(f=>f.WindowState==FormWindowState.Normal));
             phase="cycle "+(cycle+1)+" close active and continue";
             IntPtr closing=GetForegroundWindow();
             Forms.Single(f=>!f.IsDisposed && f.Handle==closing).Close();
