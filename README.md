@@ -54,15 +54,16 @@ to **Never**.
 | Action | Default |
 | --- | --- |
 | Next / previous tab | Ctrl + Alt + → / ← |
-| Tab 1–9 | Ctrl + 1–9 (or Alt) |
+| Tab 1–9 | Ctrl + 1–9 |
 | Search tabs | Ctrl + Alt + T; Alt + Enter on a window gives it a key of its own |
 | New window of the current app | Ctrl + Alt + N |
 | Switch tabs with the mouse | Scroll over the tab bar, or Shift + scroll over the window |
 | Move the current tab | Ctrl + scroll over the tab bar |
 | Close a tab | Ctrl + Alt + W, or middle-click |
 
-Change any shortcut under **Settings → Shortcuts**. If Ctrl/Alt + number conflicts
-with an app, turn it off for that app from the tab's right-click menu.
+Change any shortcut under **Settings → Shortcuts**. **Switch tabs by number** defaults
+to **Ctrl + 1–9**; choose **Alt + 1–9** or **Off** there. An app can override this choice
+from its tab's right-click menu.
 
 **Optional, off by default:** switch on hover, a picture of a tab's window when the pointer
 rests on it, a leader key to pick tabs by letter (Alt + F, then the key on the tab), automatic
