@@ -474,12 +474,14 @@ type TaskBarButton(info) as this =
 
     /// Peek must own only the application represented by that preview, rather than every tab.
     /// Whether the window took its owner, as `TabWindow.adoptWindow` says.
-    member this.adoptWindow(hwnd:IntPtr, follow:bool) =
+    member this.adoptWindow(hwnd:IntPtr, follow:bool, ?allowTakeover:bool) =
+        let allowTakeover = defaultArg allowTakeover true
         match tabWindowsCell.value.tryFind(TaskBarButton.key hwnd) with
-        | Some tab -> tab.adoptWindow(hwnd,follow)
+        | Some tab -> tab.adoptWindow(hwnd,follow,allowTakeover)
         | None ->
             // Discovery can announce a member before its preview joins the strip.
-            if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>this.window.hwnd then
+            let owner = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)
+            if owner<>this.window.hwnd && (allowTakeover || not(TaskbarProxies.contains owner)) then
                 WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_HWNDPARENT,this.window.hwnd) |> ignore
             WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=this.window.hwnd
 
@@ -585,9 +587,10 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
     /// `follow`: the preview goes back just below its window if it is not there. Whether the
     /// window now has the preview for its owner: a Store app's frame, as Windows Settings', keeps
     /// none another process gives it.
-    member this.adoptWindow(hwnd, follow:bool) =
+    member this.adoptWindow(hwnd, follow:bool, allowTakeover:bool) =
         let ownedByPreview() = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=_window.hwnd
-        if not (ownedByPreview()) then
+        let owner = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)
+        if owner<>_window.hwnd && (allowTakeover || not(TaskbarProxies.contains owner) || owner=parent.window.hwnd) then
             StartupTrace.measure "taskbar.owner" (fun () ->
                 WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_HWNDPARENT,_window.hwnd) |> ignore
                 // A new owner keeps its place in the z-order, which can be above the window it now
@@ -600,7 +603,7 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
                 if ownedByPreview() then
                     WinUserApi.SetWindowPos(_window.hwnd,hwnd,0,0,0,0,
                         SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore)
-        elif follow && WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_HWNDNEXT)<>_window.hwnd then
+        elif owner=_window.hwnd && follow && WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_HWNDNEXT)<>_window.hwnd then
             // Activating a window raises every window of the group's taskbar window with it, each
             // just above its preview, in the previews' order. The group stacks its windows and
             // leaves the previews behind, so the preview follows: else the next activation brought
@@ -809,10 +812,13 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                         // Not while the group minimizes or restores: Windows restores the windows
                         // one by one, by their previews' order, and previews moved to an order
                         // passing by in the meantime swapped tabs behind as the group came back.
-                        let owned = taskbarButton.adoptWindow(hwnd,not this.wtGroup.isChangingMinimizeState && not(WinUserApi.IsIconic hwnd))
+                        // Native ownership becomes visible before the call returns. Remember the
+                        // attempt first, so a concurrent transfer cannot make a refresh look new.
+                        let firstAttempt = adopted.Add hwnd
+                        let owned = taskbarButton.adoptWindow(hwnd,not this.wtGroup.isChangingMinimizeState && not(WinUserApi.IsIconic hwnd),allowTakeover=firstAttempt)
                         // A window that keeps no owner of ours is not taken over: it keeps its own button.
                         if owned then refusedOwner.Remove hwnd |> ignore else refusedOwner.Add hwnd |> ignore
-                        if owned && adopted.Add hwnd then
+                        if owned && firstAttempt then
                             this.os.windowFromHwnd(hwnd).parkIfMinimized()
                             this.wtGroup.prepareMinimizeAnchor hwnd
             placed

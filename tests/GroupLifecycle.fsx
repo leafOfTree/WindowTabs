@@ -1434,6 +1434,22 @@ let main() =
                         check (not (button.adoptWindow(goneHandle,false)) && not (button.ownsApplication goneHandle))
                             "A window that kept no owner is reported taken over"
                         WinUserApi.SetWindowLong(taken.Handle,WindowLongFieldOffset.GWL_HWNDPARENT,IntPtr.Zero) |> ignore
+                    // A refresh already past its plugin's ownership check must not take a
+                    // window back after another group's native adoption finishes.
+                    do
+                        use moved = new Form(ShowInTaskbar=false)
+                        let key = TaskBarButton.key moved.Handle
+                        use previous = new TaskBarButton(info [key])
+                        use replacement = new TaskBarButton(info [key])
+                        check (previous.adoptWindow(moved.Handle,false)) "Previous preview did not adopt the fixture"
+                        check (replacement.adoptWindow(moved.Handle,false)) "Replacement preview did not adopt the fixture"
+                        let owner = WinUserApi.GetWindow(moved.Handle,GetWindowConstants.GW_OWNER)
+                        check (not(previous.adoptWindow(moved.Handle,true,allowTakeover=false)) &&
+                               WinUserApi.GetWindow(moved.Handle,GetWindowConstants.GW_OWNER)=owner)
+                              "A stale preview refresh took back the replacement's window"
+                        previous.update(info [])
+                        check (WinUserApi.GetWindow(moved.Handle,GetWindowConstants.GW_OWNER)=owner)
+                              "Disposing the previous preview detached the replacement's window"
                     pumpUntil "First preview order was not sent again" (fun () -> not button.isResendingTabOrder)
                     button.update(info ["a";"b";"c"])
                     button.update(info ["a";"b"])
