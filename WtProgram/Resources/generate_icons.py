@@ -14,8 +14,20 @@ HERE = Path(__file__).resolve().parent
 SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 
 
-def layer(draw, points, fill, outline, width, scale):
-    xy = [(round(x * scale), round(y * scale)) for x, y in points]
+def layer(draw, commands, fill, outline, width, scale, offset):
+    points = []
+    for command in commands:
+        if len(command) == 2:
+            points.append(command)
+        else:
+            x, y = points[-1]
+            cx, cy, end_x, end_y = command
+            for step in range(1, 25):
+                t = step / 24
+                points.append(((1-t)**2*x + 2*(1-t)*t*cx + t*t*end_x,
+                               (1-t)**2*y + 2*(1-t)*t*cy + t*t*end_y))
+    ox, oy = offset
+    xy = [(round(x * scale + ox), round(y * scale + oy)) for x, y in points]
     draw.polygon(xy, fill=fill)
     draw.line(xy + [xy[0]], fill=outline, width=round(width * scale), joint="curve")
     radius = width * scale / 2
@@ -29,16 +41,20 @@ def frame(size):
     scale = max(4, 1024 // size)
     im = Image.new("RGBA", (size * scale, size * scale))
     d = ImageDraw.Draw(im)
-    k = size / 256
+    # Small shell icons need optical sizing rather than scaled logo clear space.
+    k = (size - 2) / 201 if size <= 48 else size / 256
     s = scale * k
+    offset = ((size/2 - 126*k)*scale, (size/2 - 127.5*k)*scale) if size <= 48 else (0, 0)
     # A light front tab with a dark outline reads on light and dark taskbars alike.
-    back, front, edge = "#737373", "#F5F5F5", "#202020"
+    back, front, edge = "#858585", "#F5F5F5", "#202020"
 
-    # Two overlapping window tabs, with consistent clear space around them.
-    layer(d, [(30, 31), (107, 31), (107, 65), (214, 65),
-              (214, 175), (30, 175)], back, edge, 9, s)
-    layer(d, [(48, 111), (139, 111), (139, 89), (222, 89),
-              (222, 224), (48, 224)], front, edge, 10, s)
+    # Match docs/images/logo.svg: equal tab widths/heights and rounded corners.
+    layer(d, [(54,31), (83,31), (107,31,107,55), (107,65),
+              (190,65), (214,65,214,89), (214,151), (214,175,190,175),
+              (54,175), (30,175,30,151), (30,55), (30,31,54,31)], back, edge, 8, s, offset)
+    layer(d, [(72,111), (145,111), (145,101), (145,77,169,77),
+              (198,77), (222,77,222,101), (222,200), (222,224,198,224),
+              (72,224), (48,224,48,200), (48,135), (48,111,72,111)], front, edge, 8, s, offset)
     return im.resize((size, size), Image.Resampling.LANCZOS)
 
 
