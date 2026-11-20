@@ -92,6 +92,19 @@ type WindowPlacementQueue<'a>(apply:IntPtr -> 'a -> (unit -> bool) -> unit, ?wor
             enqueue entry
             start()
         | _ -> ())
+    /// Retarget queued or running work without dropping its requested geometry.
+    member _.mapPending(owner,hwnd,change:'a -> 'a option) = lock gate (fun () ->
+        match entries.TryGetValue(hwnd) with
+        | true,entry when owns owner entry ->
+            let latest = if entry.pending.IsSome then entry.pending else entry.current
+            match latest |> Option.bind change with
+            | Some value ->
+                entry.version <- entry.version+1L
+                entry.pending <- Some value
+                enqueue entry
+                start()
+            | None -> ()
+        | _ -> ())
     member _.cancel(owner,hwnd,?whenValue:'a -> bool) =
       let completed = lock gate (fun () ->
         let wasIdle = ownerIsIdle owner

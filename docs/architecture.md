@@ -77,6 +77,10 @@ member becoming the actual foreground window still selects that tab immediately;
 membership updates retain the remaining order throughout the transition. This
 policy applies to every application and both shared and separate preview owners.
 
+Selecting a follower during placement retains its pending geometry and show state,
+but removes its old stacking anchor. Foreground notifications do not replace the
+group's frame with that follower's unfinished native placement.
+
 `WindowRefreshQueue` batches events for 30 ms without continually resetting its
 deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide,
 uncloak and shell events reconcile dirty windows; explicit refresh, group removal/exit

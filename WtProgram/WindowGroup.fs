@@ -1139,6 +1139,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // stays: the frame a tab takes as the split parks behind it was cancelled here,
                 // whenever the worker had not started it yet, and the tab kept its pane's size.
                 newZorder.tryHead.iter(fun hwnd ->
+                    FollowerPlacement.queue.mapPending(placementOwner,hwnd,fun (identity,request) ->
+                        match request with
+                        | AlignWindow(bounds,wp,Some _,visible) -> Some(identity,AlignWindow(bounds,wp,None,visible))
+                        | _ -> None)
                     FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) ->
                         match request with
                         | SetMinimized _ | AlignWindow(_,_,None,_) -> false
@@ -2848,7 +2852,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // Windows can hide an owned strip during minimize/restore after our last
             // update. Reconcile even when focus and tab order have not changed.
             if this.windows.contains(hwnd) then
-                this.saveTopWindowPlacement()
+                // Foreground can arrive before this tab has taken the group's maximized frame.
+                let aligning = FollowerPlacement.queue.isWindowBusyWith(placementOwner,this.topWindow,fun (_,request) ->
+                    match request with AlignWindow _ -> true | _ -> false)
+                if not aligning then this.saveTopWindowPlacement()
                 this.updateIsVisible()
                 // A strip owned by nothing, as when the window runs with other rights, is not
                 // raised with its window: a group of one window has no order change to move it, and

@@ -1552,6 +1552,20 @@ let main() =
                 check (Win32Helper.GetMinMaxAnimation()=animationPreference) "Maximize changed the user's animation preference"
                 onGroup(fun group -> applyPlacement group ShowWindowCommands.SW_SHOWNORMAL)
                 pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
+                if count=2 then
+                    let selected = onGroup(fun group -> group.zorder.value.tail.head)
+                    withPoolHeld(fun () -> onGroup(fun group ->
+                        applyPlacement group ShowWindowCommands.SW_SHOWMAXIMIZED
+                        group.tabActivate(Tab selected,false)))
+                    waitOperation()
+                    check (OS().windowFromHwnd(selected).isMaximized) "Selecting a tab cancelled its pending maximize"
+                    onHelper(fun () -> for form in forms |> List.take count do form.WindowState <- FormWindowState.Maximized)
+                    check (handles |> List.take count |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMaximized)) "Restore probe needs maximized fixtures"
+                    withPoolHeld(fun () -> onGroup(fun group ->
+                        applyPlacement group ShowWindowCommands.SW_SHOWNORMAL
+                        group.tabActivate(Tab(group.zorder.value.tail.head),false)))
+                    waitOperation()
+                    check (not(OS().windowFromHwnd(onGroup(fun group -> group.topWindow)).isMaximized)) "Selecting a tab cancelled its pending restore"
                 if count=5 then
                     samples "5tabs-selection-info-responsive" 30 (fun group index ->
                         invoke "setTabInfo" group [|box handles.[index%5]|] |> ignore)
