@@ -8,11 +8,16 @@ between them with a click or a shortcut.
 [![Downloads](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)](https://github.com/leafOfTree/WindowTabs/releases)
 [![Build](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml/badge.svg)](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml)
 
-> [!IMPORTANT]
-> **[v2026.11.20 stable release](https://github.com/leafOfTree/WindowTabs/releases/tag/v2026.11.20)**:
-> select and drag multiple tabs, search in the Alt+Tab switcher, and use Korean UI text,
-> with fixes for window state, focus and split commands.
-> [Changes since v2026.11.13-beta.1 →](https://github.com/leafOfTree/WindowTabs/compare/v2026.11.13-beta.1...v2026.11.20)
+> [!NOTE]
+> **What's new in [v2026.11.20](https://github.com/leafOfTree/WindowTabs/releases/tag/v2026.11.20)**
+> — highlights since the previous stable release, v2025.06.30:
+>
+> - **Split view:** arrange windows side by side or stacked within a tab group.
+> - **Commands and search:** find actions and settings in the command palette, or search windows in Alt+Tab.
+> - **Group editing:** select, move and close multiple tabs, and organize groups visually.
+> - **Workspaces:** save groups and window positions, then restore them and launch missing apps.
+>
+> [See all changes →](https://github.com/leafOfTree/WindowTabs/compare/v2025.06.30...v2026.11.20)
 
 <a href="docs/images/light.png"><img src="docs/images/light-rounded.svg" width="600" alt="Light tabs grouping three File Explorer windows" /></a>
 
