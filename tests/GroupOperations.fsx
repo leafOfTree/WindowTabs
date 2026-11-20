@@ -1606,6 +1606,24 @@ let main() =
                         group.tabActivate(Tab target,false)))
                     waitOperation()
                     check (OS().windowFromHwnd(target).isMaximized) "Foreground sampled a maximize without passing it to the next tab"
+                    // Restore completion can observe the next maximize before its location event.
+                    onHelper(fun () -> for hwnd in handles |> List.take count do OS().windowFromHwnd(hwnd).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
+                    onGroup(fun group -> applyPlacement group ShowWindowCommands.SW_SHOWNORMAL)
+                    waitOperation()
+                    let source,target = onGroup(fun group -> group.topWindow,group.zorder.value.tail.head)
+                    withPoolHeld(fun () -> onGroup(fun group ->
+                        OS().windowFromHwnd(source).move(Rect(Pt(100,100),Sz(640,480)))
+                        OS().windowFromHwnd(source).showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
+                        OS().windowFromHwnd(source).bringToTop()
+                        check (group.topWindow=source && OS().windowFromHwnd(source).isMaximized && not(OS().windowFromHwnd(target).isMaximized))
+                              (sprintf "Restore completion probe: top/source %A/%A, source/target maximized %b/%b" group.topWindow source (OS().windowFromHwnd(source).isMaximized) (OS().windowFromHwnd(target).isMaximized))
+                        let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="reconcileMinimizeState")
+                        field.SetValue(group,box true)
+                        invoke "finishPlacementReconciliation" group [||] |> ignore
+                        check (group.topWindow=source) "Restore completion probe changed its source"
+                        group.tabActivate(Tab target,false)))
+                    waitOperation()
+                    check (OS().windowFromHwnd(target).isMaximized) "Restore completion sampled a new maximize without passing it to the next tab"
                     onHelper(fun () -> for form in forms |> List.take count do form.Pinned <- true)
                     onHelper(fun () -> for hwnd in handles |> List.take count do OS().windowFromHwnd(hwnd).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
                     onGroup(fun group -> applyPlacement group ShowWindowCommands.SW_SHOWNORMAL)

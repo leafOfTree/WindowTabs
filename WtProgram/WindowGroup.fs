@@ -822,7 +822,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     this.os.setZorder(order)
                     this.setZorder(order)
                     this.saveZorder()
-                    if not this.isEmpty then this.saveTopWindowPlacement()
+                    if not this.isEmpty then this.reconcileTopWindowPlacement()
                     this.updateIsVisible()
                     this.foreground <- this.os.foreground.hwnd
                     this.checkRestoredOrder(order))
@@ -2508,6 +2508,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.saveTopWindowPlacement() = this.saveWindowPlacement zorderCell.value.head
 
+    /// Foreground and restore completion can observe a new frame before its location event.
+    member private this.reconcileTopWindowPlacement() =
+        let aligning = FollowerPlacement.queue.isWindowBusyWith(placementOwner,this.topWindow,fun (_,request) ->
+            match request with AlignWindow _ -> true | _ -> false)
+        if not aligning then
+            let previous = placement.value
+            this.saveTopWindowPlacement()
+            if placement.value<>previous then this.adjustChildWindows()
+
     /// The group's frame from one of its windows.
     member private this.saveWindowPlacement(hwnd:IntPtr) =
         let window = this.os.windowFromHwnd(hwnd)
@@ -2867,14 +2876,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // update. Reconcile even when focus and tab order have not changed.
             if this.windows.contains(hwnd) then
                 // Foreground can arrive before this tab has taken the group's maximized frame.
-                let aligning = FollowerPlacement.queue.isWindowBusyWith(placementOwner,this.topWindow,fun (_,request) ->
-                    match request with AlignWindow _ -> true | _ -> false)
-                if not aligning then
-                    let previous = placement.value
-                    this.saveTopWindowPlacement()
-                    // Foreground can observe a native maximize before its location event.
-                    // Publish the new frame to followers before another tab takes over.
-                    if placement.value<>previous then this.adjustChildWindows()
+                this.reconcileTopWindowPlacement()
                 this.updateIsVisible()
                 // A strip owned by nothing, as when the window runs with other rights, is not
                 // raised with its window: a group of one window has no order change to move it, and
