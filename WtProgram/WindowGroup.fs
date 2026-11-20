@@ -1142,7 +1142,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         let window = this.os.windowFromHwnd old
                         let aligning = FollowerPlacement.queue.isWindowBusyWith(placementOwner,old,fun (_,request) ->
                             match request with AlignWindow _ -> true | _ -> false)
-                        if DebugLog.placementEnabled then DebugLog.writef "Select %A -> %A: source=%A cached=%A aligning=%b" old newZorder.head window.placement.showCmd (placement.value |> Option.map(fun (_,wp,_) -> wp.showCmd)) aligning
+                        if DebugLog.placementEnabled then DebugLog.writef "Select %A -> %A: source=%A cached=%A aligning=%b" old newZorder.tryHead window.placement.showCmd (placement.value |> Option.map(fun (_,wp,_) -> wp.showCmd)) aligning
                         if not aligning && not window.isMinimized &&
                            (placement.value |> Option.exists(fun (_,wp,_) -> wp.showCmd<>window.placement.showCmd)) then
                             this.saveWindowPlacement old
