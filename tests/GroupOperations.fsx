@@ -386,6 +386,7 @@ let main() =
         queue.release(owner,removed)
         check (queue.retainedCount=1) "Cancelled queued HWND remained retained behind a slow call"
         queue.claim(other,first)
+        queue.mapPending(other,first,fun _ -> failwith "Selection revived the previous owner's in-flight placement")
         check (completed.ToArray()=[|owner|]) "Transferred work did not release the previous owner's wait"
         queue.submit(other,first,4)
         queue.release(owner,first)
@@ -411,6 +412,15 @@ let main() =
         queue.submit(other,first,26)
         pumpUntil(fun () -> queue.isIdle(other))
         check (completed.Count=3) "A disposed placement subscription received completion"
+        entered.Reset()
+        resume.Reset()
+        queue.submit(other,first,1)
+        check (entered.Wait(10000)) "Cancelled-placement worker did not start"
+        queue.cancel(other,first)
+        queue.mapPending(other,first,fun _ -> failwith "Selection revived a cancelled in-flight placement")
+        resume.Set()
+        pumpUntil(fun () -> queue.isIdle(other))
+        check (applied.ToArray()=[|4;25;26|]) "Cancelled placement was applied again during selection"
         queue.release(other,first)
     finally resume.Set()
     // A window joining a maximized group opens at its own size. It is maximized where it is, never
