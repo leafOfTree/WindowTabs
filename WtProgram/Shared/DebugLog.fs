@@ -10,11 +10,14 @@ module DebugLog =
     let fileName = "WindowTabsDebug.log"
     let private maxBytes = 1024L*1024L
     let private gate = obj()
+    let placementEnabled = Environment.GetEnvironmentVariable("WINDOWTABS_PLACEMENT_LOG")="1"
 
     let path() = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,fileName)
 
     let write (text:string) =
-#if DEBUG
+#if !DEBUG
+        if placementEnabled then
+#endif
         try
             lock gate (fun () ->
                 let file = path()
@@ -24,8 +27,5 @@ module DebugLog =
                 let line = String.Format("{0:yyyy-MM-dd HH:mm:ss.fff} [{1}] {2}\r\n",DateTime.Now,Threading.Thread.CurrentThread.ManagedThreadId,text)
                 File.AppendAllText(file,line,UTF8Encoding(false)))
         with _ -> ()
-#else
-        ignore text
-#endif
 
     let writef format = Printf.kprintf write format

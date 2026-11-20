@@ -1142,6 +1142,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         let window = this.os.windowFromHwnd old
                         let aligning = FollowerPlacement.queue.isWindowBusyWith(placementOwner,old,fun (_,request) ->
                             match request with AlignWindow _ -> true | _ -> false)
+                        if DebugLog.placementEnabled then DebugLog.writef "Select %A -> %A: source=%A cached=%A aligning=%b" old newZorder.head window.placement.showCmd (placement.value |> Option.map(fun (_,wp,_) -> wp.showCmd)) aligning
                         if not aligning && not window.isMinimized &&
                            (placement.value |> Option.exists(fun (_,wp,_) -> wp.showCmd<>window.placement.showCmd)) then
                             this.saveWindowPlacement old
@@ -2529,6 +2530,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let workArea = if window.isMaximized then Mon.fromHwnd(window.hwnd).map(fun mon -> mon.workRect) else None
             let bounds = workArea.map(fun area -> area.move(-1,-1)).def(window.bounds)
             let visible = workArea.def(window.visibleBounds)
+            if DebugLog.placementEnabled then DebugLog.writef "Save %A state=%A top=%A" hwnd window.placement.showCmd zorderCell.value.tryHead
             placement.set(Some(bounds, window.placement, visible))
             // Parked panes come back at the frame the group has now.
             (match groupLayout with Parked _ -> this.saveSplitProps() | _ -> ())
@@ -2566,6 +2568,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let bounds,wp,visible = placement.value.Value
             let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
             let request = FollowerPlacement.alignFrameRequest hwnd bounds visible wp below
+            if DebugLog.placementEnabled then DebugLog.writef "Align %A state=%A below=%A" hwnd wp.showCmd below
             FollowerPlacement.queue.submit(placementOwner,hwnd,request)
             // Maximize/snap can hide or cover the owned strip after its early events.
             reconcilePlacementState <- true

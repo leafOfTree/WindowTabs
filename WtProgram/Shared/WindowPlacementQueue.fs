@@ -200,6 +200,7 @@ module FollowerPlacement =
                     below |> Option.iter(fun top -> if valid() && WinUserApi.IsWindow(top) then window.insertAfter(top))
             | AlignWindow(bounds,wp,below,visible) ->
                 let actual = window.placement
+                if DebugLog.placementEnabled then DebugLog.writef "Apply %A actual=%A requested=%A below=%A" hwnd actual.showCmd wp.showCmd below
                 let fixedSize = IndependentWindowParking.fixedSize window
                 let wp =
                     if not fixedSize then wp else
@@ -273,6 +274,7 @@ module FollowerPlacement =
                 if valid() && not window.isMinimized && previous<>IntPtr.Zero && WinUserApi.IsWindow(previous) &&
                    window.prevZorder.hwnd<>previous && (positioned || (below.IsSome && isAbove hwnd previous)) && valid() then
                     window.insertAfter(previous)
+                if DebugLog.placementEnabled then DebugLog.writef "Applied %A state=%A valid=%b" hwnd window.placement.showCmd (valid())
 
     /// A group's windows usually each have a thread of their own and change state together, so a
     /// large group is not minimized or restored four windows at a time. The thread pool adds threads
