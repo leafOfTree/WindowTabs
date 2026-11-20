@@ -62,7 +62,7 @@ $taskbarAutomationReferences = @([System.Windows.Automation.AutomationElement].A
 if ($LASTEXITCODE -ne 0) { throw 'Desktop E2E compilation failed.' }
 & $hostExe --check-random-plan
 if ($LASTEXITCODE -ne 0) { throw 'Random action planner checks failed.' }
-@{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; virtualDesktops=[bool]$VirtualDesktops; profile=$Profile; switches=$Switches; cycles=$Cycles; durationMinutes=$DurationMinutes; randomize=$randomize; seed=$Seed; randomBatchesPerCycle=$RandomBatchesPerCycle; randomPlanVersion=1; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
+@{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; virtualDesktops=[bool]$VirtualDesktops; profile=$Profile; switches=$Switches; cycles=$Cycles; durationMinutes=$DurationMinutes; randomize=$randomize; seed=$Seed; randomBatchesPerCycle=$RandomBatchesPerCycle; resourceWarmupBatches=$(if ($randomize) { 2 } else { 0 }); randomPlanVersion=1; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
 Write-Host "Desktop E2E artifacts: $stage"
 if ($BuildOnly) { return }
 if ($VirtualDesktops) { Copy-Item -LiteralPath $hostExe -Destination (Join-Path $stage 'DesktopAnchor.exe') }
@@ -129,7 +129,7 @@ if ($VirtualDesktops) {
     return
 }
 if ($report.status -ne 'passed' -or $report.completedCycles -ne $Cycles) { throw 'Desktop E2E exited without completing every cycle.' }
-if ($randomize -and ($report.seed -ne $Seed -or -not $report.randomize -or $report.randomActionCount -lt (30 * $Cycles * [Math]::Max(1, $RandomBatchesPerCycle)))) {
+if ($randomize -and ($report.seed -ne $Seed -or -not $report.randomize -or $report.resourceWarmupBatches -ne 2 -or $report.randomActionCount -lt (30 * $Cycles * (2 + [Math]::Max(1, $RandomBatchesPerCycle))))) {
     throw 'Desktop E2E exited without completing its seeded random actions.'
 }
 if ($report.verifiedSwitches -lt (($Switches + 60) * $Cycles) -or $report.switchingSeconds -lt ($DurationMinutes * 60)) {

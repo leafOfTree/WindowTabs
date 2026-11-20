@@ -70,6 +70,7 @@ static partial class DesktopE2E
     static bool randomize;
     static bool cleaningUp;
     static int seed, randomActionCount, randomBatchesPerCycle;
+    const int ResourceWarmupBatches=2;
     sealed class RandomAction
     {
         public int Kind, Target, Burst;
@@ -553,10 +554,20 @@ static partial class DesktopE2E
             selected=(selected+1)%order.Count;
             Chord(0x31+selected);
             await Activated(order[selected],target);
+            var random=new Random(unchecked(seed+cycle));
+            if(randomize) {
+                // Switching alone does not warm the STA/runtime resources used by regrouping.
+                // Keep the same action stream, then measure against one fixed mature baseline.
+                phase="cycle "+(cycle+1)+" resource warmup";
+                for(int warmup=0;warmup<ResourceWarmupBatches;warmup++) {
+                    await SwitchMany(target,order,switches);
+                    await RandomMany(target,order,random);
+                }
+                Log("Completed resource warmup; starting the measured workload");
+            }
             phase="cycle "+(cycle+1)+" frequent switching";
             var switching=Stopwatch.StartNew();
             int[] switchingBaseline=null;
-            var random=new Random(unchecked(seed+cycle));
             int batches=0;
             // Keep one application/group alive for the requested duration in
             // each cycle, then exercise normal exit and restart as usual.
@@ -635,7 +646,7 @@ static partial class DesktopE2E
                     catch(Exception error) { code=1; Console.Error.WriteLine(error); File.AppendAllText(Path.Combine(Root,"failure.txt"),Environment.NewLine+"Cleanup: "+error); }
                 }
                 if(inputOwned) { Inject(MouseInput(4),KeyInput(0x11,true),KeyInput(0x12,true),KeyInput(0x5B,true)); Move(savedCursor); }
-                File.WriteAllText(Path.Combine(Root,"result.json"),Json.Serialize(new { status=code==0?"passed":"failed",phase,step,seed,randomize,randomActionCount,completedCycles=completed,verifiedSwitches=totalSwitches,switchingSeconds,virtualDesktops,virtualDesktopScenarios=DesktopScenarios,temporaryDesktopsRemoved,originalDesktopRestored,measurements=Measurements,resourceSamples=ResourceSamples,recentActions=RecentActions.ToArray() }));
+                File.WriteAllText(Path.Combine(Root,"result.json"),Json.Serialize(new { status=code==0?"passed":"failed",phase,step,seed,randomize,randomActionCount,resourceWarmupBatches=randomize?ResourceWarmupBatches:0,completedCycles=completed,verifiedSwitches=totalSwitches,switchingSeconds,virtualDesktops,virtualDesktopScenarios=DesktopScenarios,temporaryDesktopsRemoved,originalDesktopRestored,measurements=Measurements,resourceSamples=ResourceSamples,recentActions=RecentActions.ToArray() }));
                 context.ExitThread();
             };
             start.Start(); Application.Run(context);

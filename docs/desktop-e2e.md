@@ -60,9 +60,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-DesktopE2E.ps1 -In
 | Full (default) | Two cycles with restart; 600 + 30 + 30 checked switches per cycle | 10 minutes |
 | Soak | Two cycles; at least 30 minutes of switching and seeded random operations across them, then normal exit/restart checks | 40 minutes |
 
-Soak keeps each application instance alive for at least 15 minutes of switching;
-it does not merely repeat many short process lifetimes. It retains the first
-warmup resource baseline across successive batches, so gradual growth cannot
+Soak first warms each instance with two complete switching/random-action batches,
+including minimize, maximize and regrouping. Switching alone does not warm the
+STA/runtime resources that regrouping uses. Those warmup batches retain all
+correctness checks and are recorded in the same seeded action stream. They are
+additional to a requested replay batch count and do not count toward the measured
+duration. The resource baseline is then fixed for the rest of that instance.
+Kernel handle-type counts and live thread counts accompany baseline and failed
+resource samples, so retired thread/event handles can be distinguished from
+continuously growing resource use without forcing collection in the application.
+
+Soak keeps each application instance alive for at least 15 measured minutes of switching;
+it does not merely repeat many short process lifetimes. It retains the fixed
+post-warmup resource baseline across successive batches, so gradual growth cannot
 escape the budget by resetting the baseline. `-Switches`, `-Cycles`,
 `-DurationMinutes` and `-TimeoutSeconds` can explicitly override profile values.
 These timeouts are upper bounds, not expected runtimes. Live progress is streamed
