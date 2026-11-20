@@ -217,6 +217,8 @@ module SettingRows =
 module Commands =
     let private groupOf (hwnd:IntPtr) = Services.desktop.groups.tryFind(fun group -> group.windows.contains((=)hwnd))
     let private hasGroup hwnd = (groupOf hwnd).IsSome
+    let private hasSplit hwnd =
+        groupOf hwnd |> Option.exists(function :? GroupInfo as info -> info.group.hasSplitView | _ -> false)
     /// A tab among others: a group of one has no next tab, nothing to sort or move along. A window
     /// hidden or destroyed no longer counts, though the group keeps it until discovery lets it go.
     let private hasOtherTabs hwnd =
@@ -591,16 +593,16 @@ module Commands =
         fromCatalog "split-pick-below" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(Stacked,Second)))
         fromCatalog "split-pick-left" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(SideBySide,First)))
         fromCatalog "split-pick-above" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(Stacked,First)))
-        fromCatalog "split-focus-left" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(FocusToward PaneLeft)))
-        fromCatalog "split-focus-right" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(FocusToward PaneRight)))
-        fromCatalog "split-focus-up" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(FocusToward PaneUp)))
-        fromCatalog "split-focus-down" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(FocusToward PaneDown)))
-        fromCatalog "split-focus-other" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit FocusOther))
-        fromCatalog "split-swap" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(Swap None)))
-        fromCatalog "split-equalize" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(Equalize None)))
-        fromCatalog "split-turn" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(ToggleAxis None)))
-        fromCatalog "split-close-pane" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(ClosePane None)))
-        fromCatalog "split-end" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(EndSplit None)))
+        fromCatalog "split-focus-left" SplitCommands hasSplit (onGroup(fun g -> g.executeSplit(FocusToward PaneLeft)))
+        fromCatalog "split-focus-right" SplitCommands hasSplit (onGroup(fun g -> g.executeSplit(FocusToward PaneRight)))
+        fromCatalog "split-focus-up" SplitCommands hasSplit (onGroup(fun g -> g.executeSplit(FocusToward PaneUp)))
+        fromCatalog "split-focus-down" SplitCommands hasSplit (onGroup(fun g -> g.executeSplit(FocusToward PaneDown)))
+        fromCatalog "split-focus-other" SplitCommands hasSplit (onGroup(fun g -> g.executeSplit FocusOther))
+        fromCatalog "split-swap" SplitCommands hasSplit (onGroup(fun g -> g.executeSplit(Swap None)))
+        fromCatalog "split-equalize" SplitCommands hasSplit (onGroup(fun g -> g.executeSplit(Equalize None)))
+        fromCatalog "split-turn" SplitCommands hasSplit (onGroup(fun g -> g.executeSplit(ToggleAxis None)))
+        fromCatalog "split-close-pane" SplitCommands hasSplit (onGroup(fun g -> g.executeSplit(ClosePane None)))
+        fromCatalog "split-end" SplitCommands hasSplit (onGroup(fun g -> g.executeSplit(EndSplit None)))
         fromCatalog "save-workspace" WorkspaceCommands always (fun _ -> Services.program.saveWorkspace())
         fromCatalog "restore-workspace" WorkspaceCommands always (fun _ -> Services.program.restoreWorkspace())
         choosing "restore-workspace-named" Strings.Commands.restoreWorkspaceNamed WorkspaceCommands anyWorkspace (fun _ ->

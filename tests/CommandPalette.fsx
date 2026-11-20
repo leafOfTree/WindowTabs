@@ -196,8 +196,9 @@ let main() =
             | Choose options -> options
             | other -> issues.Add(sprintf "%s did not list its choices: %A" id other); []
 
-        // 1. With a tab in front every command can act; with nothing in front, the ones that need a
-        // tab say so by being dimmed, and none of them may throw or put up a message when run.
+        // Commands needing a split stay dimmed until one exists; commands needing a tab
+        // stay dimmed with no tab, and running them without a target must do no harm.
+        let needsSplit = set ["split-focus-left";"split-focus-right";"split-focus-up";"split-focus-down";"split-focus-other";"split-swap";"split-equalize";"split-turn";"split-close-pane";"split-end"]
         let needsTab = set [TabCommands;GroupCommands;SplitCommands]
         // Listed with the tab and group commands, but open a box wherever the user is.
         let anywhere = set ["search-tabs";"command-palette";"edit-groups"]
@@ -213,7 +214,9 @@ let main() =
                 note (not withNone) (sprintf "%s is offered with no tab in front" command.id)
             else note withNone (sprintf "%s is dimmed with no tab in front, though it needs none" command.id)
             // These wait on the tab's colour or the group's combined taskbar button.
-            if not (needsWorkspace.Contains command.id) && command.id<>"change-group-icon" && command.id<>"restore-group-icon" && command.id<>"remember-tab-color" && command.id<>"remember-group-color" then
+            if needsSplit.Contains command.id then
+                note (not withTab) (sprintf "%s is offered before starting split view" command.id)
+            elif not (needsWorkspace.Contains command.id) && command.id<>"change-group-icon" && command.id<>"restore-group-icon" && command.id<>"remember-tab-color" && command.id<>"remember-group-color" then
                 note withTab (sprintf "%s is dimmed with a tab in front" command.id)
         for command in Commands.all do
             // Settings toggles are walked below, each turned and turned back.
@@ -545,6 +548,8 @@ let main() =
             let before = picks.Count
             runDone "split-next" splitOne
             pumpUntil "Split with the next tab" isSplit
+            for id in needsSplit do
+                note ((Commands.find id).Value.enabled splitOne) (id+" is dimmed during split view")
             for id in ["group-keep-window-sizes";"group-inactive-off-screen"] do
                 note (not ((Commands.find id).Value.enabled splitOne)) (id+" was offered in split view")
             let pair = onGroupOf splitOne (fun group -> group.splitLayout |> Option.map(fun s -> s.tree.axis,s.tree.first,s.tree.second))
@@ -574,7 +579,9 @@ let main() =
             onGroupOf splitOne (fun group -> group.execute(SplitWith(splitTwo,SideBySide),current=splitOne))
             pumpUntil "Splitting again" isSplit
             runDone "split-end" splitOne
-            pumpUntil "Ending the split" (fun () -> not (isSplit())))
+            pumpUntil "Ending the split" (fun () -> not (isSplit()))
+            for id in needsSplit do
+                note (not ((Commands.find id).Value.enabled splitOne)) (id+" remains enabled after ending split view"))
         // Workspaces and the settings window, which the program and the settings window do.
         attempt "save-workspace" (fun () -> runDone "save-workspace" active; note (called "saveWorkspace") "Save workspace did not save")
         attempt "restore-workspace" (fun () -> runDone "restore-workspace" active; note (called "restoreWorkspace") "Restore workspace did not restore")
