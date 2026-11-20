@@ -16,7 +16,7 @@ module DebugLog =
 
     let write (text:string) =
 #if !DEBUG
-        if placementEnabled then
+        if not placementEnabled then () else
 #endif
         try
             lock gate (fun () ->
