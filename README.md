@@ -35,7 +35,7 @@ It runs in the system tray.
 - Hover over the tab bar to reveal **+** and click it to open another window of the current app. Under **Settings → Appearance → Show new tab button** you can choose **Never**, **On hover** (default), or **Always**.
 - Right-click **+** to find an existing window by title or app name and add it to the group.
 - You can also drag a tab onto another tab bar to group windows, or drag it away to ungroup.
-- **Work with several tabs:** Ctrl-click to select tabs or Shift-click to select a range. Hold Ctrl or Shift while dragging to move the selection together.
+- **Work with several tabs:** Ctrl-click to select tabs or Shift-click to select a range. Drag any selected tab to move the selection together.
 - **Group an app automatically:** right-click its tab → **Enable auto-grouping**.
 - **Put the tabs where you like:** hold the right mouse button on a tab and drag the tabs
   along the window's edge, across the top or down the side. New windows of that app start
