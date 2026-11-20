@@ -36,7 +36,7 @@ It runs in the system tray.
 - Right-click **+** to find an existing window by title or app name and add it to the group.
 - You can also drag a tab onto another tab bar to group windows, or drag it away to ungroup.
 - **Work with several tabs:** Ctrl-click to select tabs or Shift-click to select a range. Drag any selected tab to move the selection together.
-- **Group an app automatically:** right-click its tab → **Enable auto-grouping**.
+- **Group an app automatically:** right-click its tab → **Auto-group windows**.
 - **Put the tabs where you like:** hold the right mouse button on a tab and drag the tabs
   along the window's edge, across the top or down the side. New windows of that app start
   there; **Align tabs** in the tab menu puts them back.
@@ -61,12 +61,13 @@ to **Never**.
 | Move the current tab | Ctrl + scroll over the tab bar |
 | Close a tab | Ctrl + Alt + W, or middle-click |
 
-Change any shortcut under **Settings → Shortcuts**. **Switch tabs by number** defaults
-to **Ctrl + 1–9**; choose **Alt + 1–9** or **Off** there. An app can override this choice
-from its tab's right-click menu.
+Change the main shortcuts under **Settings → Shortcuts**. To assign a shortcut to any
+command, find it in the command palette and press **Alt + Enter**. **Switch tabs by number**
+defaults to **Ctrl + 1–9**; choose **Alt + 1–9** or **Off** in Settings. Enable or disable
+number switching for an individual app from its tab's right-click menu.
 
 **Optional, off by default:** switch on hover, a picture of a tab's window when the pointer
-rests on it, a leader key to pick tabs by letter (Alt + F, then the key on the tab), automatic
+rests on it, a leader key to pick tabs (Alt + F, then the displayed selection key), automatic
 tab colors, and an Alt+Tab replacement.
 
 Drag files onto a tab and pause to bring that window forward. On a **File Explorer**
@@ -77,7 +78,7 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 
 - **Appearance:** light, dark or follow Windows; horizontal or vertical tabs;
   Joined, Folder or Floating styles; per-tab, per-app or per-group colors.
-- **Pinned tabs:** right-click a tab → **Pin** to keep it at the front of its group, out of
+- **Pinned tabs:** right-click a tab → **Pin tab** to keep it at the front of its group, out of
   reach of **Close others**, **Close tabs to the right** and **Close all**, across restarts.
 - **App rules:** choose which running apps get tabs and which group automatically.
   Under **Groups across apps**, add groups so windows of different apps join
@@ -89,16 +90,15 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 - **Split view:** show two or more of a group's windows side by side or stacked, as in a
   browser or editor. Right-click a tab → **Split view** and pick a window for each side, or
   drag a tab to a window's edge. Drag the bar between the panes to resize them, right-click
-  it to swap, equalize, switch direction or end the split. Shortcuts for a window on the right
-  or below and for moving the focus between panes are under **Settings → Shortcuts**, unset by
-  default.
+  it to swap, equalize, switch direction or end the split. Split commands have no shortcuts
+  by default; find a command in the palette and press **Alt + Enter** to assign one.
 - **Group editor:** **Edit groups…** in the palette shows every group as a row of tabs, with
   the loose windows below. Drag tabs between rows, onto a window to split it, or onto **New
   group**; nothing moves until **Save**.
 - **Workspaces:** save groups and window positions, then restore them onto open windows;
-  apps that are not running can be launched and their windows restored. Shortcuts to save
-  one and to restore the last saved or restored one are under **Settings → Shortcuts**,
-  unset by default.
+  apps that are not running can be launched and their windows restored. **Save workspace**
+  and **Restore workspace** have no shortcuts by default; assign them with
+  **Alt + Enter** in the command palette.
 - **Mouse gestures:** turn them on under **Settings → Gestures**, then hold the right
   button and drag, such as up then right for the next tab. A gesture runs a WindowTabs command
   or sends a shortcut to the window, and an app can have its own: browsers and File Explorer
@@ -134,14 +134,14 @@ Searching works the same in both boxes:
   **Tab** goes round the window search's scopes, **Ctrl + U** clears what is typed and
   **Ctrl + Backspace** deletes a word.
 
-The same commands run from a command line, in the running WindowTabs:
+Run the same commands from PowerShell in the folder containing `WindowTabs.exe`:
 
-```bash
-WindowTabs.exe --command next-tab
-WindowTabs.exe --command tab-color Blue
-WindowTabs.exe --workspace "Project A"
-WindowTabs.exe --group "C:\Program Files\App\app.exe" notepad.exe
-WindowTabs.exe --commands
+```powershell
+.\WindowTabs.exe --command next-tab
+.\WindowTabs.exe --command tab-color Blue
+.\WindowTabs.exe --workspace "Project A"
+.\WindowTabs.exe --group "C:\Program Files\App\app.exe" notepad.exe
+.\WindowTabs.exe --commands
 ```
 
 `--group` starts the programs and puts the windows they open into one group, and
@@ -188,7 +188,7 @@ Win32 interop. To build on Windows 10 or 11:
 
 Open a new **PowerShell** window in the folder where you want to keep the source:
 
-```bash
+```powershell
 git clone https://github.com/leafOfTree/WindowTabs
 cd WindowTabs
 dotnet build WindowTabs.sln                 # Debug: WtProgram\bin\Debug\WindowTabs.exe
@@ -196,9 +196,10 @@ dotnet build WindowTabs.sln -c Release      # Release: WtProgram\bin\Release\Win
 ```
 
 The first build downloads NuGet dependencies and needs internet access. Run the
-generated exe to start WindowTabs in the system tray; exit it before rebuilding,
-as the running exe locks the output. If `dotnet` is not found, reopen PowerShell
-after installation.
+generated exe to start WindowTabs in the system tray. Debug builds can be rebuilt
+while the app runs; start the newly built exe to replace the running copy. Exit a
+running Release copy before rebuilding Release, as it locks the output. If `dotnet`
+is not found, reopen PowerShell after installation.
 
 **Alternatively, use Visual Studio**
 
