@@ -171,6 +171,18 @@ let main () =
             check (Win32Helper.GetWindowIcon(native.hwnd,IconTypeCodes.ICON_SMALL)=replacement.Handle) "Native small icon retained a released cached handle"
             check (Win32Helper.GetWindowIcon(native.hwnd,IconTypeCodes.ICON_BIG)=replacement.Handle) "Native big icon retained a released cached handle"
         finally (native :?> IDisposable).Dispose()
+        // Tray frames must use their small canvas rather than inherit logo whitespace.
+        for side in [16;20;24;32;48] do
+            use stream = typeof<IconSprite>.Assembly.GetManifestResourceStream("Bemo.ico")
+            use icon = new Icon(stream,side,side)
+            use bitmap = icon.ToBitmap()
+            let occupied = [for y in 0..bitmap.Height-1 do
+                                for x in 0..bitmap.Width-1 do
+                                    if bitmap.GetPixel(x,y).A >= 128uy then yield x,y]
+            check (not occupied.IsEmpty) "Application icon is empty"
+            let xs,ys = occupied |> List.unzip
+            check (List.max xs - List.min xs + 1 >= side-3 &&
+                   List.max ys - List.min ys + 1 >= side-3) "Small application icon has excessive transparent padding"
         // A large icon with colour only in its bottom-right quadrant used to
         // render blank because IconSprite cropped the top-left 20x20 pixels.
         for side in [16;32;40;48;64;256] do

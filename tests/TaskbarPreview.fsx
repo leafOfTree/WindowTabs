@@ -197,26 +197,14 @@ let main() =
         check (pixels.Width=32 && pixels.Height=32) (sprintf "Badged taskbar icon is %dx%d" pixels.Width pixels.Height)
         check (isAppColour(pixels.GetPixel(4,4)) && isAppColour(pixels.GetPixel(28,4)) && isAppColour(pixels.GetPixel(4,28))) "Badge covered more than the bottom right of the app's icon"
         check (not(isAppColour(pixels.GetPixel(24,24)))) "Taskbar icon has no badge at the bottom right"
-        // ICO frame selection changes the antialiased edge; compare the badge's
-        // overall position instead of requiring one edge pixel to be untouched.
-        use unshifted = new Bitmap(solid)
-        do
-            use graphics = Graphics.FromImage(unshifted)
-            graphics.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
-            use badgeIcon = Services.openIcon("Bemo.ico")
-            use badge = badgeIcon.ToBitmap()
-            graphics.DrawImage(badge,Rectangle(14,14,18,18))
-        let centreX (bitmap:Bitmap) =
-            let mutable total,weighted = 0.0,0.0
-            for y in 0..bitmap.Height-1 do
-                for x in 0..bitmap.Width-1 do
-                    let color = bitmap.GetPixel(x,y)
-                    let weight = float(abs(int color.R-200)+int color.G+int color.B)
-                    total <- total+weight
-                    weighted <- weighted+float x*weight
-            check (total>0.0) "Taskbar icon has no visible group badge"
-            weighted/total
-        check (centreX pixels-centreX unshifted>1.0) "Taskbar badge was not shifted towards the right edge"
+        // A tray icon with less padding must not grow across the main app's centre.
+        for side in [32;48;64] do
+            use composed = GroupIconImage.compose side solid []
+            let changed = [for y in 2..side-3 do
+                               for x in 2..side-3 do
+                                   if not(isAppColour(composed.GetPixel(x,y))) then yield x,y]
+            check (not changed.IsEmpty) "Taskbar icon has no visible group badge"
+            check (changed |> List.forall(fun (x,y) -> x>side/2 && y>side/2)) "Group badge covers the main app's centre"
     finally pixels.Dispose()
     let handle = badged.icon.Handle
     (badged :> IDisposable).Dispose()
