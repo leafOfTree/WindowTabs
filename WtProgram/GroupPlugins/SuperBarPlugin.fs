@@ -101,11 +101,9 @@ module GroupIconImage =
             g.DrawImage(app,Rectangle(0,0,size,size))
             use badgeIcon = Services.openIcon("Bemo.ico")
             use badge = badgeIcon.ToBitmap()
-            // Leave more of the application visible, with the badge tucked into the right corner.
-            let side = size*7/12
-            // The badge's transparent margin otherwise keeps its visible edge inset.
-            let rightOffset = size/12
-            g.DrawImage(badge,Rectangle(size-side+rightOffset,size-side,side,side))
+            // The optically enlarged tray icon needs a smaller badge box to leave the app visible.
+            let side = size*7/16
+            g.DrawImage(badge,Rectangle(size-side,size-side,side,side))
         | rest ->
             g.DrawImage(app,Rectangle(0,0,size,size))
             // The other apps sit small along the bottom, the last at the right edge: the first of
