@@ -795,6 +795,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         with get() = System.Threading.Volatile.Read(&token)
         and set value = System.Threading.Volatile.Write(&token,value)
 
+    /// Native owners can disappear during a transfer; the runtime claim remains authoritative.
+    member _.ownsWindow hwnd = FollowerPlacement.queue.ownsWindow(placementOwner,hwnd)
+
     member private this.finishPlacementReconciliation() =
         if not isDestroyed.value then
             // WinEvents report the start of restoration, before ShowWindow and its
@@ -819,7 +822,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     this.os.setZorder(order)
                     this.setZorder(order)
                     this.saveZorder()
-                    if not this.isEmpty then this.saveTopWindowPlacement()
+                    if not this.isEmpty then this.reconcileTopWindowPlacement()
                     this.updateIsVisible()
                     this.foreground <- this.os.foreground.hwnd
                     this.checkRestoredOrder(order))
@@ -1135,10 +1138,25 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             | _ -> newZorder
         if zorderCell.value.list <> newZorder.list then
             if not this.isSplit && newZorder.tryHead<>zorderCell.value.tryHead then
+                // A tab can be selected before the old top's native maximize/restore event arrives.
+                // Capture that change while it is still the source, not from the unfinished follower.
+                if groupLayout=GroupLayout.Single && not this.keepSizes then
+                    zorderCell.value.tryHead |> Option.iter(fun old ->
+                        let window = this.os.windowFromHwnd old
+                        let aligning = FollowerPlacement.queue.isWindowBusyWith(placementOwner,old,fun (_,request) ->
+                            match request with AlignWindow _ -> true | _ -> false)
+                        if not aligning && not window.isMinimized &&
+                           (placement.value |> Option.exists(fun (_,wp,_) -> wp.showCmd<>window.placement.showCmd)) then
+                            this.saveWindowPlacement old
+                            this.adjustChildWindows())
                 // In front now, the window no longer goes under another; a placement that leads
                 // stays: the frame a tab takes as the split parks behind it was cancelled here,
                 // whenever the worker had not started it yet, and the tab kept its pane's size.
                 newZorder.tryHead.iter(fun hwnd ->
+                    FollowerPlacement.queue.mapPending(placementOwner,hwnd,fun (identity,request) ->
+                        match request with
+                        | AlignWindow(bounds,wp,Some _,visible) -> Some(identity,AlignWindow(bounds,wp,None,visible))
+                        | _ -> None)
                     FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) ->
                         match request with
                         | SetMinimized _ | AlignWindow(_,_,None,_) -> false
@@ -2490,6 +2508,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.saveTopWindowPlacement() = this.saveWindowPlacement zorderCell.value.head
 
+    /// Foreground and restore completion can observe a new frame before its location event.
+    member private this.reconcileTopWindowPlacement() =
+        let aligning = FollowerPlacement.queue.isWindowBusyWith(placementOwner,this.topWindow,fun (_,request) ->
+            match request with AlignWindow _ -> true | _ -> false)
+        if not aligning then
+            let previous = placement.value
+            this.saveTopWindowPlacement()
+            if placement.value<>previous then this.adjustChildWindows()
+
     /// The group's frame from one of its windows.
     member private this.saveWindowPlacement(hwnd:IntPtr) =
         let window = this.os.windowFromHwnd(hwnd)
@@ -2848,7 +2875,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // Windows can hide an owned strip during minimize/restore after our last
             // update. Reconcile even when focus and tab order have not changed.
             if this.windows.contains(hwnd) then
-                this.saveTopWindowPlacement()
+                // Foreground can arrive before this tab has taken the group's maximized frame.
+                this.reconcileTopWindowPlacement()
                 this.updateIsVisible()
                 // A strip owned by nothing, as when the window runs with other rights, is not
                 // raised with its window: a group of one window has no order change to move it, and
@@ -2885,10 +2913,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if this.windows.isEmpty && GroupTopmost.marked hwnd then topmostChosen <- true
             if topmostChosen then GroupTopmost.pinAll [window]
             elif GroupTopmost.marked hwnd then GroupTopmost.release window
+            FollowerPlacement.queue.claim(placementOwner,hwnd)
             this.setWindows(this.windows.add hwnd)
             WindowGroupToken.save hwnd this.groupToken
             WindowGroupToken.saveMadeByHand hwnd isMadeByHand
-            FollowerPlacement.queue.claim(placementOwner,hwnd)
             if prevTop.value.IsNone then
                 prevTop.set(Some(hwnd))
                 this.saveTopWindowPlacement()

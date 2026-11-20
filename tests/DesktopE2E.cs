@@ -30,6 +30,9 @@ static partial class DesktopE2E
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr RemoveProp(IntPtr hwnd, string name);
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+    [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern IntPtr GetThreadDesktop(uint thread);
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -67,6 +70,7 @@ static partial class DesktopE2E
     static bool randomize;
     static bool cleaningUp;
     static int seed, randomActionCount, randomBatchesPerCycle;
+    const int ResourceWarmupBatches=2;
     sealed class RandomAction
     {
         public int Kind, Target, Burst;
@@ -80,6 +84,7 @@ static partial class DesktopE2E
     }
     static void CheckRandomPlan()
     {
+        CheckHandleSnapshot();
         foreach(int testSeed in new[]{0,1,-1,int.MinValue,int.MaxValue})
         {
             var first=new Random(testSeed); var replay=new Random(testSeed);
@@ -108,14 +113,28 @@ static partial class DesktopE2E
     static void Diagnose()
     {
         if(app==null || app.HasExited) return;
-        var all=Windows(app.Id).Concat(Helpers()).Select(h=> new { hwnd=h.ToInt64(),owner=GetWindow(h,4).ToInt64(),visible=IsWindowVisible(h),style=GetWindowLong(h,-16),extendedStyle=GetWindowLong(h,-20),windowClass=Class(h),bounds=Bounds(h) });
+        var own=new HashSet<IntPtr>(Windows(app.Id).Concat(Helpers()));
+        var all=Windows(0).Where(h=>own.Contains(h) || IsWindowVisible(h)).Select(WindowDetails);
         File.WriteAllText(Path.Combine(Root,"windows.json"),Json.Serialize(all.ToArray()));
+    }
+    static object WindowDetails(IntPtr h)
+    {
+        uint pid; uint thread=GetWindowThreadProcessId(h,out pid);
+        var desktop=new StringBuilder(256); uint needed;
+        GetUserObjectInformation(GetThreadDesktop(thread),2,desktop,512,out needed);
+        string processName=""; int session=-1;
+        try { using(var process=Process.GetProcessById((int)pid)) { processName=process.ProcessName; session=process.SessionId; } }
+        catch(Exception error) { processName="unavailable: "+error.GetType().Name; }
+        Rect bounds; bool hasBounds=GetWindowRect(h,out bounds);
+        return new { hwnd=h.ToInt64(),pid,thread,processName,session,desktop=desktop.ToString(),
+            parent=GetParent(h).ToInt64(),root=GetAncestor(h,2).ToInt64(),owner=GetWindow(h,4).ToInt64(),
+            visible=IsWindowVisible(h),style=GetWindowLong(h,-16),extendedStyle=GetWindowLong(h,-20),windowClass=Class(h),hasBounds,bounds };
     }
     static string Class(IntPtr h) { var s=new StringBuilder(256); GetClassName(h,s,s.Capacity); return s.ToString(); }
     static List<IntPtr> Windows(int pid)
     {
         var result=new List<IntPtr>();
-        EnumWindows((h,d) => { uint p; GetWindowThreadProcessId(h,out p); if(p==pid) result.Add(h); return true; },IntPtr.Zero);
+        EnumWindows((h,d) => { uint p; GetWindowThreadProcessId(h,out p); if(pid==0 || p==pid) result.Add(h); return true; },IntPtr.Zero);
         return result;
     }
     static List<IntPtr> Helpers() { return Forms.Where(f=>!f.IsDisposed).Select(f=>f.Handle).ToList(); }
@@ -209,7 +228,7 @@ static partial class DesktopE2E
         // Windows coming back from minimized are stacked again a moment after the foreground
         // settles; a strip still covered after that is the defect.
         try { await Until("Active window covers its tab strip",()=>WindowFromPoint(TabPoint(strip,0,3))==strip,1000); }
-        catch { var cover=WindowFromPoint(TabPoint(strip,0,3)); Log("strip="+strip+" covered by "+cover+" ("+Class(cover)+")"); throw; }
+        catch { var cover=WindowFromPoint(TabPoint(strip,0,3)); Log("strip="+strip+" covered by "+Json.Serialize(WindowDetails(cover))); throw; }
     }
     static async Task Drag(IntPtr source, IntPtr target, int targetCount)
     {
@@ -248,9 +267,27 @@ static partial class DesktopE2E
     }
     static void CheckGrowth(int[] before, int[] after)
     {
+        if(after[0]>before[0]+256 || after[1]>before[1]+128 || after[2]>before[2]+64)
+            ResourceSamples.Add(new { phase,step,resources=after,handles=HandleSnapshot(app) });
         Check(after[0]<=before[0]+256,"GDI growth exceeded the 256-object budget: "+before[0]+" -> "+after[0]);
         Check(after[1]<=before[1]+128,"USER growth exceeded the 128-object budget: "+before[1]+" -> "+after[1]);
         Check(after[2]<=before[2]+64,"Handle growth exceeded the 64-handle budget: "+before[2]+" -> "+after[2]);
+    }
+    static async Task CheckSettledGrowth(int[] baseline)
+    {
+        // Closing/regrouping retires group STAs asynchronously. Retain the original baseline
+        // and budgets, but let pending teardown finish before treating a live handle as a leak.
+        var timer=Stopwatch.StartNew();
+        var initial=Resources();
+        var current=initial;
+        while(timer.ElapsedMilliseconds<5000 &&
+              (current[0]>baseline[0]+256 || current[1]>baseline[1]+128 || current[2]>baseline[2]+64))
+        {
+            await Task.Delay(100);
+            current=Resources();
+        }
+        ResourceSamples.Add(new { phase,randomActions=randomActionCount,settlingMs=timer.ElapsedMilliseconds,initial,resources=current });
+        CheckGrowth(baseline,current);
     }
     static async Task<int[]> SwitchMany(IntPtr strip, List<IntPtr> order, int count)
     {
@@ -259,6 +296,7 @@ static partial class DesktopE2E
         for(int i=0;i<30;i++) { step="warmup "+i; int n=i%order.Count; Chord(0x12,0x31+n); await Activated(order[n],strip); }
         await Task.Delay(250);
         int[] before=Resources();
+        ResourceSamples.Add(new { phase,step="resource baseline",resources=before,handles=HandleSnapshot(app) });
         for(int i=0;i<count;i++)
         {
             step="switch "+i+" method "+(i%4);
@@ -339,7 +377,13 @@ static partial class DesktopE2E
                     Forms.Single(f=>!f.IsDisposed && f.Handle==order[current]).WindowState=FormWindowState.Maximized;
                     await Until("Random maximize did not place the strip inside the window",()=>Bounds(strip).Top<=area.Top+5);
                     Chord(0x12,0x31+selected); await Activated(order[selected],strip); totalSwitches++;
-                    Forms.Single(f=>!f.IsDisposed && f.Handle==order[selected]).WindowState=FormWindowState.Normal;
+                    var restoring=Forms.Single(f=>!f.IsDisposed && f.Handle==order[selected]);
+                    Remember("random restore requested",new { target=selected,state=restoring.WindowState.ToString() });
+                    // Foreground and strip ownership can precede asynchronous follower placement.
+                    // Setting Normal while still Normal is a no-op, followed by the pending maximize.
+                    await Until("Random restore target did not finish maximizing",()=>restoring.WindowState==FormWindowState.Maximized);
+                    Remember("random restore maximized target",new { target=selected,state=restoring.WindowState.ToString() });
+                    restoring.WindowState=FormWindowState.Normal;
                     await Until("Random restore did not restore all fixture windows",()=>Forms.Where(f=>!f.IsDisposed).All(f=>f.WindowState==FormWindowState.Normal) && Bounds(strip).Top>area.Top+5);
                     await Activated(order[selected],strip); break;
                 case 6:
@@ -510,10 +554,20 @@ static partial class DesktopE2E
             selected=(selected+1)%order.Count;
             Chord(0x31+selected);
             await Activated(order[selected],target);
+            var random=new Random(unchecked(seed+cycle));
+            if(randomize) {
+                // Switching alone does not warm the STA/runtime resources used by regrouping.
+                // Keep the same action stream, then measure against one fixed mature baseline.
+                phase="cycle "+(cycle+1)+" resource warmup";
+                for(int warmup=0;warmup<ResourceWarmupBatches;warmup++) {
+                    await SwitchMany(target,order,switches);
+                    await RandomMany(target,order,random);
+                }
+                Log("Completed resource warmup; starting the measured workload");
+            }
             phase="cycle "+(cycle+1)+" frequent switching";
             var switching=Stopwatch.StartNew();
             int[] switchingBaseline=null;
-            var random=new Random(unchecked(seed+cycle));
             int batches=0;
             // Keep one application/group alive for the requested duration in
             // each cycle, then exercise normal exit and restart as usual.
@@ -524,7 +578,7 @@ static partial class DesktopE2E
                 if(randomize) await RandomMany(target,order,random);
                 // A slow leak must not disappear by resetting the baseline on
                 // every chunk in a prolonged run.
-                CheckGrowth(switchingBaseline,Resources());
+                await CheckSettledGrowth(switchingBaseline);
                 batches++;
             }
             while(randomBatchesPerCycle>0 ? batches<randomBatchesPerCycle : switching.Elapsed.TotalSeconds < durationMinutes*60.0/cycles);
@@ -532,9 +586,11 @@ static partial class DesktopE2E
             phase="cycle "+(cycle+1)+" maximized switching";
             Forms.Single(f=>!f.IsDisposed && f.Handle==GetForegroundWindow()).WindowState=FormWindowState.Maximized;
             await Until("Maximized group did not move the tabs inside the window",()=>Bounds(target).Top<=area.Top+5);
+            await Until("Maximized group did not maximize every fixture window",()=>Forms.Where(f=>!f.IsDisposed).All(f=>f.WindowState==FormWindowState.Maximized));
             await SwitchMany(target,order,30);
             Forms.Single(f=>!f.IsDisposed && f.Handle==GetForegroundWindow()).WindowState=FormWindowState.Normal;
             await Until("Restored group did not move back below the monitor edge",()=>Bounds(target).Top>area.Top+5);
+            await Until("Restored group left a fixture window maximized",()=>Forms.Where(f=>!f.IsDisposed).All(f=>f.WindowState==FormWindowState.Normal));
             phase="cycle "+(cycle+1)+" close active and continue";
             IntPtr closing=GetForegroundWindow();
             Forms.Single(f=>!f.IsDisposed && f.Handle==closing).Close();
@@ -590,7 +646,7 @@ static partial class DesktopE2E
                     catch(Exception error) { code=1; Console.Error.WriteLine(error); File.AppendAllText(Path.Combine(Root,"failure.txt"),Environment.NewLine+"Cleanup: "+error); }
                 }
                 if(inputOwned) { Inject(MouseInput(4),KeyInput(0x11,true),KeyInput(0x12,true),KeyInput(0x5B,true)); Move(savedCursor); }
-                File.WriteAllText(Path.Combine(Root,"result.json"),Json.Serialize(new { status=code==0?"passed":"failed",phase,step,seed,randomize,randomActionCount,completedCycles=completed,verifiedSwitches=totalSwitches,switchingSeconds,virtualDesktops,virtualDesktopScenarios=DesktopScenarios,temporaryDesktopsRemoved,originalDesktopRestored,measurements=Measurements,resourceSamples=ResourceSamples,recentActions=RecentActions.ToArray() }));
+                File.WriteAllText(Path.Combine(Root,"result.json"),Json.Serialize(new { status=code==0?"passed":"failed",phase,step,seed,randomize,randomActionCount,resourceWarmupBatches=randomize?ResourceWarmupBatches:0,completedCycles=completed,verifiedSwitches=totalSwitches,switchingSeconds,virtualDesktops,virtualDesktopScenarios=DesktopScenarios,temporaryDesktopsRemoved,originalDesktopRestored,measurements=Measurements,resourceSamples=ResourceSamples,recentActions=RecentActions.ToArray() }));
                 context.ExitThread();
             };
             start.Start(); Application.Run(context);

@@ -11,6 +11,7 @@ type private PlacementEntry<'a>(hwnd:IntPtr) =
     member val version = 0L with get,set
     member val pending : 'a option = None with get,set
     member val current : 'a option = None with get,set
+    member val currentVersion = 0L with get,set
     member val running = false with get,set
     member val node : LinkedListNode<PlacementEntry<'a>> option = None with get,set
     member this.queued = this.node.IsSome
@@ -46,6 +47,7 @@ type WindowPlacementQueue<'a>(apply:IntPtr -> 'a -> (unit -> bool) -> unit, ?wor
                     entry.pending <- None
                     entry.running <- true
                     entry.current <- Some value
+                    entry.currentVersion <- entry.version
                     job <- Some(entry,value,entry.version)
                 | _ -> if entry.owner.IsNone then entries.Remove(entry.hwnd) |> ignore
             if job.IsNone then workers <- workers-1
@@ -92,6 +94,22 @@ type WindowPlacementQueue<'a>(apply:IntPtr -> 'a -> (unit -> bool) -> unit, ?wor
             enqueue entry
             start()
         | _ -> ())
+    /// Retarget queued or running work without dropping its requested geometry.
+    member _.mapPending(owner,hwnd,change:'a -> 'a option) = lock gate (fun () ->
+        match entries.TryGetValue(hwnd) with
+        | true,entry when owns owner entry ->
+            let latest =
+                if entry.pending.IsSome then entry.pending
+                elif entry.currentVersion=entry.version then entry.current
+                else None
+            match latest |> Option.bind change with
+            | Some value ->
+                entry.version <- entry.version+1L
+                entry.pending <- Some value
+                enqueue entry
+                start()
+            | None -> ()
+        | _ -> ())
     member _.cancel(owner,hwnd,?whenValue:'a -> bool) =
       let completed = lock gate (fun () ->
         let wasIdle = ownerIsIdle owner
@@ -119,6 +137,10 @@ type WindowPlacementQueue<'a>(apply:IntPtr -> 'a -> (unit -> bool) -> unit, ?wor
         if not wasIdle && ownerIsIdle owner then Some owner else None)
       notifyIdle completed
     member _.isIdle(owner) = lock gate (fun () -> ownerIsIdle owner)
+    member _.ownsWindow(owner,hwnd) = lock gate (fun () ->
+        match entries.TryGetValue(hwnd) with
+        | true,entry -> owns owner entry
+        | _ -> false)
     member _.isWindowIdle(owner,hwnd) = lock gate (fun () ->
         match entries.TryGetValue(hwnd) with
         | true,entry when owns owner entry -> not entry.running && entry.pending.IsNone

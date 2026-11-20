@@ -42,6 +42,10 @@ move/placement operation. PID/thread identity checks reject closed foreign HWNDs
 Already-running Win32 calls cannot be interrupted: a new owner's placement waits
 behind that call, while its UI remains responsive. Releasing a group does not wait
 for native calls and releases queue entries when outstanding work ends.
+The same runtime claim guards taskbar adoption. A group claims a window before
+publishing its membership, so a delayed refresh in its former group cannot adopt
+it while the replacement's native taskbar owner is temporarily absent. Runtime
+claims are distinct even when a rebuilt group retains the same persisted token.
 
 Minimize/restore uses the same stream and acknowledges its own WinEvents to avoid
 feeding an older transition back into the group. Native animation settings are
@@ -76,6 +80,15 @@ selection and must not cancel its remaining stacking correction. A different
 member becoming the actual foreground window still selects that tab immediately;
 membership updates retain the remaining order throughout the transition. This
 policy applies to every application and both shared and separate preview owners.
+
+Selecting a follower during placement retains its pending geometry and show state,
+but removes its old stacking anchor. Foreground notifications do not replace the
+group's frame with that follower's unfinished native placement.
+If the previous top's native show state changed before its event arrived, selection
+captures that source state and queues its followers before promoting the new tab.
+When a foreground notification or restore completion observes a changed frame first,
+it also queues the followers: caching that frame alone would lose the transition
+if selection changed before the source's location notification arrived.
 
 `WindowRefreshQueue` batches events for 30 ms without continually resetting its
 deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide,

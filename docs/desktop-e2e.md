@@ -60,9 +60,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-DesktopE2E.ps1 -In
 | Full (default) | Two cycles with restart; 600 + 30 + 30 checked switches per cycle | 10 minutes |
 | Soak | Two cycles; at least 30 minutes of switching and seeded random operations across them, then normal exit/restart checks | 40 minutes |
 
-Soak keeps each application instance alive for at least 15 minutes of switching;
-it does not merely repeat many short process lifetimes. It retains the first
-warmup resource baseline across successive batches, so gradual growth cannot
+Soak first warms each instance with two complete switching/random-action batches,
+including minimize, maximize and regrouping. Switching alone does not warm the
+STA/runtime resources that regrouping uses. Those warmup batches retain all
+correctness checks and are recorded in the same seeded action stream. They are
+additional to a requested replay batch count and do not count toward the measured
+duration. The resource baseline is then fixed for the rest of that instance.
+Kernel handle-type counts and live thread counts accompany baseline and failed
+resource samples, so retired thread/event handles can be distinguished from
+continuously growing resource use without forcing collection in the application.
+
+Soak keeps each application instance alive for at least 15 measured minutes of switching;
+it does not merely repeat many short process lifetimes. It retains the fixed
+post-warmup resource baseline across successive batches, so gradual growth cannot
 escape the budget by resetting the baseline. `-Switches`, `-Cycles`,
 `-DurationMinutes` and `-TimeoutSeconds` can explicitly override profile values.
 These timeouts are upper bounds, not expected runtimes. Live progress is streamed
@@ -210,8 +220,10 @@ group. Those need separate scenarios.
 
 The staging directory contains `result.json`, `manifest.json` with the binary's
 SHA-256, stdout/stderr, portable settings and the application's crash log. Failures
-also capture `failure.txt` and app/helper HWND styles, ownership and bounds in
-`windows.json`. No unrelated window titles or desktop screenshots are collected.
+also capture `failure.txt` and app/helper and visible external HWNDs in
+`windows.json`, including process/session/desktop, styles, ownership and bounds.
+Occlusion failures record the covering HWND even if it disappears before that
+snapshot. No unrelated window titles or desktop screenshots are collected.
 The report also keeps the last 40 test actions, their intended targets and
 observed foreground HWND, the failing step and measured switching duration.
 Any nonempty application crash log, missed target, timeout, failed precondition,
@@ -224,6 +236,10 @@ objects and 64 handles. Icons can await natural finalization, so these are bound
 resource budgets, not assertions of zero allocations or proof of no leaks. The
 driver does not force collection inside the application. Inspect the sample trend
 and use longer runs when investigating sustained growth.
+
+After a random close/regroup batch, a sample over budget gets up to five seconds
+for asynchronous group teardown; the initial and settled counts are recorded.
+The baseline and limits stay fixed, and no garbage collection is forced.
 
 Latency is measured from input injection until foreground/ownership checks pass,
 including intentional mouse down/up timing and approximately 10 ms polling.
@@ -249,8 +265,11 @@ Quick, Full (default) or Soak. These runs build their own Release binary. The re
 workflow calls the same workflow with Full and `executable-artifact`, so it tests
 the very `WindowTabs.exe` the draft will carry; the draft is created only after
 the regression suites, the smoke test, the version check and that run all pass.
-Every run uses real input and keeps its diagnostics for 14 days, even on failure. Quick verifies
-one startup/exit cycle and 120 individual switches; Full adds a second cycle
+Every run uses real input and keeps its diagnostics for 14 days, even on failure.
+The hosted launcher hides runner console windows before and during input, logging
+each intervention. This isolation applies only in GitHub Actions; local runs leave
+other windows alone. The GUI driver uses redirected output without a console.
+Quick verifies one startup/exit cycle and 120 individual switches; Full adds a second cycle
 to verify restart with surviving foreign windows and 1,320 individual switches.
 These triggers take effect when this configuration is published; branch
 protection has not been changed to make the check mandatory. The temporary

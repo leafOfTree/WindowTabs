@@ -869,6 +869,14 @@ let main() =
                 pumpUntil "Owner handoff fixtures did not settle" (fun () ->
                     nativeOrder oldGroup=[a;b;c] && nativeOrder newGroup=[d;e] && (handles |> List.forall TaskbarProxies.ownsWindow))
                 let oldOwner = owner a
+                // Native ownership can be absent while the replacement prepares its previews.
+                // The runtime group claim must still keep a stale source refresh out.
+                FollowerPlacement.queue.claim(obj(),a)
+                WinUserApi.SetWindowLong(a,WindowLongFieldOffset.GWL_HWNDPARENT,IntPtr.Zero) |> ignore
+                forms.Head.Text <- "Claimed by the replacement group"
+                pumpUntil "The old group did not refresh the claimed window" (fun () ->
+                    onGroup oldGroup (fun group -> group.ts.tabInfo(Tab a).text.Contains("Claimed by the replacement group")))
+                check (owner a=IntPtr.Zero) "A stale group adopted a window claimed by its replacement while it had no native owner"
                 (newGroup :> IGroup).addWindow(a,false)
                 pumpUntil "Replacement group did not adopt the window" (fun () ->
                     nativeOrder newGroup=[d;e;a] && owner a<>oldOwner && TaskbarProxies.ownsWindow a)
@@ -1434,6 +1442,22 @@ let main() =
                         check (not (button.adoptWindow(goneHandle,false)) && not (button.ownsApplication goneHandle))
                             "A window that kept no owner is reported taken over"
                         WinUserApi.SetWindowLong(taken.Handle,WindowLongFieldOffset.GWL_HWNDPARENT,IntPtr.Zero) |> ignore
+                    // A refresh already past its plugin's ownership check must not take a
+                    // window back after another group's native adoption finishes.
+                    do
+                        use moved = new Form(ShowInTaskbar=false)
+                        let key = TaskBarButton.key moved.Handle
+                        use previous = new TaskBarButton(info [key])
+                        use replacement = new TaskBarButton(info [key])
+                        check (previous.adoptWindow(moved.Handle,false)) "Previous preview did not adopt the fixture"
+                        check (replacement.adoptWindow(moved.Handle,false)) "Replacement preview did not adopt the fixture"
+                        let owner = WinUserApi.GetWindow(moved.Handle,GetWindowConstants.GW_OWNER)
+                        check (not(previous.adoptWindow(moved.Handle,true,allowTakeover=false)) &&
+                               WinUserApi.GetWindow(moved.Handle,GetWindowConstants.GW_OWNER)=owner)
+                              "A stale preview refresh took back the replacement's window"
+                        previous.update(info [])
+                        check (WinUserApi.GetWindow(moved.Handle,GetWindowConstants.GW_OWNER)=owner)
+                              "Disposing the previous preview detached the replacement's window"
                     pumpUntil "First preview order was not sent again" (fun () -> not button.isResendingTabOrder)
                     button.update(info ["a";"b";"c"])
                     button.update(info ["a";"b"])
@@ -1615,7 +1639,11 @@ let main() =
                 pumpUntil "Drag source retained moved window" (fun () -> nativeOrder dragSource=[a] && publicOrder dragSource=[a])
                 if sourceDock=TabDockTop && (targetDock=TabDockLeft || wideRow) then
                     joining.Bounds <- Drawing.Rectangle(work.Left+70,work.Top+140,(if wideRow then work.Width-140 else 540),360)
-                    pumpUntil "The destination group did not see its landing frame" (fun () ->
+                    pumpUntilShowing "The destination group did not see its landing frame"
+                      (fun () -> onGroup dragTarget (fun group ->
+                        sprintf "dock=%A/%A top=%A expected=%A frame=%A native=%A minimized=%b placementIdle=%b"
+                            sourceDock targetDock group.topWindow d group.layoutFrame (OS().windowFromHwnd d).visibleBounds
+                            (OS().windowFromHwnd d).isMinimized group.isPlacementIdle)) (fun () ->
                         onGroup dragTarget (fun group -> group.layoutFrame=(OS().windowFromHwnd d).visibleBounds))
                 let targetFrame = (OS().windowFromHwnd d).visibleBounds
                 let incomingSize = (OS().windowFromHwnd b).bounds.size

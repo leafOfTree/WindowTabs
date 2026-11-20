@@ -57,15 +57,38 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'DesktopE2E.exe'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,WindowsBase
 $taskbarAutomationReferences = @([System.Windows.Automation.AutomationElement].Assembly.Location,[System.Windows.Automation.ControlType].Assembly.Location,[System.Windows.DependencyObject].Assembly.Location) | Select-Object -Unique | ForEach-Object { "/r:$_" }
-& $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /r:Accessibility.dll @taskbarAutomationReferences "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs') (Join-Path $PSScriptRoot 'DesktopE2E.VirtualDesktops.cs')
+# The driver writes to redirected streams; it must not create a console that can cover its fixtures.
+& $compiler /nologo /target:winexe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /r:Accessibility.dll @taskbarAutomationReferences "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs') (Join-Path $PSScriptRoot 'DesktopE2E.Resources.cs') (Join-Path $PSScriptRoot 'DesktopE2E.VirtualDesktops.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Desktop E2E compilation failed.' }
 & $hostExe --check-random-plan
 if ($LASTEXITCODE -ne 0) { throw 'Random action planner checks failed.' }
-@{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; virtualDesktops=[bool]$VirtualDesktops; profile=$Profile; switches=$Switches; cycles=$Cycles; durationMinutes=$DurationMinutes; randomize=$randomize; seed=$Seed; randomBatchesPerCycle=$RandomBatchesPerCycle; randomPlanVersion=1; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
+@{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; virtualDesktops=[bool]$VirtualDesktops; profile=$Profile; switches=$Switches; cycles=$Cycles; durationMinutes=$DurationMinutes; randomize=$randomize; seed=$Seed; randomBatchesPerCycle=$RandomBatchesPerCycle; resourceWarmupBatches=$(if ($randomize) { 2 } else { 0 }); randomPlanVersion=1; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
 Write-Host "Desktop E2E artifacts: $stage"
 if ($BuildOnly) { return }
 if ($VirtualDesktops) { Copy-Item -LiteralPath $hostExe -Destination (Join-Path $stage 'DesktopAnchor.exe') }
 $driverArguments = if ($VirtualDesktops) { @('--virtual-desktops') } else { @('--run', "$Switches", "$Cycles", "$DurationMinutes", "$Seed", "$randomize", "$RandomBatchesPerCycle") }
+if ($env:GITHUB_ACTIONS -eq 'true') {
+    # Build tools can expose another runner console. Clear the hosted desktop after compilation,
+    # immediately before input starts, so restoring fixtures cannot leave a console over the tabs.
+    Add-Type -Namespace E2E -Name Consoles -MemberDefinition @'
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, IntPtr title);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
+'@
+    function Hide-RunnerConsoles {
+        $console = [IntPtr]::Zero
+        # PowerShell converts $null to an empty string for a string argument; a null pointer
+        # means any title, while an empty string matches only untitled console windows.
+        while (($console = [E2E.Consoles]::FindWindowEx([IntPtr]::Zero, $console, 'ConsoleWindowClass', [IntPtr]::Zero)) -ne [IntPtr]::Zero) {
+            if ([E2E.Consoles]::IsWindowVisible($console)) {
+                [E2E.Consoles]::ShowWindow($console, 0) | Out-Null
+                Write-Host "$([DateTime]::UtcNow.ToString('o')) Hidden hosted runner console: $console"
+            }
+        }
+    }
+    Hide-RunnerConsoles
+}
 $process = Start-Process -FilePath $hostExe -ArgumentList $driverArguments -WorkingDirectory $stage -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $stage 'stdout.log') -RedirectStandardError (Join-Path $stage 'stderr.log')
 $handle = $process.Handle
 $shown = @{ 'stdout.log'=0; 'stderr.log'=0 }
@@ -77,8 +100,12 @@ function Write-NewLogs {
     }
 }
 $watch = [Diagnostics.Stopwatch]::StartNew()
-while (-not $process.WaitForExit(1000)) {
-    Write-NewLogs
+$logWatch = [Diagnostics.Stopwatch]::StartNew()
+while (-not $process.WaitForExit(250)) {
+    # Hosted consoles can reappear while all fixtures are minimized. They are not part of the
+    # application under test; keep this isolation in the runner, with every intervention logged.
+    if ($env:GITHUB_ACTIONS -eq 'true') { Hide-RunnerConsoles }
+    if ($logWatch.ElapsedMilliseconds -ge 1000) { Write-NewLogs; $logWatch.Restart() }
     if ($watch.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
         & (Join-Path $PSScriptRoot 'Stop-DesktopE2E.ps1') -Stage $stage
         $process.WaitForExit()
@@ -102,7 +129,7 @@ if ($VirtualDesktops) {
     return
 }
 if ($report.status -ne 'passed' -or $report.completedCycles -ne $Cycles) { throw 'Desktop E2E exited without completing every cycle.' }
-if ($randomize -and ($report.seed -ne $Seed -or -not $report.randomize -or $report.randomActionCount -lt (30 * $Cycles * [Math]::Max(1, $RandomBatchesPerCycle)))) {
+if ($randomize -and ($report.seed -ne $Seed -or -not $report.randomize -or $report.resourceWarmupBatches -ne 2 -or $report.randomActionCount -lt (30 * $Cycles * (2 + [Math]::Max(1, $RandomBatchesPerCycle))))) {
     throw 'Desktop E2E exited without completing its seeded random actions.'
 }
 if ($report.verifiedSwitches -lt (($Switches + 60) * $Cycles) -or $report.switchingSeconds -lt ($DurationMinutes * 60)) {
