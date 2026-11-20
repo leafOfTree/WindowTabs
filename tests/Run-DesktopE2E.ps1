@@ -66,6 +66,21 @@ Write-Host "Desktop E2E artifacts: $stage"
 if ($BuildOnly) { return }
 if ($VirtualDesktops) { Copy-Item -LiteralPath $hostExe -Destination (Join-Path $stage 'DesktopAnchor.exe') }
 $driverArguments = if ($VirtualDesktops) { @('--virtual-desktops') } else { @('--run', "$Switches", "$Cycles", "$DurationMinutes", "$Seed", "$randomize", "$RandomBatchesPerCycle") }
+if ($env:GITHUB_ACTIONS -eq 'true') {
+    # Build tools can expose another runner console. Clear the hosted desktop after compilation,
+    # immediately before input starts, so restoring fixtures cannot leave a console over the tabs.
+    Add-Type -Namespace E2E -Name Consoles -MemberDefinition @'
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
+'@
+    $console = [IntPtr]::Zero
+    while (($console = [E2E.Consoles]::FindWindowEx([IntPtr]::Zero, $console, 'ConsoleWindowClass', $null)) -ne [IntPtr]::Zero) {
+        # SW_MINIMIZE; local interactive runs retain the user's other windows.
+        if ([E2E.Consoles]::IsWindowVisible($console)) { [E2E.Consoles]::ShowWindow($console, 6) | Out-Null }
+    }
+}
 $process = Start-Process -FilePath $hostExe -ArgumentList $driverArguments -WorkingDirectory $stage -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $stage 'stdout.log') -RedirectStandardError (Join-Path $stage 'stderr.log')
 $handle = $process.Handle
 $shown = @{ 'stdout.log'=0; 'stderr.log'=0 }
