@@ -10,7 +10,8 @@ between them with a click or a shortcut.
 
 > [!NOTE]
 > **What's new in [v2026.11.20](https://github.com/leafOfTree/WindowTabs/releases/tag/v2026.11.20)**
-> — highlights since the previous stable release, v2025.06.30:
+> A major redesign since the previous stable release, v2025.06.30: reworked tab styles
+> and colours, redesigned settings and menus, and new ways to organize and switch windows.
 >
 > - **Split view:** arrange windows side by side or stacked within a tab group.
 > - **Commands and search:** find actions and settings in the command palette, or search windows in Alt+Tab.
