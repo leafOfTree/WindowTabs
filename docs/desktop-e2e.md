@@ -253,8 +253,11 @@ Quick, Full (default) or Soak. These runs build their own Release binary. The re
 workflow calls the same workflow with Full and `executable-artifact`, so it tests
 the very `WindowTabs.exe` the draft will carry; the draft is created only after
 the regression suites, the smoke test, the version check and that run all pass.
-Every run uses real input and keeps its diagnostics for 14 days, even on failure. Quick verifies
-one startup/exit cycle and 120 individual switches; Full adds a second cycle
+Every run uses real input and keeps its diagnostics for 14 days, even on failure.
+The hosted launcher hides runner console windows before and during input, logging
+each intervention. This isolation applies only in GitHub Actions; local runs leave
+other windows alone. The GUI driver uses redirected output without a console.
+Quick verifies one startup/exit cycle and 120 individual switches; Full adds a second cycle
 to verify restart with surviving foreign windows and 1,320 individual switches.
 These triggers take effect when this configuration is published; branch
 protection has not been changed to make the check mandatory. The temporary

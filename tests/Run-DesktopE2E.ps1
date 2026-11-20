@@ -76,12 +76,16 @@ if ($env:GITHUB_ACTIONS -eq 'true') {
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
 '@
-    $console = [IntPtr]::Zero
-    while (($console = [E2E.Consoles]::FindWindowEx([IntPtr]::Zero, $console, 'ConsoleWindowClass', $null)) -ne [IntPtr]::Zero) {
-        # SW_HIDE keeps a runner console out of minimize/restore activation fallback.
-        # Local interactive runs retain the user's other windows.
-        if ([E2E.Consoles]::IsWindowVisible($console)) { [E2E.Consoles]::ShowWindow($console, 0) | Out-Null }
+    function Hide-RunnerConsoles {
+        $console = [IntPtr]::Zero
+        while (($console = [E2E.Consoles]::FindWindowEx([IntPtr]::Zero, $console, 'ConsoleWindowClass', $null)) -ne [IntPtr]::Zero) {
+            if ([E2E.Consoles]::IsWindowVisible($console)) {
+                [E2E.Consoles]::ShowWindow($console, 0) | Out-Null
+                Write-Host "$([DateTime]::UtcNow.ToString('o')) Hidden hosted runner console: $console"
+            }
+        }
     }
+    Hide-RunnerConsoles
 }
 $process = Start-Process -FilePath $hostExe -ArgumentList $driverArguments -WorkingDirectory $stage -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $stage 'stdout.log') -RedirectStandardError (Join-Path $stage 'stderr.log')
 $handle = $process.Handle
@@ -94,8 +98,12 @@ function Write-NewLogs {
     }
 }
 $watch = [Diagnostics.Stopwatch]::StartNew()
-while (-not $process.WaitForExit(1000)) {
-    Write-NewLogs
+$logWatch = [Diagnostics.Stopwatch]::StartNew()
+while (-not $process.WaitForExit(250)) {
+    # Hosted consoles can reappear while all fixtures are minimized. They are not part of the
+    # application under test; keep this isolation in the runner, with every intervention logged.
+    if ($env:GITHUB_ACTIONS -eq 'true') { Hide-RunnerConsoles }
+    if ($logWatch.ElapsedMilliseconds -ge 1000) { Write-NewLogs; $logWatch.Restart() }
     if ($watch.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
         & (Join-Path $PSScriptRoot 'Stop-DesktopE2E.ps1') -Stage $stage
         $process.WaitForExit()
