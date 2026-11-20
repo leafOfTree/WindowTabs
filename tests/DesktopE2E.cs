@@ -83,6 +83,7 @@ static partial class DesktopE2E
     }
     static void CheckRandomPlan()
     {
+        CheckHandleSnapshot();
         foreach(int testSeed in new[]{0,1,-1,int.MinValue,int.MaxValue})
         {
             var first=new Random(testSeed); var replay=new Random(testSeed);
@@ -265,6 +266,8 @@ static partial class DesktopE2E
     }
     static void CheckGrowth(int[] before, int[] after)
     {
+        if(after[0]>before[0]+256 || after[1]>before[1]+128 || after[2]>before[2]+64)
+            ResourceSamples.Add(new { phase,step,resources=after,handles=HandleSnapshot(app) });
         Check(after[0]<=before[0]+256,"GDI growth exceeded the 256-object budget: "+before[0]+" -> "+after[0]);
         Check(after[1]<=before[1]+128,"USER growth exceeded the 128-object budget: "+before[1]+" -> "+after[1]);
         Check(after[2]<=before[2]+64,"Handle growth exceeded the 64-handle budget: "+before[2]+" -> "+after[2]);
@@ -292,6 +295,7 @@ static partial class DesktopE2E
         for(int i=0;i<30;i++) { step="warmup "+i; int n=i%order.Count; Chord(0x12,0x31+n); await Activated(order[n],strip); }
         await Task.Delay(250);
         int[] before=Resources();
+        ResourceSamples.Add(new { phase,step="resource baseline",resources=before,handles=HandleSnapshot(app) });
         for(int i=0;i<count;i++)
         {
             step="switch "+i+" method "+(i%4);

@@ -58,7 +58,7 @@ $hostExe = Join-Path $stage 'DesktopE2E.exe'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,WindowsBase
 $taskbarAutomationReferences = @([System.Windows.Automation.AutomationElement].Assembly.Location,[System.Windows.Automation.ControlType].Assembly.Location,[System.Windows.DependencyObject].Assembly.Location) | Select-Object -Unique | ForEach-Object { "/r:$_" }
 # The driver writes to redirected streams; it must not create a console that can cover its fixtures.
-& $compiler /nologo /target:winexe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /r:Accessibility.dll @taskbarAutomationReferences "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs') (Join-Path $PSScriptRoot 'DesktopE2E.VirtualDesktops.cs')
+& $compiler /nologo /target:winexe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /r:Accessibility.dll @taskbarAutomationReferences "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs') (Join-Path $PSScriptRoot 'DesktopE2E.Resources.cs') (Join-Path $PSScriptRoot 'DesktopE2E.VirtualDesktops.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Desktop E2E compilation failed.' }
 & $hostExe --check-random-plan
 if ($LASTEXITCODE -ne 0) { throw 'Random action planner checks failed.' }

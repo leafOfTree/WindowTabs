@@ -1639,7 +1639,11 @@ let main() =
                 pumpUntil "Drag source retained moved window" (fun () -> nativeOrder dragSource=[a] && publicOrder dragSource=[a])
                 if sourceDock=TabDockTop && (targetDock=TabDockLeft || wideRow) then
                     joining.Bounds <- Drawing.Rectangle(work.Left+70,work.Top+140,(if wideRow then work.Width-140 else 540),360)
-                    pumpUntil "The destination group did not see its landing frame" (fun () ->
+                    pumpUntilShowing "The destination group did not see its landing frame"
+                      (fun () -> onGroup dragTarget (fun group ->
+                        sprintf "dock=%A/%A top=%A expected=%A frame=%A native=%A minimized=%b placementIdle=%b"
+                            sourceDock targetDock group.topWindow d group.layoutFrame (OS().windowFromHwnd d).visibleBounds
+                            (OS().windowFromHwnd d).isMinimized group.isPlacementIdle)) (fun () ->
                         onGroup dragTarget (fun group -> group.layoutFrame=(OS().windowFromHwnd d).visibleBounds))
                 let targetFrame = (OS().windowFromHwnd d).visibleBounds
                 let incomingSize = (OS().windowFromHwnd b).bounds.size
