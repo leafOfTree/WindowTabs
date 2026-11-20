@@ -25,8 +25,8 @@ between them with a click or a shortcut.
 
 ## Get started
 
-Download [WindowTabs.exe](https://github.com/leafOfTree/WindowTabs/releases/latest/download/WindowTabs.exe)
-from the latest stable release and run it.
+Download `WindowTabs.exe` from
+[Releases](https://github.com/leafOfTree/WindowTabs/releases) and run it.
 It runs in the system tray.
 
 - Hover over the tab bar to reveal **+** and click it to open another window of the current app. Under **Settings → Appearance → Show new tab button** you can choose **Never**, **On hover** (default), or **Always**.
