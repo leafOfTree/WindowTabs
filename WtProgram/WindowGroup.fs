@@ -1639,6 +1639,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member _.layout = groupLayout
     /// Commands also check availability on the desktop thread, before dispatch to this group.
     member _.canChangeWindowBehavior = System.Threading.Volatile.Read(&groupLayout)=GroupLayout.Single
+    member _.hasSplitView = match System.Threading.Volatile.Read(&groupLayout) with Split _ | Parked _ -> true | Single -> false
     /// Set by the strip for the length of a tab drag, on this thread.
     member _.transitionsPaused with get() = dragPause and set(value) = dragPause <- value
     member this.splitLayout = match groupLayout with Split s -> Some s | _ -> None
