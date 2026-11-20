@@ -13,8 +13,10 @@ between them with a click or a shortcut.
 > A major redesign since the previous stable release, v2025.06.30: reworked tab styles
 > and colours, redesigned settings and menus, and new ways to organize and switch windows.
 >
+> - **Flexible grouping:** group windows by app, title, window class or command line, with rules spanning multiple apps.
+> - **More ways to switch:** use keyboard shortcuts, mouse scrolling, gestures, window search or the Alt+Tab replacement.
 > - **Split view:** arrange windows side by side or stacked within a tab group.
-> - **Commands and search:** find actions and settings in the command palette, and search for windows to switch to.
+> - **Command palette:** find and run actions or change settings by typing their names.
 > - **Group editing:** select, move and close multiple tabs, and organize groups visually.
 > - **Workspaces:** save groups and window positions, then restore them and launch missing apps.
 >
@@ -33,6 +35,7 @@ It runs in the system tray.
 - Hover over the tab bar to reveal **+** and click it to open another window of the current app. Under **Settings → Appearance → Show new tab button** you can choose **Never**, **On hover** (default), or **Always**.
 - Right-click **+** to find an existing window by title or app name and add it to the group.
 - You can also drag a tab onto another tab bar to group windows, or drag it away to ungroup.
+- **Work with several tabs:** Ctrl-click to select tabs or Shift-click to select a range. Hold Ctrl or Shift while dragging to move the selection together.
 - **Group an app automatically:** right-click its tab → **Enable auto-grouping**.
 - **Put the tabs where you like:** hold the right mouse button on a tab and drag the tabs
   along the window's edge, across the top or down the side. New windows of that app start
@@ -41,8 +44,10 @@ It runs in the system tray.
   (see [Command palette](#command-palette-and-command-line)).
 - **Settings:** right-click a tab or the tray icon.
 
-Grouped windows move and resize together. Tabs hide on maximized windows; point at
-the top edge to show them, or set **Auto-hide tabs** to **Never**.
+By default, grouped windows move and resize together. To keep their individual sizes
+and positions, right-click a tab → **Window behavior** → **Keep each window’s size and position**.
+Tabs hide on maximized windows; point at the tab edge to show them, or set **Auto-hide tabs**
+to **Never**.
 
 ## Shortcuts
 
@@ -69,8 +74,8 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 
 ## Features
 
-- **Appearance:** light, dark or follow Windows; Joined, Folder or Floating tabs;
-  per-tab, per-app or per-group colors.
+- **Appearance:** light, dark or follow Windows; horizontal or vertical tabs;
+  Joined, Folder or Floating styles; per-tab, per-app or per-group colors.
 - **Pinned tabs:** right-click a tab → **Pin** to keep it at the front of its group, out of
   reach of **Close others**, **Close tabs to the right** and **Close all**, across restarts.
 - **App rules:** choose which running apps get tabs and which group automatically.
