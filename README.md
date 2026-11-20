@@ -14,7 +14,7 @@ between them with a click or a shortcut.
 > and colours, redesigned settings and menus, and new ways to organize and switch windows.
 >
 > - **Split view:** arrange windows side by side or stacked within a tab group.
-> - **Commands and search:** find actions and settings in the command palette, and find and switch windows with a dedicated window search.
+> - **Commands and search:** find actions and settings in the command palette, and search for windows to switch to.
 > - **Group editing:** select, move and close multiple tabs, and organize groups visually.
 > - **Workspaces:** save groups and window positions, then restore them and launch missing apps.
 >
