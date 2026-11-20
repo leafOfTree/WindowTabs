@@ -80,6 +80,8 @@ policy applies to every application and both shared and separate preview owners.
 Selecting a follower during placement retains its pending geometry and show state,
 but removes its old stacking anchor. Foreground notifications do not replace the
 group's frame with that follower's unfinished native placement.
+If the previous top's native show state changed before its event arrived, selection
+captures that source state and queues its followers before promoting the new tab.
 
 `WindowRefreshQueue` batches events for 30 ms without continually resetting its
 deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide,

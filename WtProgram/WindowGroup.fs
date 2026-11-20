@@ -1135,6 +1135,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             | _ -> newZorder
         if zorderCell.value.list <> newZorder.list then
             if not this.isSplit && newZorder.tryHead<>zorderCell.value.tryHead then
+                // A tab can be selected before the old top's native maximize/restore event arrives.
+                // Capture that change while it is still the source, not from the unfinished follower.
+                if groupLayout=GroupLayout.Single && not this.keepSizes then
+                    zorderCell.value.tryHead |> Option.iter(fun old ->
+                        let window = this.os.windowFromHwnd old
+                        let aligning = FollowerPlacement.queue.isWindowBusyWith(placementOwner,old,fun (_,request) ->
+                            match request with AlignWindow _ -> true | _ -> false)
+                        if not aligning && not window.isMinimized &&
+                           (placement.value |> Option.exists(fun (_,wp,_) -> wp.showCmd<>window.placement.showCmd)) then
+                            this.saveWindowPlacement old
+                            this.adjustChildWindows())
                 // In front now, the window no longer goes under another; a placement that leads
                 // stays: the frame a tab takes as the split parks behind it was cancelled here,
                 // whenever the worker had not started it yet, and the tab kept its pane's size.

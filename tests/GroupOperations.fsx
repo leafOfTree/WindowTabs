@@ -1554,18 +1554,37 @@ let main() =
                 pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
                 if count=2 then
                     let selected = onGroup(fun group -> group.zorder.value.tail.head)
+                    let source = onGroup(fun group -> group.topWindow)
+                    onHelper(fun () -> OS().windowFromHwnd(source).showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED))
                     withPoolHeld(fun () -> onGroup(fun group ->
                         applyPlacement group ShowWindowCommands.SW_SHOWMAXIMIZED
                         group.tabActivate(Tab selected,false)))
                     waitOperation()
                     check (OS().windowFromHwnd(selected).isMaximized) "Selecting a tab cancelled its pending maximize"
-                    onHelper(fun () -> for form in forms |> List.take count do form.WindowState <- FormWindowState.Maximized)
+                    onHelper(fun () -> for hwnd in handles |> List.take count do OS().windowFromHwnd(hwnd).showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED))
                     check (handles |> List.take count |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMaximized)) "Restore probe needs maximized fixtures"
+                    let source = onGroup(fun group -> group.topWindow)
+                    onHelper(fun () -> OS().windowFromHwnd(source).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
                     withPoolHeld(fun () -> onGroup(fun group ->
                         applyPlacement group ShowWindowCommands.SW_SHOWNORMAL
                         group.tabActivate(Tab(group.zorder.value.tail.head),false)))
                     waitOperation()
                     check (not(OS().windowFromHwnd(onGroup(fun group -> group.topWindow)).isMaximized)) "Selecting a tab cancelled its pending restore"
+                    onHelper(fun () -> for hwnd in handles |> List.take count do OS().windowFromHwnd(hwnd).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
+                    onGroup(fun group -> applyPlacement group ShowWindowCommands.SW_SHOWNORMAL)
+                    waitOperation()
+                    let source,target = onGroup(fun group -> group.topWindow,group.zorder.value.tail.head)
+                    onHelper(fun () ->
+                        (forms |> List.find(fun form -> form.Handle=source)).Pinned <- false
+                        OS().windowFromHwnd(source).move(Rect(Pt(100,100),Sz(640,480)))
+                        OS().windowFromHwnd(source).showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED))
+                    withPoolHeld(fun () -> onGroup(fun group -> group.tabActivate(Tab target,false)))
+                    waitOperation()
+                    check (OS().windowFromHwnd(target).isMaximized) "Selecting a tab before the source's maximize event lost its native state"
+                    onHelper(fun () -> for form in forms |> List.take count do form.Pinned <- true)
+                    onHelper(fun () -> for hwnd in handles |> List.take count do OS().windowFromHwnd(hwnd).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
+                    onGroup(fun group -> applyPlacement group ShowWindowCommands.SW_SHOWNORMAL)
+                    waitOperation()
                 if count=5 then
                     samples "5tabs-selection-info-responsive" 30 (fun group index ->
                         invoke "setTabInfo" group [|box handles.[index%5]|] |> ignore)
