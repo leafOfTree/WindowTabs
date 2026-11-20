@@ -225,6 +225,10 @@ resource budgets, not assertions of zero allocations or proof of no leaks. The
 driver does not force collection inside the application. Inspect the sample trend
 and use longer runs when investigating sustained growth.
 
+After a random close/regroup batch, a sample over budget gets up to five seconds
+for asynchronous group teardown; the initial and settled counts are recorded.
+The baseline and limits stay fixed, and no garbage collection is forced.
+
 Latency is measured from input injection until foreground/ownership checks pass,
 including intentional mouse down/up timing and approximately 10 ms polling.
 Median, p95 and maximum are diagnostic observations, not compositor presentation

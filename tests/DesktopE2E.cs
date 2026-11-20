@@ -252,6 +252,22 @@ static partial class DesktopE2E
         Check(after[1]<=before[1]+128,"USER growth exceeded the 128-object budget: "+before[1]+" -> "+after[1]);
         Check(after[2]<=before[2]+64,"Handle growth exceeded the 64-handle budget: "+before[2]+" -> "+after[2]);
     }
+    static async Task CheckSettledGrowth(int[] baseline)
+    {
+        // Closing/regrouping retires group STAs asynchronously. Retain the original baseline
+        // and budgets, but let pending teardown finish before treating a live handle as a leak.
+        var timer=Stopwatch.StartNew();
+        var initial=Resources();
+        var current=initial;
+        while(timer.ElapsedMilliseconds<5000 &&
+              (current[0]>baseline[0]+256 || current[1]>baseline[1]+128 || current[2]>baseline[2]+64))
+        {
+            await Task.Delay(100);
+            current=Resources();
+        }
+        ResourceSamples.Add(new { phase,randomActions=randomActionCount,settlingMs=timer.ElapsedMilliseconds,initial,resources=current });
+        CheckGrowth(baseline,current);
+    }
     static async Task<int[]> SwitchMany(IntPtr strip, List<IntPtr> order, int count)
     {
         var timings=new List<double>();
@@ -530,7 +546,7 @@ static partial class DesktopE2E
                 if(randomize) await RandomMany(target,order,random);
                 // A slow leak must not disappear by resetting the baseline on
                 // every chunk in a prolonged run.
-                CheckGrowth(switchingBaseline,Resources());
+                await CheckSettledGrowth(switchingBaseline);
                 batches++;
             }
             while(randomBatchesPerCycle>0 ? batches<randomBatchesPerCycle : switching.Elapsed.TotalSeconds < durationMinutes*60.0/cycles);
