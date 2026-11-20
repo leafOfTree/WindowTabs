@@ -82,6 +82,9 @@ but removes its old stacking anchor. Foreground notifications do not replace the
 group's frame with that follower's unfinished native placement.
 If the previous top's native show state changed before its event arrived, selection
 captures that source state and queues its followers before promoting the new tab.
+When a foreground notification observes a changed frame first, it also queues the
+followers: caching that frame alone would lose the transition if selection changed
+before the source's location notification arrived.
 
 `WindowRefreshQueue` batches events for 30 ms without continually resetting its
 deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide,

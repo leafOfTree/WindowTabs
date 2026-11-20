@@ -1142,7 +1142,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         let window = this.os.windowFromHwnd old
                         let aligning = FollowerPlacement.queue.isWindowBusyWith(placementOwner,old,fun (_,request) ->
                             match request with AlignWindow _ -> true | _ -> false)
-                        if DebugLog.placementEnabled then DebugLog.writef "Select %A -> %A: source=%A cached=%A aligning=%b" old newZorder.tryHead window.placement.showCmd (placement.value |> Option.map(fun (_,wp,_) -> wp.showCmd)) aligning
                         if not aligning && not window.isMinimized &&
                            (placement.value |> Option.exists(fun (_,wp,_) -> wp.showCmd<>window.placement.showCmd)) then
                             this.saveWindowPlacement old
@@ -2530,7 +2529,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let workArea = if window.isMaximized then Mon.fromHwnd(window.hwnd).map(fun mon -> mon.workRect) else None
             let bounds = workArea.map(fun area -> area.move(-1,-1)).def(window.bounds)
             let visible = workArea.def(window.visibleBounds)
-            if DebugLog.placementEnabled then DebugLog.writef "Save %A state=%A top=%A" hwnd window.placement.showCmd zorderCell.value.tryHead
             placement.set(Some(bounds, window.placement, visible))
             // Parked panes come back at the frame the group has now.
             (match groupLayout with Parked _ -> this.saveSplitProps() | _ -> ())
@@ -2568,7 +2566,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let bounds,wp,visible = placement.value.Value
             let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
             let request = FollowerPlacement.alignFrameRequest hwnd bounds visible wp below
-            if DebugLog.placementEnabled then DebugLog.writef "Align %A state=%A below=%A" hwnd wp.showCmd below
             FollowerPlacement.queue.submit(placementOwner,hwnd,request)
             // Maximize/snap can hide or cover the owned strip after its early events.
             reconcilePlacementState <- true
@@ -2869,7 +2866,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // Foreground can arrive before this tab has taken the group's maximized frame.
                 let aligning = FollowerPlacement.queue.isWindowBusyWith(placementOwner,this.topWindow,fun (_,request) ->
                     match request with AlignWindow _ -> true | _ -> false)
-                if not aligning then this.saveTopWindowPlacement()
+                if not aligning then
+                    let previous = placement.value
+                    this.saveTopWindowPlacement()
+                    // Foreground can observe a native maximize before its location event.
+                    // Publish the new frame to followers before another tab takes over.
+                    if placement.value<>previous then this.adjustChildWindows()
                 this.updateIsVisible()
                 // A strip owned by nothing, as when the window runs with other rights, is not
                 // raised with its window: a group of one window has no order change to move it, and

@@ -1581,6 +1581,21 @@ let main() =
                     withPoolHeld(fun () -> onGroup(fun group -> group.tabActivate(Tab target,false)))
                     waitOperation()
                     check (OS().windowFromHwnd(target).isMaximized) "Selecting a tab before the source's maximize event lost its native state"
+                    onHelper(fun () -> for hwnd in handles |> List.take count do OS().windowFromHwnd(hwnd).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
+                    onGroup(fun group -> applyPlacement group ShowWindowCommands.SW_SHOWNORMAL)
+                    waitOperation()
+                    let source,target = onGroup(fun group -> group.topWindow,group.zorder.value.tail.head)
+                    onHelper(fun () ->
+                        (forms |> List.find(fun form -> form.Handle=source)).Pinned <- false
+                        OS().windowFromHwnd(source).move(Rect(Pt(100,100),Sz(640,480)))
+                        OS().windowFromHwnd(source).showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
+                        OS().windowFromHwnd(source).bringToTop())
+                    withPoolHeld(fun () -> onGroup(fun group ->
+                        invoke "handleWindowEvent" group [|box source;box WinEvent.EVENT_SYSTEM_FOREGROUND|] |> ignore
+                        check (group.topWindow=source) "Foreground placement probe changed its source"
+                        group.tabActivate(Tab target,false)))
+                    waitOperation()
+                    check (OS().windowFromHwnd(target).isMaximized) "Foreground sampled a maximize without passing it to the next tab"
                     onHelper(fun () -> for form in forms |> List.take count do form.Pinned <- true)
                     onHelper(fun () -> for hwnd in handles |> List.take count do OS().windowFromHwnd(hwnd).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
                     onGroup(fun group -> applyPlacement group ShowWindowCommands.SW_SHOWNORMAL)

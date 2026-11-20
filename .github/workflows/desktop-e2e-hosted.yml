@@ -45,7 +45,6 @@ jobs:
     timeout-minutes: ${{ (inputs.profile == 'Soak' || github.event_name == 'schedule') && 50 || 15 }}
     env:
       E2E_PROFILE: ${{ inputs.profile || (github.event_name == 'schedule' && 'Soak') || 'Full' }}
-      WINDOWTABS_PLACEMENT_LOG: '1'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -121,5 +120,4 @@ jobs:
             ${{ steps.e2e.outputs.stage }}/actions.jsonl
             ${{ steps.e2e.outputs.stage }}/random-plan.jsonl
             ${{ steps.e2e.outputs.stage }}/WindowTabsCrash.log
-            ${{ steps.e2e.outputs.stage }}/WindowTabsDebug.log
           if-no-files-found: warn
