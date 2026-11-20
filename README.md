@@ -9,9 +9,10 @@ between them with a click or a shortcut.
 [![Build](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml/badge.svg)](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml)
 
 > [!IMPORTANT]
-> **v2026.11.05-beta.1 preview**: mouse gestures, a group editor, clearer tab colours, close
-> buttons on the active tab only or never, icons-only groups by default, and tab shortcuts
-> that step aside where they cannot act. [What's changed →](CHANGELOG.md)
+> **[v2026.11.20 stable release](https://github.com/leafOfTree/WindowTabs/releases/tag/v2026.11.20)**:
+> select and drag multiple tabs, search in the Alt+Tab switcher, and use Korean UI text,
+> with fixes for window state, focus and split commands.
+> [Changes since v2026.11.13-beta.1 →](https://github.com/leafOfTree/WindowTabs/compare/v2026.11.13-beta.1...v2026.11.20)
 
 <a href="docs/images/light.png"><img src="docs/images/light-rounded.svg" width="600" alt="Light tabs grouping three File Explorer windows" /></a>
 
@@ -19,8 +20,8 @@ between them with a click or a shortcut.
 
 ## Get started
 
-Download `WindowTabs.exe` from
-[Releases](https://github.com/leafOfTree/WindowTabs/releases) and run it.
+Download [WindowTabs.exe](https://github.com/leafOfTree/WindowTabs/releases/latest/download/WindowTabs.exe)
+from the latest stable release and run it.
 It runs in the system tray.
 
 - Hover over the tab bar to reveal **+** and click it to open another window of the current app. Under **Settings → Appearance → Show new tab button** you can choose **Never**, **On hover** (default), or **Always**.
