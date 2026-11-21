@@ -9,7 +9,7 @@ between them with a click or a shortcut.
 [![Build](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml/badge.svg)](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml)
 
 > [!NOTE]
-> **What's new in [v2026.11.20](https://github.com/leafOfTree/WindowTabs/releases/tag/v2026.11.20)**
+> **What's new in [v2026.11.20](https://github.com/leafOfTree/WindowTabs/releases/tag/v2026.11.20)**: 
 > A major redesign since the previous stable release, v2025.06.30: reworked tab styles
 > and colours, redesigned settings and menus, and new ways to organize and switch windows.
 >
