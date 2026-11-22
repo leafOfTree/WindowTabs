@@ -201,7 +201,12 @@ static class DesktopLatency
             // The benchmark host is intentionally hidden, so Windows may retain focus on
             // the user's previous window while the helpers are created. Use real input,
             // as the production tab-click measurement does, before measuring resize.
-            Move(ContentPoint(HelperWindows.Last())); Inject(MouseInput(2),MouseInput(4));
+            keybd_event(0x3A,0,0,UIntPtr.Zero); keybd_event(0x3A,0,2,UIntPtr.Zero);
+            SetForegroundWindow(HelperWindows.Last());
+            await Task.Delay(250);
+            var content=ContentPoint(HelperWindows.Last());
+            Check(HelperWindows.Contains(GetAncestor(WindowFromPoint(content),2)),"Helper content is occluded; refusing to click another application");
+            Move(content); Inject(MouseInput(2),MouseInput(4));
             await Until("Helper group did not become foreground",()=>HelperWindows.Contains(GetForegroundWindow()) && GetWindow(strip,4)==GetForegroundWindow());
             var top=GetForegroundWindow();
             var slow=HelperWindows.First(h=>h!=top);
@@ -231,12 +236,23 @@ static class DesktopLatency
             if(count==20) {
                 var area=Screen.PrimaryScreen.WorkingArea;
                 phase="20 windows snap left"; Snap(0x25);
+                await Task.Delay(600);
+                // Dismiss Snap Assist before checking the settled input owner.
+                keybd_event(0x1B,0,0,UIntPtr.Zero); keybd_event(0x1B,0,2,UIntPtr.Zero);
                 await Until("Left snap did not reach the screen edge",()=>Bounds(top).Left<=area.Left+5);
                 await Until("Left snap changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
-                phase="20 windows maximize"; Snap(0x26);
-                await Until("Up snap did not maximize every tab",()=>HelperWindows.All(IsZoomed));
+                // Win+Up from a snapped window can select a quadrant instead of maximizing.
+                phase="20 windows maximize"; PostMessage(top,0x112,new IntPtr(0xF030),IntPtr.Zero);
+                await Until("Maximize from left snap did not maximize every tab",()=>HelperWindows.All(IsZoomed));
                 await Until("Maximize changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
+                // Leave the remembered left-snap restore state before testing a fresh right snap.
+                PostMessage(top,0x112,new IntPtr(0xF120),IntPtr.Zero);
+                await Until("Maximized group did not restore before right snap",()=>HelperWindows.All(h=>!IsZoomed(h) && !IsIconic(h)));
+                SetWindowPos(top,IntPtr.Zero,area.Left+100,area.Top+140,800,500,0x14);
+                await Task.Delay(600);
                 phase="20 windows snap right"; Snap(0x27);
+                await Task.Delay(600);
+                keybd_event(0x1B,0,0,UIntPtr.Zero); keybd_event(0x1B,0,2,UIntPtr.Zero);
                 await Until("Right snap did not reach the screen edge",()=>Bounds(top).Right>=area.Right-5);
                 await Until("Right snap changed the foreground tab or lost the strip owner",()=>GetForegroundWindow()==top && GetWindow(strip,4)==top);
                 await Until("Right snapped leader content not visible",()=>VisibleColor(top,Colors[HelperWindows.IndexOf(top)%3]));
