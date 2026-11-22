@@ -83,19 +83,21 @@ type HelperWindow() =
                 position.cx <- min position.cx 660
                 position.cy <- min position.cy 500
             Marshal.StructureToPtr(position,message.LParam,false)
+        // Let the native position finish before staging the transient stacking order.
+        if message.Msg <> 0x2E0 then base.WndProc(&message)
         if message.Msg=0x47 then
             positionPause |> Option.iter(fun (source,entered,resume) ->
                 positionPause <- None
                 // Owned followers can rise before the worker puts them below the source.
                 // HWND_TOP alone can leave the active source above a no-activate follower.
                 // Establish the relative order the test needs on hidden desktops too.
+                OS().windowFromHwnd(this.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
                 OS().windowFromHwnd(source).insertAfter(this.Handle)
                 entered.Set()
                 resume.Wait())
         // Stand in for a native window that ignores WM_DPICHANGED. Off screen, Windows moves these
         // windows between monitors of different DPI, and a Form then resizes itself and, when the
         // DPI drops, pins MinimumSize to the clamped size, so it no longer takes the group's size.
-        if message.Msg <> 0x2E0 then base.WndProc(&message)
 
 /// Whether a drop surface shows a place for the drag at the point, asked as a rested pointer is.
 let previewed (target:ILayoutDropTarget) (data:obj,pt:Pt) =
