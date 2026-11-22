@@ -722,7 +722,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let isVisibleCell = Cell.create(false)
     let locationGate = obj()
     let pendingLocations = Collections.Generic.HashSet<IntPtr>()
-    let mutable lastNativeLocation : int64 option = None
     let mutable nativePlacementVersion = 0
     let mutable nativeZorderVersion = 0
     let pendingMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool * int64>()
@@ -730,8 +729,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let minimizeStateTimer = new System.Windows.Forms.Timer(Interval=16)
     let mutable reconcileMinimizeState = false
     let mutable reconcilePlacementState = false
-    /// The active tab that Windows temporarily replaced while completing a native resize.
-    let mutable nativeTransitionOwner : IntPtr option = None
     /// The tab the group was last minimized from, which comes back first.
     let mutable minimizedFrom : IntPtr option = None
     let transitionClock = Stopwatch.StartNew()
@@ -836,11 +833,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.withUpdate(fun () -> this.updateIsVisible())
                 this.restoreTabStrip()
                 this.checkNativeZorder()
-                nativeTransitionOwner |> Option.iter(fun owner ->
-                    nativeTransitionOwner <- None
-                    if this.windows.contains(owner) && not(isMinimized owner) && not(this.windows.contains(this.os.foreground.hwnd)) then
-                        this.setZorder(zorderCell.value.where((<>) owner).prepend owner)
-                        this.os.windowFromHwnd(owner).setForeground(true))
             if splitPending && FollowerPlacement.queue.isIdle(placementOwner) then this.checkSplitSettled()
             if pendingMinimizeStates.Count=0 then minimizeStateTimer.Stop()
 
@@ -2680,7 +2672,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.main(hwnd, evt) =
         let location = evt = WinEvent.EVENT_OBJECT_LOCATIONCHANGE
         let post = not location || lock locationGate (fun () ->
-            lastNativeLocation <- Some(transitionClock.ElapsedMilliseconds)
             nativePlacementVersion <- nativePlacementVersion+1
             pendingLocations.Add(hwnd))
         if post then
@@ -2865,11 +2856,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // In front, a tab asking for attention has it, however it was brought there: by
                 // its shortcut or the switcher as much as by a click, which clears it on its own.
                 this.flashTab(Tab(hwnd), false)
-            let nativeTransition =
-                lock locationGate (fun () ->
-                    lastNativeLocation |> Option.exists(fun at -> transitionClock.ElapsedMilliseconds-at<=250L))
-            if nativeTransition && not(this.windows.contains(hwnd)) && this.windows.contains(foregroundCell.value) then
-                nativeTransitionOwner <- Some foregroundCell.value
+            // Location events can accompany focus changes without a move (Notepad).
+            // Reconciliation must respect the newly selected foreground window.
             this.foreground <- hwnd
             this.followClosedTab(this.os.foreground.hwnd)
             this.saveZorder()
