@@ -1134,14 +1134,13 @@ module Strings =
                                ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。アプリをクリックすると、タイトル・ウィンドウ クラス・コマンド ラインで一部のウィンドウだけを対象にしたり、外したりできます。"
                                ar="ضع نوافذ تطبيقات مختلفة في مجموعة واحدة ذات اسم. التطبيقات المضافة هنا تستخدم علامات التبويب دائمًا، وتُزال من القائمة أعلاه ولا تستخدم التجميع التلقائي. انقر تطبيقًا لضم بعض نوافذه فقط حسب العنوان أو فئة النافذة أو سطر الأوامر، أو لإزالته."
                                ko="여러 앱의 창을 이름을 붙인 그룹 하나로 묶습니다. 여기에 추가한 앱은 항상 탭을 사용하고, 위 목록에서 빠지며 자동 그룹화를 사용하지 않습니다. 앱을 클릭하면 제목, 창 클래스, 명령줄로 일부 창만 포함하거나 앱을 제거할 수 있습니다." }
-        /// The heading of the panel of groups made by dragging, with how many there are, and
-        /// what the panel is for on hover.
-        let handMadeHeading count = { en=sprintf "Groups made by dragging (%d)" count; zh=sprintf "拖拽形成的分组（%d）" count; ja=sprintf "ドラッグで作ったグループ（%d）" count; ar=sprintf "مجموعات أنشئت بالسحب (%d)" count; ko=sprintf "끌어서 만든 그룹(%d)" count }
-        let handMadeHelp = { en="Windows you grouped by dragging tabs together, kept after a restart. Ungroup forgets the group and takes its open windows apart."
-                             zh="拖拽标签合并形成的分组，重启后仍会恢复。“解除分组”会忘记该组并拆开它打开的窗口。"
-                             ja="タブをドラッグしてまとめたグループで、再起動後も保持されます。「グループを解除」はグループを忘れ、開いているウィンドウを分けます。"
-                             ar="نوافذ جمعتها بسحب علامات التبويب معًا، وتبقى بعد إعادة التشغيل. «إلغاء التجميع» ينسى المجموعة ويفصل نوافذها المفتوحة."
-                             ko="탭을 끌어다 놓아 묶은 창으로, 다시 시작해도 유지됩니다. ‘그룹 해제’를 누르면 그룹이 삭제되고 열린 창이 분리됩니다." }
+        /// Manual groups include both dragged tabs and groups created with the picker.
+        let handMadeHeading count = { en=sprintf "Groups created manually (%d)" count; zh=sprintf "手动分组（%d）" count; ja=sprintf "手動グループ（%d）" count; ar=sprintf "مجموعات يدوية (%d)" count; ko=sprintf "수동 그룹(%d)" count }
+        let handMadeHelp = { en="Groups you created with New group or by dragging tabs together. They are restored when WindowTabs restarts while their windows remain open. Ungroup forgets the group and separates its open windows."
+                             zh="通过“新建组”或拖拽标签合并创建的分组。窗口仍打开时，重启 WindowTabs 会恢复这些分组。“解除分组”会忘记该组并拆开它打开的窗口。"
+                             ja="「新しいグループ」またはタブのドラッグで作成したグループです。ウィンドウが開いたままであれば、WindowTabs の再起動後に復元されます。「グループを解除」はグループを忘れ、開いているウィンドウを分けます。"
+                             ar="مجموعات أنشأتها باستخدام «مجموعة جديدة» أو بسحب علامات التبويب معًا. تُستعاد عند إعادة تشغيل WindowTabs ما دامت نوافذها مفتوحة. «إلغاء التجميع» ينسى المجموعة ويفصل نوافذها المفتوحة."
+                             ko="‘새 그룹’이나 탭 끌기로 만든 그룹입니다. 창이 열린 상태에서 WindowTabs를 다시 시작하면 복원됩니다. ‘그룹 해제’를 누르면 그룹이 삭제되고 열린 창이 분리됩니다." }
         let application = { en="Application"; zh="应用"; ja="アプリ"; ar="التطبيق"; ko="앱" }
         let chooseApplication = { en="Add an app"; zh="添加应用"; ja="アプリを追加"; ar="إضافة تطبيق"; ko="앱 추가" }
         /// Hover tips on a group's buttons.
@@ -1220,7 +1219,7 @@ module Strings =
                         ja="再起動後はこのグループに戻りません：同じタイトルのウィンドウが他にもありました"
                         ar="لن تعود إلى هذه المجموعة بعد إعادة التشغيل: نافذة أخرى حملت العنوان نفسه"
                         ko="다른 창과 제목이 같아 다시 시작하면 이 그룹으로 돌아오지 않습니다" }
-        let handMadeGroups = { en="Windows grouped by dragging"; zh="拖拽形成的窗口分组"; ja="ドラッグでまとめたウィンドウのグループ"; ar="النوافذ المجمّعة بالسحب"; ko="끌어서 묶은 창" }
+        let handMadeGroups = { en="Manually grouped windows"; zh="手动分组的窗口"; ja="手動でまとめたウィンドウ"; ar="نوافذ مجمّعة يدويًا"; ko="수동으로 그룹화한 창" }
         let scanning = { en="Scanning…"; zh="正在扫描…"; ja="スキャン中…"; ar="جارٍ الفحص…"; ko="스캔 중…" }
         let scanFailed details = { en="Scan failed: " + details; zh="扫描失败：" + details; ja="スキャンに失敗しました: " + details; ar="فشل الفحص: " + details; ko="스캔 실패: " + details }
 
