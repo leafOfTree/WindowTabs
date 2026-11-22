@@ -53,6 +53,57 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        // Exercise tall surfaces without changing the real monitor or sending desktop input.
+        let dragMonitor = { new ITabStripMonitor with
+                                member _.tabClick _ = ()
+                                member _.tabActivate _ = ()
+                                member _.tabClose _ = ()
+                                member _.tabMoved(_,_) = ()
+                                member _.windowMsg _ = () }
+        let dragOs = OS()
+        let foregroundBeforeDrag = dragOs.foreground.hwnd
+        for dpi in [96;144;192] do
+            Dpi.set dpi
+            for label,width,height in ["landscape",1600,900; "portrait",900,1600; "tall",1080,2400] do
+                for dock in [TabDockTop;TabDockLeft] do
+                    for tabs in [2;10;20] do
+                        let strip = new TabStrip(dragMonitor)
+                        try
+                            strip.setTabAppearance(ThemeService.currentAppearance().scaled)
+                            strip.setDefaultAlignment "Left"
+                            strip.dock <- dock
+                            for id in 1..tabs do strip.addTab(Tab(IntPtr(300+id)))
+                            let size = Dpi.scaleSize(if dock=TabDockTop then Sz(width,28) else Sz(220,height))
+                            if dock=TabDockLeft then strip.columnSpan <- (0,size.height)
+                            let place i = { bounds=Rect(Pt(-20000+i%31*3,-20000+i%47*2),size); showInside=false }
+                            strip.setPlacement(place 0)
+                            strip.visible <- true
+                            let shadow = dragOs.windowsInZorder.list |> List.find(fun w -> w.parent.hwnd=strip.hwnd && w.hasStyleEx WindowsExtendedStyles.WS_EX_LAYERED)
+                            let initialOffset = shadow.location.sub(strip.bounds.location)
+                            let order = strip.lorder.list
+                            for visible in [true;false] do
+                                strip.visible <- visible
+                                // Warm native paths before measuring; timings are observations, not machine-specific assertions.
+                                for i in 0..9 do strip.setPlacement(place i)
+                                let before = frames strip
+                                let timings = Array.init 120 (fun i ->
+                                    let started = Diagnostics.Stopwatch.GetTimestamp()
+                                    strip.setPlacement(place (i+10))
+                                    float(Diagnostics.Stopwatch.GetTimestamp()-started)*1000.0/float Diagnostics.Stopwatch.Frequency)
+                                Array.sortInPlace timings
+                                check (frames strip=before) "Simulated title-bar drag regenerated strip pixels"
+                                check (strip.lorder.list=order) "Simulated title-bar drag reordered tabs"
+                                if visible then
+                                    check (strip.bounds.location=(place 129).bounds.location) "Tall strip failed to follow the final drag position"
+                                    check (shadow.isVisible && shadow.location.sub(strip.bounds.location)=initialOffset) "Tall strip lost its shadow offset during dragging"
+                                else check (not shadow.isVisible) "Hidden drag mode left the shadow visible"
+                                printfn "PERF simulated-drag %s dpi=%d dock=%A tabs=%d visible=%b median=%.3fms p95=%.3fms max=%.3fms redraws=%d"
+                                    label dpi dock tabs visible timings.[60] timings.[114] timings.[119] (frames strip-before)
+                            strip.visible <- true
+                            check (dragOs.windowFromHwnd(strip.hwnd).isVisible && shadow.isVisible) "Drag comparison failed to restore strip and shadow"
+                        finally strip.destroy()
+        check (dragOs.foreground.hwnd=foregroundBeforeDrag) "Simulated title-bar dragging changed foreground"
+        Dpi.set originalDpi
         // The topmost cover leaves live tabs visible and follows their native geometry.
         do
             let frame = Rect(Pt(-1200,100),Sz(600,400))
