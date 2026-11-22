@@ -139,7 +139,7 @@ let main() =
             member _.showWithin(_,_,windows,_) = picks.Enqueue windows.Length
             member _.showForMerge(strip,prompt,windows,choose) =
                 check (WinUserApi.IsWindow strip) "The merge picker needs its originating tab strip"
-                check (prompt=tr Strings.TabMenu.addExisting) "Wrong prompt for the merge picker"
+                check (prompt=tr Strings.TabMenu.addExisting || prompt=tr Strings.GroupEditor.newGroup) "Wrong prompt for the merge picker"
                 windows |> List.tryHead |> Option.iter(fun (hwnd,_,_) -> choose hwnd)})
         // Groups whose taskbar button would be the real one get a stand-in, as no taskbar is needed here.
         let noTaskbar() = {new IPlugin with member _.init() = ()}
@@ -201,11 +201,11 @@ let main() =
         let needsSplit = set ["split-focus-left";"split-focus-right";"split-focus-up";"split-focus-down";"split-focus-other";"split-swap";"split-equalize";"split-turn";"split-close-pane";"split-end"]
         let needsTab = set [TabCommands;GroupCommands;SplitCommands]
         // Listed with the tab and group commands, but open a box wherever the user is.
-        let anywhere = set ["search-tabs";"command-palette";"edit-groups"]
+        let anywhere = set ["search-tabs";"command-palette";"edit-groups";"new-group"]
         // Dimmed while there is no workspace to choose.
         let needsWorkspace = set ["restore-workspace-named";"delete-workspace"]
         // Open a system dialog and wait on the user: listed, but not run unattended.
-        let interactive = set ["custom-tab-color";"change-group-icon"]
+        let interactive = set ["custom-tab-color";"change-group-icon";"new-group"]
         for command in Commands.all do
             let withTab = command.enabled active
             let withNone = command.enabled IntPtr.Zero
@@ -696,6 +696,13 @@ let main() =
             pumpUntil "Adding the picked window" (fun () ->
                 onGroupOf active (fun g -> g.windows.contains picked) && onGroup groupB (fun g -> not (g.windows.contains picked)))
             note (onGroup groupB (fun g -> g.windows.contains sibling)) "Picking one window moved another tab from its group")
+        attempt "new-group" (fun () ->
+            let picked = hwndOf "Delta"
+            candidates <- [picked,"Delta","app"]
+            runDone "new-group" active
+            pumpUntil "Creating a new group" (fun () ->
+                onGroupOf picked (fun g -> g.windows.contains picked && not (g.windows.contains active)))
+            note ((Commands.find "new-group").Value.enabled IntPtr.Zero) "New group requires an existing group")
         // Last, as it gathers every window of this app: all of them join the group in front.
         attempt "group-app" (fun () ->
             let delta = hwndOf "Delta"

@@ -478,6 +478,25 @@ module Commands =
         plain "clear-tab-color" Strings.Commands.clearTabColor TabCommands hasGroup clearTabColor
         plain "move-tab-left" Strings.Commands.moveTabLeft TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,-1))))
         plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))
+        { plain "new-group" { caption=Strings.GroupEditor.newGroup; description=Strings.GroupEditor.newGroup; keywords=Strings.Commands.addExisting.keywords } GroupCommands always (fun owner ->
+              let entries = Services.program.windowCandidates None
+              let prompt = tr Strings.GroupEditor.newGroup
+              match Services.tryGet<ISplitPanePicker>() with
+              | Some picker when not entries.IsEmpty ->
+                  let mutable target : IGroup option = None
+                  picker.showForMerge(owner,prompt,entries,fun hwnd ->
+                      if WinUserApi.IsWindow hwnd then
+                          let group =
+                              match target with
+                              | Some group -> group
+                              | None ->
+                                  let group = Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar") :?> bool)
+                                  (group :?> GroupInfo).group.isManual <- true
+                                  target <- Some group
+                                  group
+                          Services.desktop.addExistingWindow(group.hwnd,hwnd))
+              | Some _ -> Notice.show prompt (tr Strings.TabMenu.splitNoWindows)
+              | None -> ()) with scope=Everywhere }
         plain "add-existing-window" Strings.Commands.addExisting GroupCommands hasGroup (onGroup(fun g -> g.run AddExistingWindow))
         plain "sort-tabs" Strings.Commands.sortTabs TabCommands hasOtherTabs (onGroup(fun g -> g.run SortTabs))
         plain "close-other-tabs" Strings.Commands.closeOtherTabs TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(CloseOtherTabs hwnd)))
