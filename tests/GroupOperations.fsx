@@ -57,12 +57,12 @@ type HelperWindow() =
     let mutable pinned = true
     let mutable delay = 0
     let mutable iconDelay = 0
-    let mutable positionPause : (ManualResetEventSlim * ManualResetEventSlim) option = None
+    let mutable positionPause : (IntPtr * ManualResetEventSlim * ManualResetEventSlim) option = None
     member _.Changes = Volatile.Read(&changes)
     member _.Pinned with set value = pinned <- value
     member _.Delay with set value = delay <- value
     member _.IconDelay with set value = iconDelay <- value
-    member _.HoldNextPositionChanged(entered,resume) = positionPause <- Some(entered,resume)
+    member _.HoldNextPositionChanged(source,entered,resume) = positionPause <- Some(source,entered,resume)
     override this.CreateParams =
         let parameters = base.CreateParams
         parameters.ExStyle <- parameters.ExStyle ||| 0x08000000 ||| 0x80
@@ -84,10 +84,12 @@ type HelperWindow() =
                 position.cy <- min position.cy 500
             Marshal.StructureToPtr(position,message.LParam,false)
         if message.Msg=0x47 then
-            positionPause |> Option.iter(fun (entered,resume) ->
+            positionPause |> Option.iter(fun (source,entered,resume) ->
                 positionPause <- None
                 // Owned followers can rise before the worker puts them below the source.
-                OS().windowFromHwnd(this.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+                // HWND_TOP alone can leave the active source above a no-activate follower.
+                // Establish the relative order the test needs on hidden desktops too.
+                OS().windowFromHwnd(source).insertAfter(this.Handle)
                 entered.Set()
                 resume.Wait())
         // Stand in for a native window that ignores WM_DPICHANGED. Off screen, Windows moves these
@@ -1421,7 +1423,7 @@ let main() =
                         onHelper(fun () -> OS().windowFromHwnd(source).showWindow(command))
                         use entered = new ManualResetEventSlim(false)
                         use resume = new ManualResetEventSlim(false)
-                        onHelper(fun () -> followerForm.HoldNextPositionChanged(entered,resume))
+                        onHelper(fun () -> followerForm.HoldNextPositionChanged(source,entered,resume))
                         let focused = WinUserApi.GetForegroundWindow()
                         try
                             onGroup(fun group ->
