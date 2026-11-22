@@ -33,7 +33,9 @@ type FilterService() as this =
     member this.isAppWindowStyle (window:Window) = 
         // Independent settings windows can minimize without offering maximize.
         window.hasStyle WindowsStyles.WS_MINIMIZEBOX &&
-        not (window.hasStyle WindowsStyles.WS_CHILD || window.hasStyleEx WindowsExtendedStyles.WS_EX_TOOLWINDOW)
+        not (window.hasStyle WindowsStyles.WS_CHILD || window.hasStyleEx WindowsExtendedStyles.WS_EX_TOOLWINDOW) &&
+        // Shell copy/move progress has a minimize button too, but is not a folder window.
+        window.className <> "OperationStatusWindow"
 
     member this.isAppWindow (window:Window) =
         let tests = List2([

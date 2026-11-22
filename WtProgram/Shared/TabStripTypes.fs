@@ -151,6 +151,21 @@ and TabAppearanceInfo = {
 /// Pack only the carried tabs, wrapping at the screen edge. The pointer keeps its
 /// place within the grabbed tab even when earlier tabs join it in the picture.
 module DragTabs =
+    /// Keep the grabbed tab at the same origin while its window appears below it.
+    let withPreview (limit:Sz) (tab:Img) (preview:Img) =
+        let width = max tab.width limit.width
+        let ratio = min (float width / float preview.width) (float limit.height / float preview.height)
+        let w,h = max 1 (int(float preview.width*ratio)),max 1 (int(float preview.height*ratio))
+        let image = Img(Sz(width,tab.height+h))
+        try
+            use g = image.graphics
+            g.DrawImageUnscaled(tab.bitmap,0,0)
+            g.DrawImage(preview.bitmap,Rectangle((width-w)/2,tab.height,w,h))
+            image
+        with _ ->
+            image.bitmap.Dispose()
+            reraise()
+
     let layout vertical limit tabs =
         let mutable along,cross,depth = 0,0,0
         let placed = tabs |> List.map(fun (tab,size:Sz) ->

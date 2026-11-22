@@ -21,6 +21,13 @@ module StartupTrace =
     do
         if not(String.IsNullOrWhiteSpace path) then
             writer <- Some(new Threading.Timer(Threading.TimerCallback(fun _ -> flush()),null,1000,1000))
+    let enabled = not(String.IsNullOrWhiteSpace path)
+    let metric (stage:string) (milliseconds:float) =
+        if enabled then
+            let record = JObject(JProperty("stage",stage),JProperty("startMs",clock.Elapsed.TotalMilliseconds),
+                                 JProperty("durationMs",milliseconds),JProperty("thread",Threading.Thread.CurrentThread.ManagedThreadId))
+            entries.Enqueue(record.ToString(Formatting.None))
+
     let measure (stage:string) action =
         if String.IsNullOrWhiteSpace path || clock.ElapsedMilliseconds>15000L then action()
         else

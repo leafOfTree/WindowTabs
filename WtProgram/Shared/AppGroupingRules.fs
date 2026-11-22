@@ -47,20 +47,22 @@ type AppGroupingMatch =
 
 /// A window as the grouping rules see it. The command line is read only for a rule that asks for
 /// it: reading it opens the process. A rule sees only its arguments (`CommandLineText.arguments`).
-type RuleWindow = { path:string; title:string; className:string; commandLine:unit -> string }
+type RuleWindow = { path:string; title:string; tabTitle:string; className:string; commandLine:unit -> string }
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module RuleField =
-    let serialize = function AppOnly -> "" | WindowTitle -> "title" | WindowClass -> "class" | CommandLine -> "commandLine"
-    let parse = function "" -> Some AppOnly | "title" -> Some WindowTitle | "class" -> Some WindowClass | "commandLine" -> Some CommandLine | _ -> None
+    let serialize = function AppOnly -> "" | WindowTitle -> "title" | TabTitle -> "tabTitle" | WindowClass -> "class" | CommandLine -> "commandLine"
+    let parse = function "" -> Some AppOnly | "title" -> Some WindowTitle | "tabTitle" -> Some TabTitle | "class" -> Some WindowClass | "commandLine" -> Some CommandLine | _ -> None
     let label = function
         | AppOnly -> Strings.AppRules.allWindows
         | WindowTitle -> Strings.AppRules.windowTitle
+        | TabTitle -> Strings.AppRules.tabTitle
         | WindowClass -> Strings.AppRules.windowClass
         | CommandLine -> Strings.AppRules.commandLine
     /// What the field is and when to match on it, in a line.
     let hint = function
         | AppOnly -> Strings.AppRules.allWindows
+        | TabTitle -> Strings.AppRules.tabTitleHint
         | WindowTitle -> Strings.AppRules.windowTitleHint
         | WindowClass -> Strings.AppRules.windowClassHint
         | CommandLine -> Strings.AppRules.commandLineHint
@@ -177,6 +179,7 @@ module AppGroupingRules =
                 let value =
                     match field with
                     | WindowTitle -> window.title
+                    | TabTitle -> window.tabTitle
                     | WindowClass -> window.className
                     | _ -> CommandLineText.arguments (window.commandLine())
                 try test (if isNull value then "" else value) with _ -> false

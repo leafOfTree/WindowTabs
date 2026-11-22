@@ -433,7 +433,7 @@ type AppGroupingRulesView() as this =
     /// The group whose "+" opened the app list.
     let mutable pickingFor : string option = None
     /// The fields in the order offered: by how often each is the one wanted.
-    let fields = [|AppOnly;WindowTitle;CommandLine;WindowClass|]
+    let fields = [|AppOnly;WindowTitle;CommandLine;WindowClass;RuleField.TabTitle|]
     /// A chip's note: the condition it takes its windows by, or nothing for the app's every window.
     let describe (rule:AppGroupingRule) =
         if not (AppGroupingRules.isConditioned rule) then ""
@@ -464,7 +464,7 @@ type AppGroupingRulesView() as this =
             chipRules.Clear()
             // One row a group, in order and with no name, its apps in chips that are menus; the
             // Enabled box covers them all. A chip for some of an app's windows says which under
-            // the app's name. No tip on hover: the heading's (i) says what the chips do.
+            // the app's name; hovering reveals the complete condition.
             for group in groups do
                 let members = rules |> List.filter(fun rule -> rule.groupId=group.id)
                 let enabled = members |> List.filter(fun rule -> rule.enabled) |> List.length
@@ -570,6 +570,7 @@ type AppGroupingRulesView() as this =
                     if window.isWindow && Services.filter.isAppWindow(window.hwnd) && AppIdentity.same window.pid.processPath rule.processPath then
                         match field with
                         | WindowTitle -> Some window.text
+                        | RuleField.TabTitle -> Some(Services.program.getWindowNameOverride window.hwnd |> Option.defaultValue (WindowTitle.tabName window.text))
                         | WindowClass -> Some window.className
                         | CommandLine -> Some(CommandLineText.arguments window.pid.commandLine)
                         | AppOnly -> None
@@ -662,6 +663,19 @@ type AppGroupingRulesView() as this =
         // Only names and buttons: a heading row would just say "Name".
         tree.ShowHeader <- false
         tree.ShowExpanders <- false
+        tree.AllowChipMove <- true
+        tree.ChipMoved.Add(fun (source,index,target) ->
+            match source.Tag :?> GroupApplicationNode,target.Tag :?> GroupApplicationNode with
+            | GroupNode fromId,GroupNode toId when fromId<>toId ->
+                match chipRules.TryGetValue fromId with
+                | true,members when index>=0 && index<members.Length ->
+                    let previous = rules
+                    let moved = members.[index]
+                    rules <- (rules |> List.filter(fun rule -> rule.id<>moved.id)) @ [{moved with groupId=toId}]
+                    save (Some previous)
+                    reload (Some(GroupNode toId))
+                | _ -> ()
+            | _ -> ())
         tree.ChipAddTip <- tr Strings.AppRules.chooseApplication
         tree.ActionInvoked.Add(fun (item,action) ->
             match item.Tag :?> GroupApplicationNode,action with

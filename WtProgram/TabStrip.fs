@@ -160,9 +160,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let makeFont = TabMetrics.font
     let mutable fontKey = Dpi.value(),0
     let mutable normalFont = makeFont 0 FontStyle.Regular
-    let mutable renamedFont = makeFont 0 FontStyle.Italic
+    let mutable renamedFont = makeFont 0 FontStyle.Regular
     let mutable boldFont = makeFont 0 FontStyle.Bold
-    let mutable renamedBoldFont = makeFont 0 (FontStyle.Bold ||| FontStyle.Italic)
+    let mutable renamedBoldFont = makeFont 0 FontStyle.Bold
 
     let isMouseOverExport = Cell.export <| fun() ->
         if this.isVertical then pointerOverCell.value else hoverCell.value.IsSome
@@ -462,16 +462,22 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                             | Some image when request=tipRequest && tipTarget=Some(TabTitle tab) -> this.showTip(tab,Some image)
                             | Some image -> image.Dispose()
                             | None -> if request=tipRequest && tipTarget=Some(TabTitle tab) then this.showTip(tab,None))) |> ignore
-            | Some(_,sprite) when sprite.titleCut -> this.showTip(tab,None)
+            | Some(_,sprite) when sprite.titleCut || (this.tabInfo tab).isRenamed -> this.showTip(tab,None)
             // Nothing to show for this tab: the last tab's tip, left up to follow, goes.
             | _ -> this.hideTitle()
         | _ -> this.hideTitle()
 
     member private this.showTip(tab:Tab,picture:Bitmap option) =
         match this.tipSprite tab with
-        | Some(offset,sprite) when picture.IsSome || sprite.titleCut ->
+        | Some(offset,sprite) when picture.IsSome || sprite.titleCut || (this.tabInfo tab).isRenamed ->
             let anchor = Rect(location.add(offset),sprite.size)
-            this.showTipText(sprite.displayInfo.text,sprite.displayInfo.textFont,anchor,picture)
+            let text =
+                if (this.tabInfo tab).isRenamed then
+                    let (Tab hwnd) = tab
+                    let original = _os.windowFromHwnd(hwnd).text
+                    if String.IsNullOrEmpty original then sprite.displayInfo.text else original
+                else sprite.displayInfo.text
+            this.showTipText(text,sprite.displayInfo.textFont,anchor,picture)
         | _ ->
             picture |> Option.iter(fun image -> image.Dispose())
             titleTip |> Option.iter(fun tip -> tip.hide())
@@ -1221,9 +1227,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if fontKey <> key then
             for font in [normalFont;renamedFont;boldFont;renamedBoldFont] do font.Dispose()
             normalFont <- makeFont appearance.tabHeight FontStyle.Regular
-            renamedFont <- makeFont appearance.tabHeight FontStyle.Italic
+            renamedFont <- makeFont appearance.tabHeight FontStyle.Regular
             boldFont <- makeFont appearance.tabHeight FontStyle.Bold
-            renamedBoldFont <- makeFont appearance.tabHeight (FontStyle.Bold ||| FontStyle.Italic)
+            renamedBoldFont <- makeFont appearance.tabHeight FontStyle.Bold
             fontKey <- key
         appearanceCell.set(Some(appearance))
             

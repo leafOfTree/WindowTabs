@@ -215,6 +215,29 @@ let main() =
             check (filter.isAppWindowStyle fixedWindow) "An independent minimize-only window was filtered out"
             use tool = new Form(FormBorderStyle=FormBorderStyle.FixedToolWindow,MinimizeBox=true,MaximizeBox=false)
             check (not (filter.isAppWindowStyle (OS().windowFromHwnd tool.Handle))) "A tool window passed the app style filter"
+            // Shell progress uses its own class, not the ordinary #32770 dialog class.
+            let instance = WinBaseApi.GetModuleHandle(IntPtr.Zero)
+            let proc = WNDPROC(fun hwnd msg wp lp -> WinUserApi.DefWindowProc(hwnd,msg,wp,lp))
+            let mutable wc = WNDCLASS()
+            wc.lpfnWndProc <- proc
+            wc.hInstance <- instance
+            wc.lpszClassName <- "OperationStatusWindow"
+            check (WinUserApi.RegisterClass(ref wc)) "Could not register the Shell progress fixture"
+            try
+                let style = WindowsStyles.WS_OVERLAPPEDWINDOW &&& ~~~WindowsStyles.WS_MAXIMIZEBOX
+                let progress = WinUserApi.CreateWindowEx(0,wc.lpszClassName,"Copying files",style,
+                                                        0,0,400,200,IntPtr.Zero,IntPtr.Zero,instance,IntPtr.Zero)
+                check (progress<>IntPtr.Zero) "Could not create the Shell progress fixture"
+                try
+                    let window = OS().windowFromHwnd progress
+                    check (window.hasStyle WindowsStyles.WS_MINIMIZEBOX && not(window.hasStyle WindowsStyles.WS_MAXIMIZEBOX))
+                          "The progress fixture did not reproduce the relaxed style filter"
+                    check (not(filter.isAppWindowStyle window)) "Shell file progress was admitted as a tabbing candidate"
+                    check (filter.isAppWindowStyle fixedWindow) "Excluding Shell progress also excluded independent fixed-size windows"
+                finally WinUserApi.DestroyWindow(progress) |> ignore
+            finally
+                WinUserApi.UnregisterClass(wc.lpszClassName,instance) |> ignore
+                GC.KeepAlive(proc)
             let size = fixedWindow.bounds.size
             let owner = obj()
             FollowerPlacement.queue.claim(owner,fixedForm.Handle)
@@ -1921,7 +1944,7 @@ let main() =
                     cover.Activate()
                     let foreground = WinUserApi.GetForegroundWindow()
                     dropAt mid (Sz(work.Width,work.Height)) |> ignore
-                    check (WinUserApi.GetForegroundWindow()=foreground && isAbove cover.Handle hwnd) "A background tab covered the foreground window or took focus"
+                    pumpUntil "A dropped background tab stayed behind the covering window" (fun () -> isAbove hwnd cover.Handle)
                     sourceInFront <- true
                     dropAt mid (Sz(work.Width,work.Height)) |> ignore
                     pumpUntil "The dropped window did not come in front" (fun () -> isAbove hwnd cover.Handle)

@@ -874,3 +874,20 @@ hooks, with those heard from the whole desktop counted apart (`ResourceCounters`
 count that climbs while nothing changes points at the leak or the global hook. The
 troubleshooting report carries the same figures, now, lowest, highest and an hour
 before, under `resourceHistory`.
+
+## Startup readiness baseline (2026-11-22)
+
+The expanded StartupPerf host reports process-start-to-first-message and stable
+native placement readiness, plus the largest main-thread heartbeat gap. See its
+README for exact boundaries. Five optimized separate-dependency runs per mode,
+20 fixture windows/20 groups on a hidden desktop, measured median
+interactive/ready times of 320.37/1738.49 ms (separate taskbar icons) and
+321.30/1733.95 ms (combined icons). These figures are workload-specific, not CI limits.
+
+Three actual Debug application restarts with tracing enabled observed 29 windows
+and 15 groups each. With the final input-initialization boundary, interactive times were 989.45,
+874.24 and 818.44 ms; readiness was 2107.82, 1942.07 and 1953.13 ms. Largest
+heartbeat gaps after the first response were 103.62, 51.90 and 59.84 ms. The heartbeat interval is 20 ms, so these gaps
+include expected scheduling time. Traces are local ignored artifacts under
+`tests/Debug/startup-current/real-debug-{5,6,7}.jsonl`. These warm restarts do not
+measure cold boot, sign-in restoration, or the packaged Release executable.

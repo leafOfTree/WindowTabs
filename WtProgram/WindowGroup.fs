@@ -309,6 +309,23 @@ module DragOutPlacement =
 
 /// Which group a window was in, kept on the window itself, so a restarted WindowTabs puts
 /// windows back together as they were, however they came to be grouped.
+module GroupRestartState =
+    let private prefix = "WindowTabs.Restart."
+    let private number hwnd key = int(WinUserApi.GetProp(hwnd,prefix+key).ToInt64())
+    let private put hwnd key value = WinUserApi.SetProp(hwnd,prefix+key,IntPtr(value:int)) |> ignore
+    let read hwnd =
+        let rank = number hwnd "Order"
+        if rank<=0 then None else
+        let hide = match number hwnd "Hide" with 1 -> Some "Never" | 2 -> Some "Maximized" | 3 -> Some "Always" | _ -> None
+        Some(rank-1,number hwnd "Active"=1,hide)
+    let save hwnd rank active hide =
+        put hwnd "Order" (rank+1)
+        put hwnd "Active" (if active then 1 else 0)
+        put hwnd "Hide" (match hide with Some "Never" -> 1 | Some "Maximized" -> 2 | Some "Always" -> 3 | _ -> 0)
+    let clear hwnd = for key in ["Order";"Active";"Hide"] do WinUserApi.RemoveProp(hwnd,prefix+key) |> ignore
+    let taskbar hwnd = match number hwnd "Taskbar" with 1 -> Some false | 2 -> Some true | _ -> None
+    let saveTaskbar hwnd choice = put hwnd "Taskbar" (match choice with Some false -> 1 | Some true -> 2 | None -> 0)
+
 module WindowGroupToken =
     let private key = "WindowTabs.Group.v1"
     let private random = Random()
@@ -765,6 +782,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.isSuperBarEnabled = enableSuperBar
     /// A tab was dragged into it, or it was made by dragging a tab out: only such groups are
     /// remembered after their windows close, as rules and auto grouping remake the others.
+    member val restoringAfterRestart = false with get,set
+    member val restoredOrder : Map<IntPtr,int> = Map.empty with get,set
+    member val restoredActive : IntPtr option = None with get,set
+
     member this.isManual
         with get() = isMadeByHand
         and set value =
@@ -2892,6 +2913,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.addWindow(hwnd, withDelay) = this.withUpdate <| fun() ->
        if not isDestroyed.value && this.windows.contains(hwnd).not then
             if withDelay then System.Threading.Thread.Sleep(250)
+            let restart = if this.restoringAfterRestart then GroupRestartState.read hwnd else None
+            GroupRestartState.clear hwnd
             let window = this.os.windowFromHwnd(hwnd)                
             let window = this.os.windowFromHwnd(hwnd)
             if this.windows.isEmpty && not hasSavedTabLayout then
@@ -2957,6 +2980,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // here: carried on and out onto the desktop, its new group took this one's row.
             if hasSavedTabLayout && heldByDrag<>Some hwnd then WindowTabLayout.save hwnd this.tabLayout
             this.restoreSplitProps(hwnd)
+            restart |> Option.iter(fun (rank,active,hide) ->
+                this.restoredOrder <- this.restoredOrder.Add(hwnd,rank)
+                if active then this.restoredActive <- Some hwnd
+                hide |> Option.iter(fun value -> this.bb.write("autoHideMode",value))
+                let order = this.lorder.list |> List.sortBy(fun hwnd -> this.restoredOrder.TryFind hwnd |> Option.defaultValue Int32.MaxValue)
+                this.run(SetTabOrder order)
+                this.restoredActive |> Option.filter this.windows.contains |> Option.iter(fun selected ->
+                    this.setZorder(zorderCell.value.where((<>)selected).prepend selected)))
             StartupTrace.measure "group.add.notify" (fun () -> addedEvent.Trigger(hwnd))
             // A visible window joining a minimized group restores it, as restoring any tab does,
             // so closing that window shows the previous tab instead of minimizing the group again.
@@ -3155,6 +3186,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.destroy() =
         if isDestroyed.value.not then
+            let active = if this.isEmpty then IntPtr.Zero else this.topWindow
+            let hide = Option.ofObj(this.bb.read<string>("autoHideMode",null))
+            this.lorder.list |> List.iteri(fun rank hwnd -> GroupRestartState.save hwnd rank (hwnd=active) hide)
             isDestroyed.set(true)
             this.clearPinnedFrame()
             this.windows.items.iter IndependentWindowParking.restore

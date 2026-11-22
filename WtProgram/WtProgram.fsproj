@@ -154,6 +154,7 @@
     <Compile Include="CommandPalette.fs" />
     <Compile Include="SplitPanePicker.fs" />
     <Compile Include="GroupEditor.fs" />
+    <Compile Include="WindowCustomizations.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

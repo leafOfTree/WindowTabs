@@ -44,3 +44,31 @@ enumeration, process paths, native filtering, virtual desktop queries and tempor
 show/hide subscriptions. It disposes subscriptions immediately and creates no
 groups, moves no windows and installs no input hooks. Output contains only counts
 and timings. This mode does not model debugger overhead or production membership.
+
+## Current startup report
+
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-StartupPerf.ps1 -Label current -Repeat 5`.
+The wrapper builds optimized production code with separate dependencies and the host,
+runs both taskbar modes serially, and writes raw runs plus median/maximum summaries
+to `tests/Debug/startup-current/results.json`. This is not the statically linked release EXE.
+It uses fixture settings and does not alter the user's application settings.
+
+- `InteractiveMs`: process creation to the first main-thread timer callback after
+  production initialization. This is a message-loop responsiveness proxy, not injected input.
+- `ReadyMs`: process creation to three consecutive successful group snapshots.
+  All 20 fixture windows must be present; native group membership and placement queues
+  must be ready, with unchanged group membership during each asynchronous snapshot.
+- `MaxMainGapMs`: largest interval between 20 ms main-thread timer callbacks after
+  the first response, until completion. Includes the intended interval and scheduler
+  delay; it is not an exact blocked-thread duration. Constructor time is reported separately.
+- A timeout is a failed run, never a successful readiness duration. Group counts must
+  accompany comparisons, because hidden desktops can retain automatic singletons.
+
+Real application traces now also emit `startup.interactiveMs`, `startup.readyMs`,
+`startup.maxMainGapMs`, `startup.windows` and `startup.groups`. The first two timings
+are measured from process creation, including replacement-instance handoff. Real readiness
+also waits for known desktop-placement and remembered-group settling work. It samples the
+currently discovered windows; it does not certify a later application launch or DWM's final
+presentation. No input is injected. A run that does not settle emits `startup.timeoutMs`.
+Monitoring is enabled only with the existing startup-trace environment variable or marker.
+The heartbeat adds observation overhead; compare runs using the same instrumentation.

@@ -1,0 +1,22 @@
+{
+  "BaseCommit": "258540058d8e3584d0086c287cd7c169270a7a26",
+  "Dirty": true,
+  "Scope": "Warm restarts; not cold boot",
+  "OS": "Microsoft Windows NT 10.0.26300.0",
+  "LogicalProcessors": 28,
+  "SDK": "10.0.401",
+  "Binaries": [
+    {
+      "Path": "WtProgram/bin/Debug/WindowTabs.exe",
+      "SHA256": "CAA3C03DBE10CA6437E422A34455418280719DABD21BFBA0629537754FB10E61"
+    },
+    {
+      "Path": "tests/Debug/startup-current/WindowTabs.exe",
+      "SHA256": "AC50C4984447500FF08892D7550BBFF52441D9D65A1AC6751D6F8ABD55BF61B9"
+    },
+    {
+      "Path": "tests/Debug/startup-current/StartupPerf.exe",
+      "SHA256": "01FFCC7C3E32DBBC1C2CF3EA0C01C5EAE8360463947DBB494E6298727700B4FD"
+    }
+  ]
+}

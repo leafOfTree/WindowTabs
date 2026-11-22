@@ -101,6 +101,18 @@ module VirtualDesktop =
             (fun () -> match lastDesktop.TryGetValue hwnd with true,id -> Some id | _ -> None)
             (fun () -> match WindowCloaking.TryGetVisibleDesktopId hwnd with true,id -> Some id | _ -> None)
 
+    /// Merging needs a current confirmation, never a remembered desktop from before a move.
+    let resolveMergeDesktop direct owner visible =
+        resolveGroupingDesktop direct owner (fun () -> None) visible
+
+    let private merging = DesktopLookup((fun hwnd ->
+        resolveMergeDesktop (fun () -> current hwnd) (fun () -> ownerDesktop hwnd)
+            (fun () -> match WindowCloaking.TryGetVisibleDesktopId hwnd with true,id -> Some id | _ -> None)),
+        fun work -> Threading.ThreadPool.QueueUserWorkItem(Threading.WaitCallback(fun _ -> work())) |> ignore)
+
+    let mergingReady = merging.Ready
+    let mergingDesktopId hwnd = merging.TryGet hwnd |> Option.flatten
+
     let private grouping = DesktopLookup(readGrouping,fun work ->
         Threading.ThreadPool.QueueUserWorkItem(Threading.WaitCallback(fun _ -> work())) |> ignore)
 
@@ -142,5 +154,6 @@ module VirtualDesktop =
         with _ -> None,None
 
     let forget (hwnd:IntPtr) =
+        merging.Forget hwnd
         grouping.Forget hwnd
         lastDesktop.TryRemove(hwnd) |> ignore

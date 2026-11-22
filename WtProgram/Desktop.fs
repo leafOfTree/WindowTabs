@@ -183,7 +183,10 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
         else source.invokeGroup(fun () ->
             if not source.isExited then source.group.removeWindow hwnd
             desktopDispatcher.Post attach)
-    member private this.destroy() = this.invokeGroup <| fun() -> this.group.destroy()
+    member private this.destroy() = this.invokeGroup <| fun() ->
+        for hwnd in this.group.windows.items.list do
+            GroupRestartState.saveTaskbar hwnd (if this.isTaskbarChosen then Some enableSuperBar else None)
+        this.group.destroy()
     member private x.switchWindow(next, force) = this.invokeGroup <| fun() -> this.group.switchWindow(next, force)
 
     interface IGroup with
@@ -498,13 +501,12 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             let windowPt = visible.location.sub(borderLeftTop).sub(workspaceOffset)
             window.setPlacement({
                 window.placement with
-                    showCmd = if dragInfo.sourceInFront then ShowWindowCommands.SW_SHOWNORMAL else ShowWindowCommands.SW_SHOWNOACTIVATE
+                    showCmd = ShowWindowCommands.SW_SHOWNOACTIVATE
                     rcNormalPosition = Rect(windowPt,Sz(visible.width+borderSize.width,visible.height+borderSize.height))
             })
-            // A foreground group may have raised another pane as the dragged tab left.
-            if dragInfo.sourceInFront then
-                window.setForeground(true)
-                window.raise()
+            // Releasing the pointer completes the move, including a tab taken from behind.
+            window.setForeground(true)
+            window.raise()
             notify.dragDrop(hwnd)
             
         member x.dragEnd() = invoker.asyncInvoke <| fun() ->

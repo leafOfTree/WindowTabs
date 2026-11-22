@@ -1318,6 +1318,21 @@ otepad.exe"]},
         assertTrue (groupingCaption.Font.Size < SettingsUi.sectionFont().Size && not groupingCaption.Font.Bold)
                    "Groups across apps has a heading as large as the page's"
         let tree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list when list.Name<>"dragged-groups" -> Some list | _ -> None)
+        // A dragged condition reserves its full height and pushes the add button beyond the slot.
+        do
+            use preview = new SettingsTreeList([TreeListColumn("",500,TextColumn)],Width=600,Height=200)
+            let target = TreeListItem("",ChipAdd=true,ChipMenu=true)
+            preview.Roots.Add target
+            preview.Rebuild()
+            let field name value = typeof<SettingsTreeList>.GetField(name,BindingFlags.Instance ||| BindingFlags.NonPublic).SetValue(preview,value)
+            let origin = Rectangle(40,10,180,48)
+            field "chipOrigin" (box origin)
+            field "chipDragging" (box true)
+            field "chipTarget" (box target)
+            let add = preview.ChipAddBounds(target).Value
+            let slot = typeof<SettingsTreeList>.GetField("chipSlot",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(preview) :?> Rectangle
+            assertTrue (slot.Size=origin.Size && add.Left>slot.Right) "The drag placeholder overlaps the add button or loses the condition's height"
+        assertTrue tree.AllowChipMove "Grouping rule chips cannot be moved between groups"
         let draggedTree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list when list.Name="dragged-groups" -> Some list | _ -> None)
         /// App rules' own list, whose apps open to their windows, keeps its chevrons.
         let appListShowsExpanders (view:ISettingsView) =
@@ -1400,7 +1415,7 @@ otepad.exe"]},
                 |> Seq.find(fun point -> tree.ItemAt(point) |> Option.exists(fun row -> obj.ReferenceEquals(row,item))
                                          && not(isNull (hit.Invoke(tree,[|box point|]))))
             let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
-            for method in ["OnMouseMove";"OnMouseDown"] do
+            for method in ["OnMouseMove";"OnMouseDown";"OnMouseUp"] do
                 typeof<SettingsTreeList>.GetMethod(method,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
         // The "+" after a group's apps lists the apps that can join it.
         let menu = groupView.AddMenu
@@ -1468,12 +1483,21 @@ otepad.exe"]},
         // title, window class or command line matches, asked for in a dialog; and, set apart
         // last, leaving the group.
         let conditionMenu = groupView.ConditionMenu
+        do
+            let row = tree.Roots.[1]
+            tree.EnsureVisible row
+            let bounds = tree.ChipMenuBounds(row,0).Value
+            let mouse = MouseEventArgs(MouseButtons.Right,1,bounds.X+bounds.Width/2,bounds.Y+bounds.Height/2,0)
+            typeof<SettingsTreeList>.GetMethod("OnMouseDown",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
+            assertTrue (conditionMenu.DropDown |> Option.exists(fun menu -> menu.Visible)) "Right-clicking a rule chip did not open its menu"
+            assertTrue (not tree.Capture) "Right-clicking a rule started a drag"
+            conditionMenu.DropDown.Value.Close()
         let chooseCondition index =
             pressChipPart "chipAt" tree.Roots.[1]
             assertTrue (conditionMenu.DropDown |> Option.exists(fun window -> window.Visible)
-                        && conditionMenu.Choice.Value.ItemText(4)=tr Strings.AppRules.removeFromGroup
-                        && conditionMenu.Choice.Value.SeparatorsBefore=[4]
-                        && conditionMenu.Choice.Value.SelectedIndex=(match saved().Head.field with AppOnly -> 0 | WindowTitle -> 1 | CommandLine -> 2 | WindowClass -> 3)
+                        && conditionMenu.Choice.Value.ItemText(5)=tr Strings.AppRules.removeFromGroup
+                        && conditionMenu.Choice.Value.SeparatorsBefore=[5]
+                        && conditionMenu.Choice.Value.SelectedIndex=(match saved().Head.field with AppOnly -> 0 | WindowTitle -> 1 | CommandLine -> 2 | WindowClass -> 3 | RuleField.TabTitle -> 4)
                         && conditionMenu.Choice.Value.ItemText(1).StartsWith(tr Strings.AppRules.windowTitle)
                         && conditionMenu.Choice.Value.ItemText(2).StartsWith(tr Strings.AppRules.commandLine)
                         && conditionMenu.Choice.Value.ItemText(3).StartsWith(tr Strings.AppRules.windowClass)
@@ -1710,7 +1734,7 @@ otepad.exe"]},
         Application.DoEvents()
         tree.Focus() |> ignore
         // An app leaves its group from its chip's menu.
-        chooseCondition 4
+        chooseCondition 5
         assertTrue (saved().IsEmpty && targets().Length=2) "Removing an app's chip deleted the group or kept the app"
         groupView.Reload()
         assertTrue (tree.Roots |> Seq.filter(fun row -> row.Glyph<>TabsGlyph) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
