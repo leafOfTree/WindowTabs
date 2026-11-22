@@ -281,6 +281,34 @@ let main() =
         let keptGroup = (groupOf keptA.Handle).Value :?> GroupInfo
         let apartGroup = (groupOf apart.Handle).Value :?> GroupInfo
         check (keptGroup.group.isManual && not apartGroup.group.isManual) "A group made by hand was not one after a restart, or an automatic one became one"
+        // Destroy only WindowTabs' group, leaving its application windows alive, as an update does.
+        let beforeMode = keptGroup.isSuperBarEnabled
+        keptGroup.isTaskbarChosen <- true
+        let mutable prepared = false
+        keptGroup.invokeGroup(fun () ->
+            keptGroup.group.run(SetTabOrder [keptB.Handle;keptA.Handle])
+            keptGroup.group.run(SetAutoHide "Always")
+            keptGroup.group.tabActivate(Tab keptB.Handle,false)
+            dispatcher.Post(fun () -> prepared <- true))
+        pumpUntil "Restart state was not prepared" (fun () -> prepared)
+        let seen = typeof<Program.Program>.GetField("groupedThisRun",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetValue(program) :?> Collections.Generic.HashSet<IntPtr>
+        for hwnd in [keptA.Handle;keptB.Handle] do seen.Remove hwnd |> ignore
+        (keptGroup :> IGroup).destroy()
+        pumpUntil "The old group did not exit" (fun () -> keptGroup.isExited)
+        program.refresh()
+        pumpUntil "The group's windows were not restored after restart" (fun () ->
+            match groupOf keptA.Handle,groupOf keptB.Handle with
+            | Some a,Some b -> obj.ReferenceEquals(a,b) && not(obj.ReferenceEquals(a,keptGroup))
+            | _ -> false)
+        let rebuilt = (groupOf keptA.Handle).Value :?> GroupInfo
+        let mutable restoredState = None
+        rebuilt.invokeGroup(fun () ->
+            let state = rebuilt.group.lorder.list,rebuilt.group.topWindow,rebuilt.group.menuChoices.autoHideMode
+            dispatcher.Post(fun () -> restoredState <- Some state))
+        pumpUntil "The restarted group did not report its state" (fun () -> restoredState.IsSome)
+        check (restoredState.Value=([keptB.Handle;keptA.Handle],keptB.Handle,Some "Always"))
+              (sprintf "Restart lost tab order, selection or auto-hide: %A" restoredState)
+        check (rebuilt.isTaskbarChosen && rebuilt.isSuperBarEnabled=beforeMode) "Restart lost the explicit taskbar combining choice"
         apartGroup.group.isManual <- true
         pumpUntil "A group made by hand did not mark its windows so" (fun () -> WindowGroupToken.madeByHand apart.Handle)
         apartGroup.group.isManual <- false
@@ -423,6 +451,27 @@ let main() =
             let secondTarget = (api.getValue("appGroupingTargets") :?> AppGroupingTarget list) |> List.last |> fun group -> group.id
             selectApp secondTarget
             waitForTarget secondTarget
+            let root = api.root
+            let before = AppGroupingRules.read root
+            let renamedRules = before |> List.map(fun rule -> {rule with field=RuleField.TabTitle; title="game"; matchType=3})
+            root.["appGroupingRules"] <- AppGroupingRules.write renamedRules
+            api.root <- root
+            for hwnd in handles do (program :> IProgram).setWindowNameOverride(hwnd,Some "game")
+            waitForTarget secondTarget
+            for hwnd in handles do
+                check ((program :> IProgram).getWindowNameOverride hwnd=Some "game") "Regrouping lost the custom title"
+                check ((program.tryGroupingRule(OS().windowFromHwnd hwnd)).IsSome) "The production rule matcher did not recognize the custom title"
+            let dragged = Services.desktop.createGroup(false) :?> GroupInfo
+            dragged.group.isManual <- true
+            let draggedId = dragged.group.groupToken
+            for hwnd in handles do
+                let source = Services.desktop.groups.list |> List.find(fun group -> group.windows.contains((=)hwnd)) :?> GroupInfo
+                dragged.addAfterDetaching(source,hwnd)
+            pumpUntil "The manual drag fixture did not settle" (fun () -> nativeWindows dragged |> List.length = handles.Length)
+            (program :> IProgram).ungroupHandMade draggedId
+            waitForTarget secondTarget
+            let ruleGroups = Services.desktop.groups.list |> List.filter(fun group -> group.windows.list |> List.exists(fun hwnd -> List.contains hwnd handles))
+            check (ruleGroups |> List.forall(fun group -> not (group :?> GroupInfo).group.isManual)) "Dissolving a manual group kept its manual flag"
             check (not disabledDuringRegroup && filter.getIsTabbingEnabledForProcess path) "Rule editing transiently disabled the application's tabs"
             check (handles |> List.forall WinUserApi.IsWindow) "Rule editing destroyed an application HWND"
             form.Close()

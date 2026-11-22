@@ -18,6 +18,7 @@ type AppGroupingTarget = { id:string; name:string; color:string }
 type RuleField =
     | AppOnly
     | WindowTitle
+    | TabTitle
     | WindowClass
     | CommandLine
 

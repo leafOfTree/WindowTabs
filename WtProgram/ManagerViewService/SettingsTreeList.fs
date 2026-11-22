@@ -137,6 +137,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let chipMoved = Event<TreeListItem * int * TreeListItem>()
     let mutable chipPress : (TreeListItem * int * Point) option = None
     let mutable chipDragging = false
+    let mutable chipPointer = Point.Empty
+    let mutable chipOrigin = Rectangle.Empty
+    let mutable chipTarget : TreeListItem = null
+    let mutable chipSlot = Rectangle.Empty
     let mutable rows : (TreeListItem * int)[] = [||]
     /// The most icons a row shown has, which the names of all rows start after.
     let mutable iconSlots = 1
@@ -262,7 +266,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             this.rowHeight+(this.chipHeightOf item-this.chipHeight)+(lines-1)*this.chipPitchOf item
     member private this.chipHeight = this.rowHeight-Dpi.scale 12
     member private this.detailFont = SettingsUi.font (SettingsUi.smallFamily()) 8.5f FontStyle.Regular
-    member private this.chipHeightOf(item:TreeListItem) = this.chipHeight+(if item.ChipDetails then this.detailFont.Height else 0)
+    member private this.chipHeightOf(item:TreeListItem) =
+        let height = this.chipHeight+(if item.ChipDetails then this.detailFont.Height else 0)
+        if chipDragging && obj.ReferenceEquals(item,chipTarget) then max height chipOrigin.Height else height
     member private this.chipPitchOf(item:TreeListItem) = this.chipHeightOf item+Dpi.scale 6
 
     /// Recomputes the visible rows after items, expansion or roots change.
@@ -450,6 +456,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 let box = place (widthOf chip)
                 let closeBox = if chip.Removable then Some(Rectangle(box.Right-Dpi.scale 2-close-Dpi.scale 2,box.Y+(height-close)/2,close,close)) else None
                 index,box,closeBox)
+        if chipDragging && obj.ReferenceEquals(item,chipTarget) then
+            chipSlot <- place (min (right-left) chipOrigin.Width)
         let add = if item.ChipAdd then Some(place height) else None
         Rectangle(bounds.X,bounds.Y,nameWidth,bounds.Height),laid,add,line+1
 
@@ -687,10 +695,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             let item = (this.chipAddAt e.Location).Value
             this.SelectedItem <- item
             chipAddInvoked.Trigger(item)
-        | _,_ when e.Button=MouseButtons.Left && (this.chipMenuAt e.Location).IsSome ->
+        | _,_ when (e.Button=MouseButtons.Left || e.Button=MouseButtons.Right) && (this.chipMenuAt e.Location).IsSome ->
             let item,chip = (this.chipMenuAt e.Location).Value
             this.SelectedItem <- item
-            if this.AllowChipMove then
+            if this.AllowChipMove && e.Button=MouseButtons.Left then
+                chipOrigin <- this.ChipMenuBounds(item,chip) |> Option.defaultValue Rectangle.Empty
                 chipPress <- Some(item,chip,e.Location)
                 chipDragging <- false
                 this.Capture <- true
@@ -712,24 +721,29 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     override this.OnMouseUp(e) =
         base.OnMouseUp(e)
+        let destination = chipTarget
         let pressed = chipPress
         chipPress <- None
         this.Capture <- false
         match pressed with
         | Some(source,index,_) when e.Button=MouseButtons.Left ->
             if chipDragging then
-                match this.rowAt e.Y with
-                | Some(_,(target,_)) when this.ClientRectangle.Contains e.Location && not(obj.ReferenceEquals(source,target)) ->
+                match Option.ofObj destination with
+                | Some target when this.ClientRectangle.Contains e.Location && not(obj.ReferenceEquals(source,target)) ->
                     chipMoved.Trigger(source,index,target)
                 | _ -> ()
             elif this.chipMenuAt e.Location = Some(source,index) then chipInvoked.Trigger(source,index)
         | _ -> ()
         chipDragging <- false
-        this.Cursor <- Cursors.Default
+        this.Invalidate()
 
     override this.OnMouseCaptureChanged(e) =
         base.OnMouseCaptureChanged(e)
-        if not this.Capture then chipPress <- None
+        if not this.Capture then
+            chipPress <- None
+            chipTarget <- null
+            this.updateScroll()
+            this.Invalidate()
 
     override this.OnMouseDoubleClick(e) =
         base.OnMouseDoubleClick(e)
@@ -746,12 +760,20 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     override this.OnMouseMove(e) =
         base.OnMouseMove(e)
+        chipPointer <- e.Location
         match chipPress with
         | Some(_,_,start) when e.Button=MouseButtons.Left ->
             let size = SystemInformation.DragSize
             if abs(e.X-start.X)>size.Width/2 || abs(e.Y-start.Y)>size.Height/2 then
+                let target =
+                    match this.rowAt e.Y,chipPress with
+                    | Some(_,(row,_)),Some(source,_,_) when not(obj.ReferenceEquals(row,source)) && this.ClientRectangle.Contains e.Location -> row
+                    | _ -> null
                 chipDragging <- true
-                this.Cursor <- Cursors.SizeAll
+                chipTarget <- target
+                this.updateScroll()
+                tooltip.Hide()
+                this.Invalidate()
         | _ -> ()
         let item = match this.rowAt e.Y with Some(_,(item,_)) -> item | None -> null
         if not (Object.ReferenceEquals(item,hovered)) then
@@ -837,6 +859,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 let _,bounds = this.nameLayout(item,level,this.rowTop index)
                 (if TextRenderer.MeasureText(item.Text,this.Font).Width > bounds.Width then item.Text else ""),bounds
             | _ -> "",around
+        let text = if chipDragging && chipPress.IsSome then "" else text
         if text<>tooltipText then
             tooltipText <- text
             tooltip.Show(text,part)
@@ -1203,3 +1226,42 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         // and a box round the first row would look like something left behind.
         if this.Focused && this.ShowFocusCues && isNull selected && rows.Length>0 then
             SettingsShapes.drawFocusRing g (RectangleF(0.0f,float32 this.headerHeight,float32 this.contentWidth,float32 rowHeight)) (SettingsShapes.controlRadius()) p
+
+        // Draw the moving card last, above the rows, with its destination beside the group's cards.
+        match chipPress with
+        | Some(source,index,start) when chipDragging && index<source.Chips.Length ->
+            let chip = source.Chips.[index]
+            let cardWidth = chipOrigin.Width
+            let cardHeight = chipOrigin.Height
+            let rounded (box:Rectangle) =
+                SettingsShapes.rounded (RectangleF(float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height)) (SettingsShapes.controlRadius())
+            this.ChipMenuBounds(source,index) |> Option.iter(fun box ->
+                use shape = rounded box
+                use veil = new SolidBrush(Color.FromArgb(170,this.BackColor))
+                g.FillPath(veil,shape))
+            if not(isNull chipTarget) then
+                this.indexOf chipTarget |> Option.iter(fun row ->
+                    this.chipLayout(chipTarget,snd rows.[row],this.rowTop row) |> ignore
+                    use shape = rounded chipSlot
+                    use fill = new SolidBrush(Color.FromArgb(35,p.accent))
+                    use edge = new Pen(p.accent,DashStyle=DashStyle.Dash)
+                    g.FillPath(fill,shape)
+                    g.DrawPath(edge,shape))
+            let box = Rectangle(chipPointer.X-(start.X-chipOrigin.X),
+                                chipPointer.Y-(start.Y-chipOrigin.Y),cardWidth,cardHeight)
+            use shape = rounded box
+            use fill = new SolidBrush(this.BackColor)
+            use tint = new SolidBrush(Color.FromArgb(45,p.accent))
+            use edge = new Pen(p.accent)
+            g.FillPath(fill,shape)
+            g.FillPath(tint,shape)
+            g.DrawPath(edge,shape)
+            let iconSize = Dpi.scale 16
+            let left = box.X+Dpi.scale 8
+            if not(isNull chip.Icon) then g.DrawImage(chip.Icon,Rectangle(left,box.Y+(box.Height-iconSize)/2,iconSize,iconSize))
+            let textLeft = left+iconSize+Dpi.scale 5
+            let title = Rectangle(textLeft,box.Y,box.Right-textLeft-Dpi.scale 6,(if chip.Note="" then box.Height else box.Height/2))
+            TextRenderer.DrawText(g,chip.Text,this.Font,title,p.text,flags)
+            if chip.Note<>"" then
+                TextRenderer.DrawText(g,chip.Note,this.Font,Rectangle(title.X,title.Bottom,title.Width,box.Height-title.Height),p.muted,flags)
+        | _ -> ()

@@ -911,6 +911,14 @@ let main() =
                     hover 260
                     rest()
                     check (not (shown())) "A title that fits showed a tip"
+                    let renamed = Tab(IntPtr 102)
+                    strip.setTabInfo(renamed,{ strip.tabInfo renamed with isRenamed=true })
+                    rest()
+                    check (shown()) "A renamed title that fits did not offer its original title on hover"
+                    let _,renamedSprite = strip.tabSprites.list |> List.find(fun (_,sprite) -> sprite.id=renamed)
+                    check (renamedSprite.displayInfo.text="Notes" && not renamedSprite.displayInfo.textFont.Italic)
+                          "A custom title still has an extra marker or italic text"
+                    strip.setTabInfo(renamed,{ strip.tabInfo renamed with isRenamed=false })
                     // A menu open over the strip, such as a right-drag's, is not covered by a tip.
                     hover 60
                     OpenMenus.change 1

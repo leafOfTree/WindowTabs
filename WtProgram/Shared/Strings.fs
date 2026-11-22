@@ -1164,6 +1164,8 @@ module Strings =
         let windowClass = { en="Window class"; zh="窗口类名"; ja="ウィンドウ クラス"; ar="فئة النافذة"; ko="창 클래스" }
         let commandLine = { en="Command line"; zh="命令行"; ja="コマンド ライン"; ar="سطر الأوامر"; ko="명령줄" }
         /// What each field is and when to match on it, under the condition dialog's heading.
+        let tabTitle = { en="Tab title"; zh="标签标题"; ja="タブのタイトル"; ar="عنوان علامة التبويب"; ko="탭 제목" }
+        let tabTitleHint = { en="The title shown on the tab, including a name you set yourself."; zh="标签上显示的标题，包括手动设置的名称。"; ja="手動で設定した名前を含む、タブに表示されるタイトル。"; ar="العنوان المعروض على علامة التبويب، بما في ذلك الاسم الذي تحدده بنفسك."; ko="직접 지정한 이름을 포함하여 탭에 표시되는 제목입니다." }
         let windowTitleHint = { en="The text in the title bar; it changes with what the window shows."
                                 zh="标题栏里的文字，会随窗口内容变化。"
                                 ja="タイトル バーの文字。表示内容によって変わります。"

@@ -183,7 +183,10 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
         else source.invokeGroup(fun () ->
             if not source.isExited then source.group.removeWindow hwnd
             desktopDispatcher.Post attach)
-    member private this.destroy() = this.invokeGroup <| fun() -> this.group.destroy()
+    member private this.destroy() = this.invokeGroup <| fun() ->
+        for hwnd in this.group.windows.items.list do
+            GroupRestartState.saveTaskbar hwnd (if this.isTaskbarChosen then Some enableSuperBar else None)
+        this.group.destroy()
     member private x.switchWindow(next, force) = this.invokeGroup <| fun() -> this.group.switchWindow(next, force)
 
     interface IGroup with

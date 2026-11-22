@@ -57,9 +57,19 @@ let main args =
         0
     else
         let watch = Stopwatch.StartNew()
+        use own = Process.GetCurrentProcess()
+        let launchOffsetMs = (DateTime.Now-own.StartTime).TotalMilliseconds
         use lifetime = new LifetimeScope(fun error -> Console.Error.WriteLine(error))
         let program = new Program.Program(lifetime)
         let constructorMs = watch.Elapsed.TotalMilliseconds
+        let dispatcher = InvokerService.invoker :> IDispatcher
+        let mutable initialized = false
+        let inputReady = { new IStartupInputPlugin with member _.init() = initialized <- true } :> IPlugin
+        let mutable interactiveMs = 0.0
+        let mutable lastTick = 0.0
+        let mutable maxMainGapMs = 0.0
+        let mutable readyPasses = 0
+        let mutable restoredMs = 0.0
         let mutable checkingGroups = false
         let mutable groupsReady = false
         let mutable stormDone = Environment.GetEnvironmentVariable("WT_STARTUP_STORM")<>"1"
@@ -67,17 +77,34 @@ let main args =
         let mutable stormMs = 0.0
         let mutable stormWindows = 0
         let mutable visibilityCalls : obj = null
-        use timer = new Timer(Interval=50)
+        use timer = new Timer(Interval=20)
         timer.Tick.Add(fun _ ->
+            let now = watch.Elapsed.TotalMilliseconds
+            if interactiveMs>0.0 then maxMainGapMs <- max maxMainGapMs (now-lastTick)
+            lastTick <- now
+            if initialized && interactiveMs=0.0 then interactiveMs <- launchOffsetMs+now
             let windows = Services.desktop.groups.collect(fun group -> group.windows).count
-            if windows>=count && not checkingGroups then
+            if initialized && windows=count && not groupsReady && not checkingGroups then
                 checkingGroups <- true
-                let groups = Services.desktop.groups
-                let mutable remaining = groups.count
-                for group in groups.list do
-                    (group :?> GroupInfo).captureTabLayout(fun _ ->
-                        remaining <- remaining-1
-                        if remaining=0 then groupsReady <- true)
+                let groups = Services.desktop.groups.list
+                let signature() = Services.desktop.groups.list |> List.map(fun group -> group.hwnd,group.windows.list) |> List.sortBy fst
+                let before = signature()
+                let mutable remaining = groups.Length
+                let mutable idle = true
+                for group in groups do
+                    let info = group :?> GroupInfo
+                    let expected = group.windows.count
+                    info.invokeGroup(fun () ->
+                        let doneAdding = not info.isExited && info.group.windows.count=expected && info.group.isPlacementIdle
+                        dispatcher.Post(fun () ->
+                            idle <- idle && doneAdding
+                            remaining <- remaining-1
+                            if remaining=0 then
+                                checkingGroups <- false
+                                if idle && before=signature() then readyPasses <- readyPasses+1 else readyPasses <- 0
+                                if readyPasses>=3 then
+                                    groupsReady <- true
+                                    restoredMs <- launchOffsetMs+watch.Elapsed.TotalMilliseconds))
             if groupsReady && not stormDone && not stormStarted then
                 stormStarted <- true
                 let group = Services.desktop.groups.head :?> GroupInfo
@@ -105,7 +132,8 @@ let main args =
             if (groupsReady && System.Threading.Volatile.Read(&stormDone)) || watch.ElapsedMilliseconds>20000L then
                 timer.Stop()
                 let scans,last,maximum = RuntimeMetrics.snapshot()
-                let result = JObject(JProperty("readyMs",watch.Elapsed.TotalMilliseconds),
+                let result = JObject(JProperty("readyMs",restoredMs),JProperty("interactiveMs",interactiveMs),
+                                     JProperty("maxMainGapMs",maxMainGapMs),JProperty("completed",groupsReady),
                                      JProperty("constructorMs",constructorMs),JProperty("windows",windows),
                                      JProperty("groups",Services.desktop.groups.count),JProperty("scans",scans),
                                      JProperty("lastScanMs",last),JProperty("maxScanMs",maximum),
@@ -113,5 +141,5 @@ let main args =
                 Console.WriteLine(result.ToString(Bemo.Json.Formatting.None))
                 Services.program.shutdown())
         timer.Start()
-        program.run(List2<IPlugin>())
+        program.run(List2<IPlugin>([inputReady]))
         0

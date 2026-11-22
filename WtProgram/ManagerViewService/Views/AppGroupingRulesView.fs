@@ -433,7 +433,7 @@ type AppGroupingRulesView() as this =
     /// The group whose "+" opened the app list.
     let mutable pickingFor : string option = None
     /// The fields in the order offered: by how often each is the one wanted.
-    let fields = [|AppOnly;WindowTitle;CommandLine;WindowClass|]
+    let fields = [|AppOnly;WindowTitle;CommandLine;WindowClass;RuleField.TabTitle|]
     /// A chip's note: the condition it takes its windows by, or nothing for the app's every window.
     let describe (rule:AppGroupingRule) =
         if not (AppGroupingRules.isConditioned rule) then ""
@@ -570,6 +570,7 @@ type AppGroupingRulesView() as this =
                     if window.isWindow && Services.filter.isAppWindow(window.hwnd) && AppIdentity.same window.pid.processPath rule.processPath then
                         match field with
                         | WindowTitle -> Some window.text
+                        | RuleField.TabTitle -> Some(Services.program.getWindowNameOverride window.hwnd |> Option.defaultValue (WindowTitle.tabName window.text))
                         | WindowClass -> Some window.className
                         | CommandLine -> Some(CommandLineText.arguments window.pid.commandLine)
                         | AppOnly -> None
@@ -670,7 +671,7 @@ type AppGroupingRulesView() as this =
                 | true,members when index>=0 && index<members.Length ->
                     let previous = rules
                     let moved = members.[index]
-                    rules <- rules |> List.map(fun rule -> if rule.id=moved.id then {rule with groupId=toId} else rule)
+                    rules <- (rules |> List.filter(fun rule -> rule.id<>moved.id)) @ [{moved with groupId=toId}]
                     save (Some previous)
                     reload (Some(GroupNode toId))
                 | _ -> ()

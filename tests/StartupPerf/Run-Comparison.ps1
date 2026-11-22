@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string[]]$AppDirectories, [int]$Repeat = 3,
+param([Parameter(Mandatory)][string[]]$AppDirectories, [ValidateRange(1,100)][int]$Repeat = 5,
       [ValidateSet('None','Legacy','Named')][string]$RuleMode = 'None', [switch]$TaskbarStorm)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
@@ -45,9 +45,11 @@ try {
                     if (-not $probe.WaitForExit(30000)) { $probe.Kill(); throw 'Startup probe timed out.' }
                     if ($probe.ExitCode -ne 0) { throw "Startup probe exited with $($probe.ExitCode)." }
                     $result = Get-Content -LiteralPath $stdout -Raw | ConvertFrom-Json
+                    if ($result.PSObject.Properties.Name -contains 'interactiveMs' -and ($result.interactiveMs -le 0 -or ($result.completed -and $result.readyMs -lt $result.interactiveMs))) { throw 'Invalid startup timing order.' }
+                    if ($result.completed -eq $false) { throw 'Startup did not become ready before the deadline.' }
                     if ($result.windows -ne 20) { throw 'Probe did not discover all fixture windows.' }
                     [pscustomobject]@{Build=(Split-Path $directory -Leaf);RuleMode=$RuleMode;Combine=$combine;Run=$iteration;ReadyMs=$result.readyMs;
-                        ConstructorMs=$result.constructorMs;MaxScanMs=$result.maxScanMs;Groups=$result.groups;Scans=$result.scans;
+                        InteractiveMs=$result.interactiveMs;MaxMainGapMs=$result.maxMainGapMs;ConstructorMs=$result.constructorMs;MaxScanMs=$result.maxScanMs;Groups=$result.groups;Scans=$result.scans;
                         TaskbarStormMs=$result.taskbarStormMs;TaskbarStormWindows=$result.taskbarStormWindows;VisibilityCalls=$result.visibilityCalls} |
                         ConvertTo-Json -Compress
                 } finally {

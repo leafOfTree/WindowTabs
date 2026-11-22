@@ -23,6 +23,46 @@ type SyncCallWindow(onMessage:unit -> unit) =
         if m.Msg = 0x8001 then onMessage() else base.WndProc(&m)
 
 let main() =
+    let customWindow = IntPtr 123
+    let identity hwnd = if hwnd=customWindow then Some(42,100L,17L) else None
+    let custom = customWindow,Some "game",Some(PaletteColor 2)
+    let root = JObject(JProperty("windowCustomizations",WindowCustomizations.write identity [custom]))
+    check (WindowCustomizations.read identity root=[custom]) "Window name and colour did not survive serialization"
+    check ((WindowCustomizations.read (fun _ -> Some(42,101L,17L)) root).IsEmpty) "A reused process inherited a window's custom name or colour"
+    check ((WindowCustomizations.read (fun _ -> None) root).IsEmpty) "A closed window's customizations were restored"
+    check ((WindowCustomizations.read (fun _ -> Some(42,100L,18L)) root).IsEmpty) "A reused HWND inherited another window's customizations"
+    let cleared = JObject(JProperty("windowCustomizations",WindowCustomizations.write identity [customWindow,None,None]))
+    check ((WindowCustomizations.read identity cleared).IsEmpty) "Resetting a name and colour left saved overrides"
+
+    let mixed = JObject(JProperty("windowCustomizations",JArray(root.["windowCustomizations"].[0].DeepClone(),JObject(JProperty("hwnd",999),JProperty("pid",42),JProperty("started",100L),JProperty("stamp",17L),JProperty("name","old")))))
+    let mutable identityCalls = 0
+    let restored,pending = WindowCustomizations.restore (fun hwnd -> identityCalls<-identityCalls+1;identity hwnd) mixed
+    check (restored=[custom] && identityCalls=2 && pending.IsSome) "Startup cleanup repeated validation or lost a valid customization"
+    check (WindowCustomizations.cleanup mixed pending.Value && identityCalls=2) "Deferred cleanup queried window identities again"
+    check (WindowCustomizations.read identity mixed=[custom]) "Cleanup changed a valid name or colour"
+    check ((snd (WindowCustomizations.restore identity mixed)).IsNone) "Clean settings scheduled an unnecessary write"
+    mixed.["windowCustomizations"] <- JArray()
+    check (not(WindowCustomizations.cleanup mixed pending.Value)) "Startup cleanup overwrote a newer reset"
+    // Compare the old restore-only scan with restore plus cleanup planning; JSON parsing and disk IO are outside this measurement.
+    for count in [100;1000] do
+        let data = [1..count] |> List.map(fun n -> IntPtr n,Some "game",Some(PaletteColor 2))
+        let all _ = Some(42,100L,17L)
+        let sample = JObject(JProperty("windowCustomizations",WindowCustomizations.write all data))
+        for stale in [false;true] do
+            let identify (hwnd:IntPtr) = if stale && hwnd.ToInt64()%2L=0L then None else all hwnd
+            let baseline() = WindowCustomizations.read identify sample |> ignore
+            let planned() = WindowCustomizations.restore identify sample |> ignore
+            let median action =
+                for _ in 1..5 do action()
+                [for _ in 1..31 do
+                    let timer = Diagnostics.Stopwatch.StartNew()
+                    action()
+                    timer.Stop()
+                    yield timer.Elapsed.TotalMilliseconds] |> List.sort |> List.item 15
+            let before,after = median baseline,median planned
+            printfn "PERF customization-startup entries=%d stale=%b restore=%.3fms with-cleanup=%.3fms overhead=%.3fms" count stale before after (after-before)
+            check (after<=before*3.0+5.0) "Planning startup cleanup added excessive restore latency"
+
     let queued = ResizeArray<unit -> unit>()
     let mutable desktopReads = 0
     let desktopA,desktopB = Guid.NewGuid(),Guid.NewGuid()
@@ -57,13 +97,19 @@ let main() =
           "A visible unregistered application window could not resolve its desktop"
     check ((VirtualDesktop.resolveGroupingDesktop (desktop None) (desktop None) (desktop None) (desktop None)).IsNone)
           "An unconfirmed desktop became a wildcard grouping target"
+    check (VirtualDesktop.resolveMergeDesktop (desktop None) (desktop None) (desktop(Some desktopA))=Some desktopA)
+          "An unregistered visible window could not join a rule group on its confirmed desktop"
+    check (VirtualDesktop.resolveMergeDesktop (desktop(Some desktopB)) unexpectedDesktop unexpectedDesktop=Some desktopB)
+          "Merging replaced a confirmed background desktop with the visible desktop"
+    check ((VirtualDesktop.resolveMergeDesktop (desktop None) (desktop None) (desktop None)).IsNone)
+          "Merging treated an unknown desktop as the current one"
     let appRule target kind title =
         { id=Guid.NewGuid().ToString("N");enabled=true;processPath = @"C:\Editor.exe";title=title;matchType=kind;field=AppOnly
           groupId=target;groupName=target }
     let broad = appRule "General" -1 ""
     let legacy = appRule "Project A" 3 "Project A"
     let browser = {broad with id="browser";processPath = @"C:\Browser.exe"}
-    let window path title = { path=path; title=title; className=""; commandLine=(fun () -> "") }
+    let window path title = { path=path; title=title; tabTitle=title; className=""; commandLine=(fun () -> "") }
     check (AppGroupingRules.resolve [broad] (window @"c:\EDITOR.exe" "Any title")=GroupingTarget "General") "Application grouping compared titles or path case"
     check (AppGroupingRules.resolve [{broad with enabled=false}] (window broad.processPath "")=NoGroupingRule) "Disabled application rule was applied"
     check (AppGroupingRules.resolve [broad] (window browser.processPath "")=NoGroupingRule) "Application rule matched another executable"
@@ -85,12 +131,17 @@ let main() =
     let titled = {appRule "Project A" 3 "project a" with id="titled";field=WindowTitle}
     let classed = {appRule "Consoles" 0 "ConsoleWindowClass" with id="classed";field=WindowClass}
     let launched = {appRule "Anki" 3 "anki" with id="launched";field=CommandLine}
-    let seen title cls (cmd:unit -> string) = { path= @"C:\Editor.exe"; title=title; className=cls; commandLine=cmd }
+    let seen title cls (cmd:unit -> string) = { path= @"C:\Editor.exe"; title=title; tabTitle=title; className=cls; commandLine=cmd }
     let none () = ""
     check (AppGroupingRules.resolve [broad;titled] (seen "Project A - notes" "" none)=GroupingTarget "Project A") "A title condition did not take its window, or compared case"
     check (AppGroupingRules.resolve [broad;titled] (seen "Other" "" none)=GroupingTarget "General") "A window outside the title condition did not fall back to the app's rule"
     check (AppGroupingRules.resolve [titled] (seen "Other" "" none)=NoGroupingRule) "A window outside the only condition was still grouped by it"
     check (AppGroupingRules.resolve [classed] (seen "" "consolewindowclass" none)=GroupingTarget "Consoles") "A window class condition did not match"
+    let renamed = {seen "Original" "" none with tabTitle="game"}
+    let tabRule = {titled with field=RuleField.TabTitle;title="game"}
+    check (AppGroupingRules.resolve [tabRule] renamed=GroupingTarget "Project A") "A renamed tab did not match its tab title"
+    check (AppGroupingRules.resolve [{tabRule with field=WindowTitle}] renamed=NoGroupingRule) "A window title rule matched a tab rename"
+    check (RuleField.parse (RuleField.serialize RuleField.TabTitle)=Some RuleField.TabTitle) "Tab title field did not round trip"
     let mutable asked = 0
     let counted () = asked <- asked+1; @"C:\Python\pythonw.exe -m anki"
     check (AppGroupingRules.resolve [broad;titled] (seen "x" "" counted)=GroupingTarget "General" && asked=0) "A rule without a command-line condition read the command line"

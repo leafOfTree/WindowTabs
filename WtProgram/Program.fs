@@ -69,6 +69,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     do Notice.useThread (invoker :> IDispatcher)
     let taskSwitchCell = Cell.create(None)
     let mutable initialDiscoveryComplete = false
+    let mutable startupInputReady = false
     let tabSearchCell = Cell.create(None:TabSearchForm option)
     let groupEditorCell = Cell.create(None:GroupEditorForm option)
     /// What was typed when each box last closed, the window search's and the palette's, offered
@@ -97,6 +98,21 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     // An immutable map swapped whole on the main thread, so tab strips on group threads
     // read renames without waiting for it: tab text is rebuilt on every title change.
     let mutable windowNameOverride : Map2<IntPtr,string option> = Map2()
+    let restoredCustomizations,pendingCustomizationCleanup =
+        WindowCustomizations.restore WindowCustomizations.identity settingsManager.settingsJson
+    do
+        for hwnd,name,color in restoredCustomizations do
+            windowNameOverride <- windowNameOverride.add hwnd name
+            windowColors.setOverride hwnd color
+    let saveWindowCustomizations() =
+        let entries = os.windowsInZorder.toArray |> Array.choose(fun window ->
+            let name = windowNameOverride.tryFind(window.hwnd).bind(id)
+            let color = windowColors.getOverride window.hwnd
+            if name.IsNone && color.IsNone then None else Some(window.hwnd,name,color)) |> Array.toList
+        let root = settingsManager.settingsJson
+        root.["windowCustomizations"] <- WindowCustomizations.write WindowCustomizations.identity entries
+        settingsManager.settingsJson <- root
+
    
     let isFirstRun = settingsManager.fileExists.not
     do Localization.setPreference settingsManager.settings.language
@@ -215,6 +231,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             invoker.asyncInvoke(fun () ->
                 if awaitingDesktop.ContainsKey hwnd then this.updateChangedWindows [|hwnd|]
                 else refreshQueue.RequestWindow hwnd))) |> ignore
+        lifetime.Own(VirtualDesktop.mergingReady.Subscribe(fun _ ->
+            invoker.asyncInvoke(fun () -> mergeSoon.Request()))) |> ignore
         Desktop(this :> IDesktopNotification, Services.settings, invoker :> IDispatcher).ignore
         lifetime.Own({new IDisposable with
             member _.Dispose() = taskSwitchCell.value.iter(fun switcher -> (switcher :> IDisposable).Dispose())}) |> ignore
@@ -723,7 +741,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// rule that asks for it.
     member private this.groupingRule(window:Window) =
         AppGroupingRules.resolve settingsManager.settings.appGroupingRules
-            { path=window.pid.processPath; title=window.text; className=window.className; commandLine=(fun () -> window.pid.commandLine) }
+            { path=window.pid.processPath; title=window.text; tabTitle=(windowNameOverride.tryFind(window.hwnd).bind(id) |> Option.defaultValue (WindowTitle.tabName window.text)); className=window.className; commandLine=(fun () -> window.pid.commandLine) }
 
     member this.tryGroupingRule(window:Window) =
         match this.groupingRule window with
@@ -840,16 +858,20 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// merge at a time.
     member private this.mergeAutoGroups() =
         let appOf (group:GroupInfo) =
-            match (group :> IGroup).windows.list |> List.map(fun hwnd -> AppIdentity.key (this.appKey hwnd)) |> List.distinct with
-            | [app] when app<>"" -> Some app
-            | _ -> None
+            let windows = (group :> IGroup).windows.list
+            match group.ruleGroupId with
+            | Some target when windows |> List.forall(fun hwnd -> this.groupingRule(os.windowFromHwnd hwnd)=GroupingTarget target) -> Some("rule:"+target)
+            | Some _ -> None
+            | None ->
+                match windows |> List.map(fun hwnd -> AppIdentity.key (this.appKey hwnd)) |> List.distinct with
+                | [app] when app<>"" && (this :> IProgram).getAutoGroupingEnabled(this.appKey windows.Head) -> Some("app:"+app)
+                | _ -> None
         let auto =
             this.desktop.groups.list |> List.choose(function
                 | :? GroupInfo as group when
                     not group.isExited && not group.isRetiring && not group.awaitsGroupingDesktop &&
-                    group.ruleGroupId.IsNone && not (this.isHandMade group) && (group :> IGroup).windows.count>0 &&
-                    (appOf group).IsSome &&
-                    (this :> IProgram).getAutoGroupingEnabled(this.appKey (group :> IGroup).windows.head) -> Some group
+                    not (this.isHandMade group) && (group :> IGroup).windows.count>0 &&
+                    (appOf group).IsSome -> Some group
                 | _ -> None)
         let shared = auto |> List.countBy appOf |> List.exists(fun (_,count) -> count>1)
         if not this.desktop.isDragging && shared then
@@ -859,7 +881,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             let desktopOf (group:GroupInfo) =
                 (group :> IGroup).windows.list
                 |> List.minBy(fun hwnd -> zorders.tryFind(hwnd).def(Int32.MaxValue))
-                |> VirtualDesktop.reportedDesktopId
+                |> VirtualDesktop.mergingDesktopId
             let desktops = auto |> List.map(fun group -> group,desktopOf group) |> dict
             let size (group:GroupInfo) = (group :> IGroup).windows.count
             auto |> List.tryPick(fun group ->
@@ -990,12 +1012,17 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member this.addWindowToGroup(window:Window) =
         let hwnd = window.hwnd
+        let restored = this.savedPlacement window
+        let taskbarChoice = if restored.IsSome then GroupRestartState.taskbar hwnd else None
         let group,isNewGroup = 
             match this.findGroupForWindow(window) with
             | Some(group) -> (group, false)
-            | None -> (Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>()), true)
+            | None -> (Services.desktop.createGroup(taskbarChoice |> Option.defaultWith(fun () -> Services.settings.getValue("combineIconsInTaskbar").cast<bool>())), true)
         let isDropped = isDroppedAndAwaitingGrouping.value.contains(hwnd)
-        let restored = this.savedPlacement window
+        if isNewGroup then
+            let info = group :?> GroupInfo
+            info.isTaskbarChosen <- taskbarChoice.IsSome
+            info.group.restoringAfterRestart <- restored.IsSome
         groupedThisRun.Add hwnd |> ignore
         if isNewGroup then restored |> Option.iter(fun token -> (group :?> GroupInfo).group.groupToken <- token)
         // Made by hand before a restart, it still is, though too few of its titles were kept to
@@ -1546,12 +1573,18 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
      
         member x.setWindowNameOverride((hwnd, name)) = 
             windowNameOverride <- windowNameOverride.add hwnd name
+            saveWindowCustomizations()
+            let path = os.windowFromHwnd(hwnd).pid.processPath
+            if settingsManager.settings.appGroupingRules |> List.exists(fun rule -> rule.enabled && rule.field=RuleField.TabTitle && AppIdentity.same path rule.processPath) then
+                (this :> IProgram).regroupApplications [path]
 
         member x.getWindowNameOverride(hwnd) =
             windowNameOverride.tryFind(hwnd).bind(id)
 
         member _.getTabColorOverride hwnd = windowColors.getOverride hwnd
-        member _.setTabColorOverride((hwnd,color)) = windowColors.setOverride hwnd color
+        member _.setTabColorOverride((hwnd,color)) =
+            windowColors.setOverride hwnd color
+            saveWindowCustomizations()
 
         member x.getTabColor(hwnd,peers) =
             let path = windowColors.path hwnd (fun () -> try os.windowFromHwnd(hwnd).pid.processPath with _ -> "")
@@ -1754,6 +1787,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         StartupPlugins.initialize plugins.list (fun () ->
             this.refresh()
             initialDiscoveryComplete <- true
+            pendingCustomizationCleanup |> Option.iter(fun cleanup ->
+                invoker.asyncInvoke(fun () ->
+                    if not inShutdown.value then
+                        let root = settingsManager.settingsJson
+                        if WindowCustomizations.cleanup root cleanup then settingsManager.settingsJson <- root))
             // The Support page's charts: nothing is read in the background until they are switched on.
             let recordResources (on:obj) =
                 ResourceMonitor.record (unbox<bool> on) (fun () ->
@@ -1782,8 +1820,61 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                             settingsManager.Flush() |> ignore
                         with error -> Diagnostics.Trace.TraceWarning("Session save failed: {0}",error.Message)))
 
+    /// Opt-in timing observes the main queue and group placement without injecting user input.
+    member private this.measureStartup() =
+        use own = Diagnostics.Process.GetCurrentProcess()
+        let elapsedAtStart = (DateTime.UtcNow-own.StartTime.ToUniversalTime()).TotalMilliseconds
+        let clock = Diagnostics.Stopwatch.StartNew()
+        let timer = lifetime.Own(new Timer(Interval=20))
+        let mutable first = true
+        let mutable previous = 0.0
+        let mutable longest = 0.0
+        let mutable checking = false
+        let mutable passes = 0
+        let mutable stopped = false
+        let finish ready =
+            if not stopped then
+                stopped <- true
+                timer.Stop()
+                StartupTrace.metric (if ready then "startup.readyMs" else "startup.timeoutMs") (elapsedAtStart+clock.Elapsed.TotalMilliseconds)
+                StartupTrace.metric "startup.maxMainGapMs" longest
+                StartupTrace.metric "startup.windows" (float(this.desktop.groups.collect(fun group -> group.windows).count))
+                StartupTrace.metric "startup.groups" (float this.desktop.groups.count)
+        timer.Tick.Add(fun _ ->
+            let now = clock.Elapsed.TotalMilliseconds
+            if first && startupInputReady then
+                first <- false
+                StartupTrace.metric "startup.interactiveMs" (elapsedAtStart+now)
+            elif not first then longest <- max longest (now-previous)
+            previous <- now
+            if elapsedAtStart+now>14000.0 then finish false
+            elif startupInputReady && initialDiscoveryComplete && not checking && not stopped then
+                checking <- true
+                let signature() = this.desktop.groups.list |> List.map(fun group -> group.hwnd,group.windows.list) |> List.sortBy fst
+                let before = signature()
+                let groups = this.desktop.groups.list
+                let mutable remaining = groups.Length
+                let mutable idle = awaitingDesktop.Count=0 && settling.Count=0 && not this.desktop.isDragging
+                let complete() =
+                    checking <- false
+                    if idle && before=signature() then passes <- passes+1 else passes <- 0
+                    if passes>=3 then finish true
+                if remaining=0 then complete()
+                for group in groups do
+                    let expected = group.windows.count
+                    let info = group :?> GroupInfo
+                    info.invokeGroup(fun () ->
+                        let ready = not info.isExited && info.group.windows.count=expected && info.group.isPlacementIdle
+                        invoker.asyncInvoke(fun () ->
+                            idle <- idle && ready
+                            remaining <- remaining-1
+                            if remaining=0 && not stopped then complete())))
+        timer.Start()
+
     member this.run(plugins:List2<IPlugin>) =
+        if StartupTrace.enabled then this.measureStartup()
         this.initializePlugins plugins
+        startupInputReady <- true
         Application.Run()
 
 module Bootstrap =

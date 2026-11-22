@@ -1,0 +1,77 @@
+[
+  {
+    "Run": 5,
+    "stage": "startup.interactiveMs",
+    "durationMs": 989.4481000000001
+  },
+  {
+    "Run": 5,
+    "stage": "startup.readyMs",
+    "durationMs": 2107.816
+  },
+  {
+    "Run": 5,
+    "stage": "startup.maxMainGapMs",
+    "durationMs": 103.6214
+  },
+  {
+    "Run": 5,
+    "stage": "startup.windows",
+    "durationMs": 29.0
+  },
+  {
+    "Run": 5,
+    "stage": "startup.groups",
+    "durationMs": 15.0
+  },
+  {
+    "Run": 6,
+    "stage": "startup.interactiveMs",
+    "durationMs": 874.2441
+  },
+  {
+    "Run": 6,
+    "stage": "startup.readyMs",
+    "durationMs": 1942.0715
+  },
+  {
+    "Run": 6,
+    "stage": "startup.maxMainGapMs",
+    "durationMs": 51.89720000000011
+  },
+  {
+    "Run": 6,
+    "stage": "startup.windows",
+    "durationMs": 29.0
+  },
+  {
+    "Run": 6,
+    "stage": "startup.groups",
+    "durationMs": 15.0
+  },
+  {
+    "Run": 7,
+    "stage": "startup.interactiveMs",
+    "durationMs": 818.4388000000001
+  },
+  {
+    "Run": 7,
+    "stage": "startup.readyMs",
+    "durationMs": 1953.1322
+  },
+  {
+    "Run": 7,
+    "stage": "startup.maxMainGapMs",
+    "durationMs": 59.84440000000001
+  },
+  {
+    "Run": 7,
+    "stage": "startup.windows",
+    "durationMs": 29.0
+  },
+  {
+    "Run": 7,
+    "stage": "startup.groups",
+    "durationMs": 15.0
+  }
+]
