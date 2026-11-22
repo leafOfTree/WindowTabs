@@ -1318,6 +1318,7 @@ otepad.exe"]},
         assertTrue (groupingCaption.Font.Size < SettingsUi.sectionFont().Size && not groupingCaption.Font.Bold)
                    "Groups across apps has a heading as large as the page's"
         let tree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list when list.Name<>"dragged-groups" -> Some list | _ -> None)
+        assertTrue tree.AllowChipMove "Grouping rule chips cannot be moved between groups"
         let draggedTree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list when list.Name="dragged-groups" -> Some list | _ -> None)
         /// App rules' own list, whose apps open to their windows, keeps its chevrons.
         let appListShowsExpanders (view:ISettingsView) =
@@ -1400,7 +1401,7 @@ otepad.exe"]},
                 |> Seq.find(fun point -> tree.ItemAt(point) |> Option.exists(fun row -> obj.ReferenceEquals(row,item))
                                          && not(isNull (hit.Invoke(tree,[|box point|]))))
             let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
-            for method in ["OnMouseMove";"OnMouseDown"] do
+            for method in ["OnMouseMove";"OnMouseDown";"OnMouseUp"] do
                 typeof<SettingsTreeList>.GetMethod(method,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
         // The "+" after a group's apps lists the apps that can join it.
         let menu = groupView.AddMenu

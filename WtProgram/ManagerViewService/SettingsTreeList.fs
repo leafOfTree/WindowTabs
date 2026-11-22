@@ -134,6 +134,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let rowsChanged = Event<EventArgs>()
     let actionInvoked = Event<TreeListItem * int>()
     let chipInvoked = Event<TreeListItem * int>()
+    let chipMoved = Event<TreeListItem * int * TreeListItem>()
+    let mutable chipPress : (TreeListItem * int * Point) option = None
+    let mutable chipDragging = false
     let mutable rows : (TreeListItem * int)[] = [||]
     /// The most icons a row shown has, which the names of all rows start after.
     let mutable iconSlots = 1
@@ -215,6 +218,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member _.ChipAddInvoked = chipAddInvoked.Publish
     /// A chip's menu arrow was pressed: the row and the chip's index.
     member _.ChipInvoked = chipInvoked.Publish
+    member _.ChipMoved = chipMoved.Publish
+    member val AllowChipMove = false with get,set
     /// Rows were added, removed, expanded or collapsed: a list sized to its rows grows or shrinks.
     member _.RowsChanged = rowsChanged.Publish
     /// Buttons drawn in the action column on the row under the pointer, as their glyphs.
@@ -685,7 +690,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         | _,_ when e.Button=MouseButtons.Left && (this.chipMenuAt e.Location).IsSome ->
             let item,chip = (this.chipMenuAt e.Location).Value
             this.SelectedItem <- item
-            chipInvoked.Trigger((item,chip))
+            if this.AllowChipMove then
+                chipPress <- Some(item,chip,e.Location)
+                chipDragging <- false
+                this.Capture <- true
+            else chipInvoked.Trigger((item,chip))
         | _,_ when e.Button=MouseButtons.Left && (this.chipAt e.Location).IsSome ->
             this.SelectedItem <- fst (this.chipAt e.Location).Value
         | _,Some(item,action) when e.Button=MouseButtons.Left ->
@@ -700,6 +709,27 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 checkColumn |> Option.iter(fun column -> this.toggleCheck(item,column))
         | Some(_,(item,_)),_ -> this.SelectedItem <- item
         | None,_ -> ()
+
+    override this.OnMouseUp(e) =
+        base.OnMouseUp(e)
+        let pressed = chipPress
+        chipPress <- None
+        this.Capture <- false
+        match pressed with
+        | Some(source,index,_) when e.Button=MouseButtons.Left ->
+            if chipDragging then
+                match this.rowAt e.Y with
+                | Some(_,(target,_)) when this.ClientRectangle.Contains e.Location && not(obj.ReferenceEquals(source,target)) ->
+                    chipMoved.Trigger(source,index,target)
+                | _ -> ()
+            elif this.chipMenuAt e.Location = Some(source,index) then chipInvoked.Trigger(source,index)
+        | _ -> ()
+        chipDragging <- false
+        this.Cursor <- Cursors.Default
+
+    override this.OnMouseCaptureChanged(e) =
+        base.OnMouseCaptureChanged(e)
+        if not this.Capture then chipPress <- None
 
     override this.OnMouseDoubleClick(e) =
         base.OnMouseDoubleClick(e)
@@ -716,6 +746,13 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     override this.OnMouseMove(e) =
         base.OnMouseMove(e)
+        match chipPress with
+        | Some(_,_,start) when e.Button=MouseButtons.Left ->
+            let size = SystemInformation.DragSize
+            if abs(e.X-start.X)>size.Width/2 || abs(e.Y-start.Y)>size.Height/2 then
+                chipDragging <- true
+                this.Cursor <- Cursors.SizeAll
+        | _ -> ()
         let item = match this.rowAt e.Y with Some(_,(item,_)) -> item | None -> null
         if not (Object.ReferenceEquals(item,hovered)) then
             hovered <- item
@@ -766,7 +803,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         let left = box.X+Dpi.scale 8+(if isNull chip.Icon then 0 else Dpi.scale 16+Dpi.scale 5)
                         let right = box.Right-Dpi.scale 8-Dpi.scale 14
                         TextRenderer.MeasureText(chip.Text,this.Font,Size(Int32.MaxValue,box.Height),TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width > right-left)
-                (if cut then chip.Text elif chip.Note<>"" && not item.ChipDetails then chip.Note else item.ChipTip),Option.defaultValue around box
+                (if chip.Note<>"" then chip.Text+Environment.NewLine+chip.Note elif cut then chip.Text else item.ChipTip),Option.defaultValue around box
             | None,_ when not(isNull add) -> this.ChipAddTip,Option.defaultValue around (this.ChipAddBounds add)
             | None,Some(index,(item,_)) when (this.checkAt(index,item,e.Location)).IsSome ->
                 let column = (this.checkAt(index,item,e.Location)).Value
