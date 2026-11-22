@@ -29,6 +29,20 @@ let check condition message = if not condition then failwith message
 let frameProperty = typeof<TabStrip>.GetProperty("renderCount",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public)
 let frames strip = frameProperty.GetValue(strip) :?> int64
 let main() =
+    do
+        let tab = Img(Sz(100,24))
+        let preview = Img(Sz(800,600))
+        try
+            use g = tab.graphics
+            g.Clear(Color.Red)
+            let image = DragTabs.withPreview (Sz(240,180)) tab preview
+            try
+                check (image.height>tab.height && image.width>=tab.width) "A single dragged tab has no preview area"
+                check (image.bitmap.GetPixel(5,5)=Color.FromArgb(255,255,0,0)) "The preview moved the grabbed tab away from the pointer"
+            finally image.bitmap.Dispose()
+        finally
+            tab.bitmap.Dispose()
+            preview.bitmap.Dispose()
     // Frame counts below assume a change paints once; the auto-hide animation is tested on its own.
     TabReveal.forced <- Some false
     let original = Environment.CurrentDirectory

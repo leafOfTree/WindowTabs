@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Windows.Forms
 
@@ -396,6 +396,8 @@ type DragAction(info:DragActionInfo) =
     let timer = new Timer()
     let animationWindowCell = Cell.create(None:Option<AnimationWindow>)
     let mutable finished = false
+    let invoker = InvokerService.invoker
+    let mutable carriedImage : Img option = None
 
     member this.setNextState(newState:obj) =
         let newState = unbox<IDragState>(newState)
@@ -410,6 +412,8 @@ type DragAction(info:DragActionInfo) =
         timer.Dispose()
         dragStateCell.value.Value.dispose()
         animationWindowCell.value.iter <| fun window -> window.Dispose()
+        carriedImage |> Option.iter(fun image -> image.bitmap.Dispose())
+        carriedImage <- None
 
     member private this.notifyEnd() =
         info.targets.values.iter <| fun target -> target.dragEnd()
@@ -522,6 +526,28 @@ type DragAction(info:DragActionInfo) =
                     try animationWindow.setImage(info.image())
                     with _ -> ()
                     Some(animationWindow)
+                match info.data with
+                | :? TabDragInfo as drag ->
+                    carriedImage <- Some(info.image())
+                    let (Tab hwnd) = drag.tab
+                    let limit = Sz(Dpi.scale 240,Dpi.scale 180)
+                    // A detached tab leaves its group's capture cache; this picture belongs to
+                    // the drag so that completion still arrives after that membership is gone.
+                    ThreadHelper.queueBackground(fun () ->
+                        try
+                            use bitmap = Win32Helper.PrintWindow(hwnd)
+                            use stream = new System.IO.MemoryStream()
+                            bitmap.Save(stream,System.Drawing.Imaging.ImageFormat.Png)
+                            let bytes = stream.ToArray()
+                            invoker.asyncInvoke(fun () ->
+                                match carriedImage with
+                                | Some tab when not finished ->
+                                    use stream = new System.IO.MemoryStream(bytes)
+                                    use bitmap = new System.Drawing.Bitmap(stream)
+                                    animationWindowCell.value.Value.setImage(DragTabs.withPreview limit tab (Img(bitmap)))
+                                | _ -> ())
+                        with _ -> ())
+                | _ -> ()
                 info.targets.values.iter <| fun target -> target.dragBegin()
                 info.notifications.items.iter <| fun n -> n.dragBegin()
                 info.onBegin()

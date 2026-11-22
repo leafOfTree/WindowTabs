@@ -501,13 +501,12 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             let windowPt = visible.location.sub(borderLeftTop).sub(workspaceOffset)
             window.setPlacement({
                 window.placement with
-                    showCmd = if dragInfo.sourceInFront then ShowWindowCommands.SW_SHOWNORMAL else ShowWindowCommands.SW_SHOWNOACTIVATE
+                    showCmd = ShowWindowCommands.SW_SHOWNOACTIVATE
                     rcNormalPosition = Rect(windowPt,Sz(visible.width+borderSize.width,visible.height+borderSize.height))
             })
-            // A foreground group may have raised another pane as the dragged tab left.
-            if dragInfo.sourceInFront then
-                window.setForeground(true)
-                window.raise()
+            // Releasing the pointer completes the move, including a tab taken from behind.
+            window.setForeground(true)
+            window.raise()
             notify.dragDrop(hwnd)
             
         member x.dragEnd() = invoker.asyncInvoke <| fun() ->

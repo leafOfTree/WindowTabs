@@ -1921,7 +1921,7 @@ let main() =
                     cover.Activate()
                     let foreground = WinUserApi.GetForegroundWindow()
                     dropAt mid (Sz(work.Width,work.Height)) |> ignore
-                    check (WinUserApi.GetForegroundWindow()=foreground && isAbove cover.Handle hwnd) "A background tab covered the foreground window or took focus"
+                    pumpUntil "A dropped background tab stayed behind the covering window" (fun () -> isAbove hwnd cover.Handle)
                     sourceInFront <- true
                     dropAt mid (Sz(work.Width,work.Height)) |> ignore
                     pumpUntil "The dropped window did not come in front" (fun () -> isAbove hwnd cover.Handle)
