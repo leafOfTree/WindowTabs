@@ -1243,6 +1243,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             newZorder.tryHead |> Option.iter (this.revealWindow zorderCell.value.tryHead)
             prevTop.set(zorderCell.value.tryHead)
             zorderCell.set(newZorder)
+            if this.keepSizes && prevTop.value<>newZorder.tryHead then
+                newZorder.tryHead |> Option.iter this.saveWindowPlacement
             if this.parkInactive && not newZorder.isEmpty then this.applyLayout()
 
     /// While the group minimizes or restores, Windows reorders its windows one by one; restored
@@ -1608,7 +1610,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.saveTabLayout true
             if groupLayout=GroupLayout.Single && this.windows.count>1 then
                 if not this.parkInactive then this.windows.items.iter IndependentWindowParking.restore
+                // The first independent layout starts at the live front window's frame.
+                if keep then this.saveTopWindowPlacement()
                 this.applyLayout()
+                this.restoreTabStrip()
 
     /// An owned WinForms popup can still be in the ordinary z-order band while its owner is pinned.
     member private this.syncPinnedFrameOrder() =

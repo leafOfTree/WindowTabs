@@ -630,7 +630,10 @@ let main() =
                         (IndependentWindowParking.parked a) (IndependentWindowParking.parked b)) (fun () ->
                     switched a b && terminal.WindowState=FormWindowState.Normal && terminal.Size=browser.Size &&
                     onGroup fixture (fun group -> group.topWindow=a && group.isPlacementIdle))
-                onGroup fixture (fun group -> group.keepWindowSizes <- true)
+                onGroup fixture (fun group ->
+                    group.keepWindowSizes <- true
+                    check (group.layoutFrame=(OS().windowFromHwnd a).visibleBounds)
+                          "Enabling independent mode did not use the front window frame")
                 let browserSize = browser.Size
                 terminal.WindowState <- FormWindowState.Maximized
                 pumpUntil "The independent terminal did not maximize" (fun () -> onGroup fixture (fun group -> group.isMaximized.value))
@@ -641,6 +644,8 @@ let main() =
                         terminal.WindowState=FormWindowState.Maximized && browser.WindowState=FormWindowState.Normal && browser.Size=browserSize)
                 select b
                 pumpUntil "The restored tab did not appear" (fun () -> switched b a)
+                pumpUntil "Independent switching left the strip at the previous window frame" (fun () ->
+                    onGroup fixture (fun group -> group.bounds.value=Some((OS().windowFromHwnd b).visibleBounds)))
                 let work = Screen.FromHandle(b).WorkingArea
                 let location = Drawing.Point(work.Left + 90, work.Top + 160)
                 browser.Height <- work.Height
