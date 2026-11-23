@@ -228,7 +228,7 @@ let main() =
         let animation = AnimationWindow(OS())
         try
             let floating =
-                DragFloatingState({ imageOffset=Pt(0,0); targets=Map2(); layoutTargets=Map2(List2([app.Handle,resting]))
+                DragFloatingState({ imageOffset=(fun () -> Pt(0,0)); targets=Map2(); layoutTargets=Map2(List2([app.Handle,resting]))
                                     data=null; animationWindow=animation; onDragIn=ignore }) :> IDragState
             floating.mouseMove centre
             let away = Pt(app.Left+app.Width+400,app.Top+app.Height+300)
