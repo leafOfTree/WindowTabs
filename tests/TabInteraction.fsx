@@ -38,7 +38,8 @@ let main() =
             let image = DragTabs.withPreview (Sz(240,180)) tab preview
             try
                 check (image.height>tab.height && image.width>=tab.width) "A single dragged tab has no preview area"
-                check (image.bitmap.GetPixel(5,5)=Color.FromArgb(255,255,0,0)) "The preview moved the grabbed tab away from the pointer"
+                let left = (image.width-tab.width)/2
+                check (image.bitmap.GetPixel(left+5,5)=Color.FromArgb(255,255,0,0) && image.bitmap.GetPixel(left-1,5).A=0uy && image.bitmap.GetPixel(left+tab.width,5).A=0uy) "The dragged tab is not centred over its preview"
             finally image.bitmap.Dispose()
         finally
             tab.bitmap.Dispose()

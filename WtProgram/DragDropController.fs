@@ -252,7 +252,7 @@ module LayoutDwell =
             | _ -> Some {key=key;zone=zone;anchor=pt;since=now;shown=false;offered=now},false
 
 type DragFloatingStateInfo = {
-    imageOffset : Pt
+    imageOffset : unit -> Pt
     targets: Map2<IntPtr, IDragDropTarget>
     layoutTargets: Map2<IntPtr, ILayoutDropTarget>
     data: obj
@@ -290,7 +290,7 @@ type DragFloatingState(info:DragFloatingStateInfo) =
         marked |> Option.iter(fun target -> target.clearPreview())
         marked <- None
     let float(ptScreen:Pt) =
-        animationWindow.setLocation(ptScreen.sub(info.imageOffset))
+        animationWindow.setLocation(ptScreen.sub(info.imageOffset()))
         animationWindow.setIsVisible(true)
     /// The preview for the pointer at `pt` over `key`, once it may show: one call to the group
     /// for what is there. The strip to join instead, when the point lies near its tabs.
@@ -398,6 +398,7 @@ type DragAction(info:DragActionInfo) =
     let mutable finished = false
     let invoker = InvokerService.invoker
     let mutable carriedImage : Img option = None
+    let mutable previewOffset = Pt(0,0)
 
     member this.setNextState(newState:obj) =
         let newState = unbox<IDragState>(newState)
@@ -492,7 +493,7 @@ type DragAction(info:DragActionInfo) =
             targets = info.targets
             layoutTargets = info.layoutTargets
             data = info.data
-            imageOffset = info.imageOffset
+            imageOffset = (fun () -> info.imageOffset.add(previewOffset))
             animationWindow = animationWindowCell.value.Value
             onDragIn = fun (targetHwnd, ptScreen) ->
                 this.dragEnter(targetHwnd, ptScreen, false)
@@ -544,7 +545,9 @@ type DragAction(info:DragActionInfo) =
                                 | Some tab when not finished ->
                                     use stream = new System.IO.MemoryStream(bytes)
                                     use bitmap = new System.Drawing.Bitmap(stream)
-                                    animationWindowCell.value.Value.setImage(DragTabs.withPreview limit tab (Img(bitmap)))
+                                    let image = DragTabs.withPreview limit tab (Img(bitmap))
+                                    previewOffset <- Pt((image.width-tab.width)/2,0)
+                                    animationWindowCell.value.Value.setImage(image)
                                 | _ -> ())
                         with _ -> ())
                 | _ -> ()
