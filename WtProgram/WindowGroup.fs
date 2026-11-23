@@ -543,7 +543,73 @@ type PinnedGroupFrame() =
                 drawn <- Some state
             elif this.Location<>outer.Location then
                 Win32Helper.UpdateLayeredWindow(this.Handle,outer.Location)
-            if not this.Visible then this.Show({new IWin32Window with member _.Handle = owner})
+            if not this.Visible then
+                if owner=IntPtr.Zero then this.Show()
+                else this.Show({new IWin32Window with member _.Handle = owner})
+
+/// The main STA tracks outlines for windows without a tab strip to own them.
+module StandalonePinnedFrames =
+    let private os = OS()
+    let private frames = System.Collections.Generic.Dictionary<IntPtr,(int * int) * PinnedGroupFrame>()
+    let private identity hwnd = Win32Helper.GetWindowProcessId(hwnd),Win32Helper.GetWindowThreadId(hwnd)
+    let mutable private timer : Timer option = None
+
+    let private stopIfEmpty() =
+        if frames.Count=0 then
+            timer |> Option.iter(fun watch -> watch.Dispose())
+            timer <- None
+
+    let private remove hwnd =
+        match frames.TryGetValue hwnd with
+        | true,(_,frame) ->
+            frames.Remove hwnd |> ignore
+            frame.Dispose()
+        | _ -> ()
+
+    let private refresh hwnd =
+        let saved,frame = frames.[hwnd]
+        let window = os.windowFromHwnd hwnd
+        if not (WinUserApi.IsWindow hwnd) || identity hwnd<>saved || not window.isTopMost then
+            remove hwnd
+        elif GroupTopmost.marked hwnd || window.isMinimized || not window.isVisible || WindowCloaking.IsCloaked hwnd then
+            frame.Hide()
+        else
+            let bounds = window.visibleBounds
+            if os.isOnScreen bounds then
+                let previousDpi = Dpi.value()
+                try
+                    Dpi.set(Dpi.forMonitor hwnd)
+                    frame.refreshTheme()
+                    frame.place(IntPtr.Zero,bounds.Rectangle,window.isMaximized)
+                finally Dpi.set previousDpi
+                if frame.Visible then
+                    let outline = os.windowFromHwnd frame.Handle
+                    let above = window.prevZorder
+                    if not outline.isTopMost then outline.makeTopMost()
+                    if above.hwnd<>outline.hwnd then
+                        if above.hwnd=IntPtr.Zero || not above.isTopMost then outline.makeTopMost()
+                        else outline.insertAfter above
+            else frame.Hide()
+
+    let show hwnd =
+        remove hwnd
+        frames.Add(hwnd,(identity hwnd,new PinnedGroupFrame()))
+        refresh hwnd
+        if frames.Count>0 && timer.IsNone then
+            let watch = new Timer(Interval=33)
+            watch.Tick.Add(fun _ ->
+                for tracked in frames.Keys |> Seq.toArray do refresh tracked
+                stopIfEmpty())
+            timer <- Some watch
+            watch.Start()
+
+    let hide hwnd =
+        remove hwnd
+        stopIfEmpty()
+
+    let clear() =
+        for hwnd in frames.Keys |> Seq.toArray do remove hwnd
+        stopIfEmpty()
 
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {

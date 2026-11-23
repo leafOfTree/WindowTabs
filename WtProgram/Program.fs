@@ -87,6 +87,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     let settingsManager = lifetime.Own(settings |> Option.defaultWith(fun () -> new Settings(isStandAlone)))
     let themeMonitor = lifetime.Own(ThemeService.startMonitoring())
+    do lifetime.Own({new IDisposable with member _.Dispose() = StandalonePinnedFrames.clear()}) |> ignore
 
     let inShutdown = Cell.create(false)
     let isSubscribed = lifetime.Own(new OwnedSubscriptions<IntPtr>())

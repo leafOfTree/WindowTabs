@@ -410,13 +410,29 @@ let main() =
             note (TabSearch.matches "window behavior" keep && TabSearch.matches "window behavior" hide && TabSearch.matches "透明" hide)
                  "Window behavior switches were missing from palette search"
             use standalone = new Form()
+            standalone.StartPosition <- FormStartPosition.Manual
+            standalone.Location <- Screen.PrimaryScreen.WorkingArea.Location + Size(40,80)
             standalone.Show()
+            let outlines() =
+                Application.OpenForms |> Seq.cast<Form>
+                |> Seq.choose(function :? PinnedGroupFrame as frame when frame.Visible -> Some frame | _ -> None)
+                |> Seq.toList
+            let outlineCount = outlines().Length
             let standaloneCommand = (Commands.find "group-always-on-top").Value
             note (standaloneCommand.scope=Everywhere && standaloneCommand.enabled standalone.Handle) "Standalone topmost command is unavailable"
             for expected in [true;false] do
                 standaloneCommand.run standalone.Handle |> ignore
                 note (standaloneCommand.state standalone.Handle=Some expected) "Standalone window topmost did not toggle"
+                note (outlines().Length=outlineCount+(if expected then 1 else 0)) "Standalone topmost outline did not toggle"
+            standaloneCommand.run standalone.Handle |> ignore
+            let pinned = OS().windowFromHwnd standalone.Handle
+            let outline = outlines() |> List.find(fun frame -> frame.Bounds.Contains(pinned.visibleBounds.Rectangle))
+            let outlineWindow = OS().windowFromHwnd outline.Handle
+            note (outlineWindow.isTopMost && outlineWindow.zorder<pinned.zorder) "Standalone outline is behind the pinned window"
+            standalone.Hide()
+            pumpUntil "Standalone outline hiding with its window" (fun () -> not outline.Visible)
             standalone.Close()
+            pumpUntil "Standalone outline disposal on close" (fun () -> outline.IsDisposed)
             let topId = "group-always-on-top"
             let top = behaviorRow topId
             // WindowTabs only lays out chrome for on-screen windows.

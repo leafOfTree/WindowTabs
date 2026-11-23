@@ -564,7 +564,12 @@ module Commands =
               | Some g -> g.run ToggleGroupTopmost; readAgain g
               | None when WinUserApi.IsWindow hwnd ->
                   let window = OS().windowFromHwnd hwnd
-                  if window.isTopMost then window.makeNotTopMost() else window.makeTopMost()
+                  if window.isTopMost then
+                      window.makeNotTopMost()
+                      if not window.isTopMost then StandalonePinnedFrames.hide hwnd
+                  else
+                      window.makeTopMost()
+                      if window.isTopMost then StandalonePinnedFrames.show hwnd
               | None -> ())
           with scope=Everywhere
                state=fun hwnd ->
