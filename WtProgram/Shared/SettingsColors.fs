@@ -25,7 +25,7 @@ module SettingsColors =
         elif ThemeService.currentIsDark() then
             { background=Color.FromRGB(0x202020); surface=Color.FromRGB(0x2B2B2B); text=Color.White
               muted=Color.FromRGB(0xCCCCCC); description=Color.FromRGB(0x9D9D9D); disabledText=Color.FromRGB(0x757575); border=Color.FromRGB(0x353535); hover=Color.FromRGB(0x323232)
-              accent=ThemeService.accent true; onAccent=Color.Black; accentText=ThemeService.accentText true; selection=Color.FromRGB(0x383838) }
+              accent=ThemeService.accent true; onAccent=Color.Black; accentText=ThemeService.accentText true; selection=Color.FromRGB(0x3E3E3E) }
         else
             { background=Color.White; surface=Color.White; text=Color.FromRGB(0x1B1B1B)
               muted=Color.FromRGB(0x6B6B6B); description=Color.FromRGB(0x6B6B6B); disabledText=Color.FromRGB(0xBDBDBD); border=Color.FromRGB(0xE5E5E5); hover=Color.FromRGB(0xF3F3F3)

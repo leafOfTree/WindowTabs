@@ -55,6 +55,9 @@ module Strings =
                           ko="계속 실행 중입니다. 클릭하면 충돌 로그에서 자세한 내용을 볼 수 있습니다." }
 
     /// Tab context menu.
+    module SwitchScope =
+        let group = { en="In group"; zh="组内"; ja="グループ内"; ar="داخل المجموعة"; ko="그룹 내" }
+
     module TabMenu =
         let closeSelected = { en="Close selected tabs"; zh="关闭选中的标签"; ja="選択したタブを閉じる"; ar="إغلاق علامات التبويب المحددة"; ko="선택한 탭 닫기" }
         let windowBehavior = { en="Window behavior"; zh="窗口行为"; ja="ウィンドウの動作"; ar="سلوك النوافذ"; ko="창 동작" }
@@ -855,7 +858,7 @@ module Strings =
         let private forThisGroup (setting:LocalizedText) (more:string) =
             { en=setting.en+" for this group"+more; zh=setting.zh+"（此分组）"+more; ja=setting.ja+"（このグループ）"+more; ar=setting.ar+" لهذه المجموعة"+more; ko=setting.ko+" (이 그룹)"+more }
         let iconsOnly = { caption=forThisGroup TabMenu.showIconsOnly ""; description={ en="Again, and the titles come back."; zh="再次执行则恢复标题。"; ja="もう一度実行するとタイトルが戻ります。"; ar="مرة أخرى، وتعود العناوين."; ko="한 번 더 실행하면 제목이 돌아옵니다." }; keywords={ en="titles compact"; zh="标题 紧凑"; ja="タイトル コンパクト"; ar="عناوين مضغوط"; ko="제목 간단히" } }
-        let groupTopmost = { caption=TabMenu.groupTopmost; description=TabMenu.windowBehavior; keywords={ en="always on top"; zh="始终置顶"; ja="最前面"; ar="دائما في المقدمة"; ko="항상 위" } }
+        let groupTopmost = { caption={ en="Pin window or group on top"; zh="窗口或分组置顶"; ja="ウィンドウまたはグループを最前面に固定"; ar="إبقاء النافذة أو المجموعة في المقدمة"; ko="창 또는 그룹을 항상 위에 고정" }; description=TabMenu.windowBehavior; keywords={ en="always on top"; zh="始终置顶"; ja="最前面"; ar="دائما في المقدمة"; ko="항상 위" } }
         let keepWindowSizes = { caption=TabMenu.keepWindowSizes; description=TabMenu.windowBehavior
                                 keywords={ en="independent windows"; zh="独立窗口"; ja="独立ウィンドウ"; ar="نوافذ مستقلة"; ko="독립 창 크기" } }
         let inactiveOffScreen = { caption=TabMenu.transparentMode; description=TabMenu.transparentModeNote; keywords=TabMenu.windowBehavior }

@@ -24,6 +24,9 @@ module TaskbarPreviewTrace =
                     try IO.File.AppendAllText(IO.Path.Combine(directory,"peek-trace.jsonl"),entry+Environment.NewLine)
                     with _ -> ())) |> ignore
 
+    do WindowActivationTrace.reported.Publish.Add(fun (target,before,after,accepted,force,alt,tab) ->
+        write "foreground-call" target "" (sprintf "before=%d after=%d accepted=%b force=%b alt=%b tab=%b thread=%d" (before.ToInt64()) (after.ToInt64()) accepted force alt tab (WinBaseApi.GetCurrentThreadId())))
+
 /// Preview producers transfer ownership of their bitmap to this request.
 module TaskbarPreview =
     let usesOwnFrame parked keepWindowSizes layout inFront =
@@ -893,6 +896,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                         |> List.distinctBy this.appOf |> List.truncate TaskbarBadgedIcon.maxStacked
                         |> List.map(fun hwnd -> this.ts.tabInfo(Tab(hwnd)).iconBig)
                     activate = fun() -> this.invokeAsync <| fun() ->
+                        TaskbarPreviewTrace.write "group-proxy-activate" this.members.head "" (sprintf "foreground=%d" (WinUserApi.GetForegroundWindow().ToInt64()))
                         this.tabActivate(Tab(this.members.head), true)
                     toggleMinimizeRestore = fun() -> 
                         let hwnd = this.members.head

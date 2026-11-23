@@ -827,7 +827,8 @@ let main() =
                       "Switcher fixture must be user32-visible but DWM-cloaked"
                 let group = {new ITaskSwitchGroup with
                     member _.hwnd = proxy.Handle
-                    member _.windows = Set2(List2([current.Handle;other.Handle]))}
+                    member _.windows = Set2(List2([current.Handle;other.Handle]))
+                    member _.orderedWindows = List2([current.Handle;other.Handle])}
                 let desktop = {new ITaskSwitchDesktop with
                     member _.groups = List2([group])
                     member _.activate hwnd = OS().windowFromHwnd(hwnd).setForegroundOrRestore(false)}

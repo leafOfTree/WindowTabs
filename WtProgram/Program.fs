@@ -1120,6 +1120,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                             { new ITaskSwitchGroup with
                                 member y.hwnd = gi.hwnd
                                 member y.windows = Set2(gi.windows)
+                                member y.orderedWindows = gi.windows
                             }
                         member x.activate hwnd = this.activateWindow hwnd
                 }
@@ -1340,9 +1341,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 palette
         let isWindows = scope.IsNone
         search.Query <- if isWindows then lastWindowQuery else lastPaletteQuery
-        // A window switched to is in front now, and listed last: the best match is chosen instead.
-        (if isWindows then lastWindowRow |> Option.filter((<>) (WinUserApi.GetForegroundWindow())) else lastPaletteRow)
-        |> Option.iter search.ChooseRow
+        if isWindows then search.SelectFirst(?preferred=(lastWindowRow |> Option.filter((<>) active)))
+        else lastPaletteRow |> Option.iter search.ChooseRow
         search.Ended.Add(fun () ->
             if isWindows then
                 lastWindowQuery <- search.BaseQuery
@@ -1479,8 +1479,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// does, so a split's other pane comes up with it rather than flashing unpainted after.
     member this.activateWindow(hwnd:IntPtr) =
         match this.desktop.groups.tryFind(fun group -> group.windows.contains((=)hwnd)) with
+        | Some(:? GroupInfo as group) -> group.activateFromSwitcher hwnd
         | Some group -> group.activate hwnd
-        | None -> os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
+        | None -> os.windowFromHwnd(hwnd).setForegroundOrRestore(true)
 
     /// The window a key names comes to the front; with none of its program open, the program starts.
     member private this.switchToWindow(shortcut:WindowShortcut) =

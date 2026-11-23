@@ -409,6 +409,14 @@ let main() =
                      "The palette and tab menu disagree about window behavior"
             note (TabSearch.matches "window behavior" keep && TabSearch.matches "window behavior" hide && TabSearch.matches "透明" hide)
                  "Window behavior switches were missing from palette search"
+            use standalone = new Form()
+            standalone.Show()
+            let standaloneCommand = (Commands.find "group-always-on-top").Value
+            note (standaloneCommand.scope=Everywhere && standaloneCommand.enabled standalone.Handle) "Standalone topmost command is unavailable"
+            for expected in [true;false] do
+                standaloneCommand.run standalone.Handle |> ignore
+                note (standaloneCommand.state standalone.Handle=Some expected) "Standalone window topmost did not toggle"
+            standalone.Close()
             let topId = "group-always-on-top"
             let top = behaviorRow topId
             // WindowTabs only lays out chrome for on-screen windows.

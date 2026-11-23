@@ -90,6 +90,7 @@ type internal TaskSwitchShadow(owner:Form) =
 type ITaskSwitchGroup =
     abstract member hwnd : IntPtr
     abstract member windows : Set2<IntPtr>
+    abstract member orderedWindows : List2<IntPtr>
     
 type ITaskSwitchDesktop =
     abstract member groups : List2<ITaskSwitchGroup>
@@ -112,6 +113,7 @@ type SwitchSearchResult = { window:TaskWindowItem; title:string; highlights:(int
     
 /// What the Alt+Tab logic needs from either switcher style.
 type ITaskSwitchView =
+    abstract member showGroupScope : bool -> unit
     abstract member show : unit -> unit
     abstract member hide : unit -> unit
     abstract member select : int -> unit
@@ -145,8 +147,7 @@ type ITaskSwitchListControl =
     abstract member clicked : IEvent<int>
 
 module private TaskWindowIcons =
-    /// A window's app icon at the given size: the shell's icon for its program, which comes in
-    /// large sizes, or the window's own when the program has no icon of its own.
+    /// Prefer the window's icon so folder windows match their tabs, then fall back to the app.
     let large (window:Window) (size:int) : Bitmap option =
         let fromShell() =
             try
@@ -162,9 +163,9 @@ module private TaskWindowIcons =
                 icon.Dispose()
                 Some bitmap
             | None -> None
-        match fromShell() with
-        | null -> fromWindow()
-        | icon -> Some icon
+        match fromWindow() with
+        | Some icon -> Some icon
+        | None -> fromShell() |> Option.ofObj
 
     /// An item's icon at the given size; a group's is drawn as its taskbar button's.
     let item (TaskWindowItem(hwnd,group)) (size:int) : Bitmap option =
@@ -221,20 +222,20 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
             let item = TaskWindowItems.create window
             cache.Add(window,item)
             item
-    let items = windows.list |> List.map itemFor |> Array.ofList
+    let mutable items = windows.list |> List.map itemFor |> Array.ofList
     let mutable filtering = false
     let fit = max 1 ((area.Height*85/100-inset)/Dpi.scale rowHeight)
     // Columns no narrower than this, so titles stay readable.
     let maxColumns = max 1 ((area.Width*9/10-inset)/Dpi.scale 280)
     let columns = max 1 (min maxColumns ((items.Length+fit-1)/fit))
     // Balanced columns: the last is at most one row shorter.
-    let perColumn = max 1 ((items.Length+columns-1)/columns)
+    let mutable perColumn = max 1 ((items.Length+columns-1)/columns)
     let columnWidth =
         if columns=1 then Dpi.scale 600-inset
         else min (Dpi.scale 600-inset) ((area.Width*9/10-inset)/columns)
     let newList() =
         new SettingsTreeList([TreeListColumn("",0,TextColumn)],
-                             ShowHeader=false,ShowExpanders=false,RowHeight=rowHeight,IconSize=32,
+                             ShowHeader=false,ShowExpanders=false,RowHeight=rowHeight,IconSize=32,IconOffsetY=1,
                              BackColor=(SettingsColors.current()).surface,ForeColor=(SettingsColors.current()).text,
                              ScrollBarWidth=Dpi.scale 12-1,Margin=Padding.Empty)
     let lists = Array.init columns (fun _ -> newList())
@@ -280,7 +281,7 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
     interface ITaskSwitchListControl with
         member _.showHints labels =
             for i,item in Array.indexed items do
-                item.HintKey <- labels.[i]
+                item.HintKey <- if i<labels.Length then labels.[i] else ""
             for list in lists do list.Invalidate()
         member _.navigationSteps = (if lists.Length>1 && lists.[1].Roots.Count>0 then perColumn else 1),1
         member _.replaceRows rows =
@@ -290,7 +291,10 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
                     let item = itemFor result.window
                     item.Text <- result.title
                     item.Highlights <- [|result.highlights|]
+                    item.HintKey <- ""
                     item) |> Array.ofList
+            items <- page
+            perColumn <- max 1 ((items.Length+columns-1)/columns)
             for i,list in Array.indexed lists do
                 list.Roots.Clear()
                 list.Roots.AddRange(page.[i*perColumn..min (page.Length-1) ((i+1)*perColumn-1)])
@@ -333,6 +337,23 @@ module private SwitchSearchField =
         input.TextChanged.Add(fun _ -> changed input.Text)
         input.KeyDown.Add keyDown
         input.Focus() |> ignore
+
+module private SwitchGroupIndicator =
+    let size() = Dpi.scale 18
+    let draw (g:Graphics) right top height =
+        let side = size()
+        let state = g.Save()
+        try
+            g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+            g.TranslateTransform(float32 (right-side),float32 (top+(height-side)/2))
+            g.ScaleTransform(float32 side/16.0f,float32 side/16.0f)
+            use pen = new Pen((SettingsColors.current()).muted,1.1f)
+            use outline = SettingsShapes.rounded (RectangleF(1.5f,2.5f,13.0f,11.0f)) 2.0f
+            g.DrawPath(pen,outline)
+            g.DrawLine(pen,1.5f,6.5f,14.5f,6.5f)
+            g.DrawLine(pen,8.0f,2.5f,8.0f,6.5f)
+        finally
+            g.Restore(state)
 
 type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
     let os = OS()
@@ -387,6 +408,65 @@ type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
             f.Region <- new Region(shape)
         f
 
+    let mutable searching = false
+    let mutable groupScope = false
+    let scopeIndicator =
+        let indicator =
+            { new Label() with
+                override this.OnPaint(e) =
+                    base.OnPaint(e)
+                    SwitchGroupIndicator.draw e.Graphics (this.ClientSize.Width-Dpi.scale 12) 0 this.ClientSize.Height }
+        indicator.AccessibleName <- tr Strings.SwitchScope.group
+        indicator.AccessibleRole <- AccessibleRole.Graphic
+        indicator.Dock <- DockStyle.Bottom
+        indicator.Height <- Dpi.scale 24
+        indicator.Visible <- false
+        form.Controls.Add indicator
+        indicator
+
+    let resizeTimer = new Timer(Interval=15)
+    let resizeClock = Diagnostics.Stopwatch()
+    let mutable resizeFrom = form.Bounds
+    let mutable resizeTo = form.Bounds
+    let applyBounds (bounds:Rectangle) =
+        form.Bounds <- bounds
+        if not SystemCorners.supported.Value then
+            let previous = form.Region
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 12))
+            form.Region <- new Region(shape)
+            if not (isNull previous) then previous.Dispose()
+    let finishResize() =
+        resizeTimer.Stop()
+        if form.Visible && not SystemInformation.HighContrast then
+            shadow <- Some(new TaskSwitchShadow(form))
+            shadow.Value.Show()
+    do
+        resizeTimer.Tick.Add(fun _ ->
+            let progress = min 1.0 (resizeClock.Elapsed.TotalMilliseconds/140.0)
+            let eased = 1.0 - Math.Pow(1.0-progress,3.0)
+            let blend start finish = start + int(Math.Round(float(finish-start)*eased))
+            applyBounds (Rectangle(resizeTo.Left,blend resizeFrom.Top resizeTo.Top,resizeTo.Width,blend resizeFrom.Height resizeTo.Height))
+            if progress>=1.0 then finishResize())
+        form.Disposed.Add(fun _ -> resizeTimer.Dispose())
+    let resize enteringSearch =
+        if enteringSearch || not searching then
+            let area = Screen.FromHandle(form.Handle).WorkingArea
+            let limit = if searching then area.Height-Dpi.scale 32 else area.Height*85/100
+            let height = min limit (max (Dpi.scale 120) (control.contentHeight+Dpi.scale 24+(if groupScope then Dpi.scale 24 else 0)+(if searching then SwitchSearchField.height() else 0)))
+            let target = Rectangle(form.Left,area.Top+(area.Height-height)/2,form.Width,height)
+            if target<>resizeTo || (not resizeTimer.Enabled && form.Bounds<>target) then
+                resizeTimer.Stop()
+                shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
+                shadow <- None
+                resizeFrom <- form.Bounds
+                resizeTo <- target
+                if form.Visible && SystemInformation.IsMenuAnimationEnabled && not SystemInformation.HighContrast then
+                    resizeClock.Restart()
+                    resizeTimer.Start()
+                else
+                    applyBounds target
+                    finishResize()
+
     member this.hwnd = form.Handle
 
     member this.show() = 
@@ -402,6 +482,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
         os.windowFromHwnd(form.Handle).setForegroundOrRestore(true)
                 
     member this.hide() =
+        resizeTimer.Stop()
         shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
         shadow <- None
         form.Hide()
@@ -416,10 +497,11 @@ type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
     member this.inputControl = control.control
 
     interface ITaskSwitchView with
-        member _.beginSearch(changed,keys) = startInput changed keys
+        member _.showGroupScope enabled = groupScope <- enabled; scopeIndicator.Visible <- enabled; resize false
+        member _.beginSearch(changed,keys) = searching <- true; resize true; startInput changed keys
         member _.showHints labels = control.showHints labels
         member _.navigationSteps = control.navigationSteps
-        member _.replaceRows rows = control.replaceRows rows
+        member _.replaceRows rows = control.replaceRows rows; resize false
         member this.show() = this.show()
         member this.hide() = this.hide()
         member this.select index = this.select index
@@ -432,6 +514,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl, ?search:unit -> unit) =
 /// many, with the chosen window's title beneath them. The panel matches the vertical list:
 /// the same surface, border, rounded corners and shadow.
 type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
+    let mutable groupScope = false
     let mutable hints : string array = [||]
     let iconSize = Dpi.scale 64
     let cell = Dpi.scale 96
@@ -452,13 +535,14 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
         windows.list |> List.map(fun (TaskWindowItem(hwnd,_) as item) ->
             OS().windowFromHwnd(hwnd).text,[],iconFor item) |> Array.ofList
     let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
-    let columns = max 1 (min items.Length ((area.Width*9/10-padding*2+gap)/(cell+gap)))
+    let mutable columns = max 1 (min items.Length ((area.Width*9/10-padding*2+gap)/(cell+gap)))
+    let initialColumns = columns
     // Wide enough for a readable title even with one or two windows.
-    let width = max (Dpi.scale 360) (columns*cell+(columns-1)*gap+padding*2)
+    let mutable width = max (Dpi.scale 360) (columns*cell+(columns-1)*gap+padding*2)
     let mutable searchFieldHeight = 0
     let gridTop = padding
-    let rows = max 1 ((items.Length+columns-1)/columns)
-    let height = gridTop+rows*cell+(rows-1)*gap+titleHeight+padding/2
+    let mutable rows = max 1 ((items.Length+columns-1)/columns)
+    let mutable height = gridTop+rows*cell+(rows-1)*gap+titleHeight+padding/2
     let titleFont = SettingsUi.font (SettingsUi.uiFamily()) 11.0f FontStyle.Regular
     let mutable selected = 0
     let mutable closed = false
@@ -542,8 +626,10 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
             let bottom = gridTop+rows*cell+(rows-1)*gap
             let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter
                         ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.PreserveGraphicsClipping
-            SettingsTreeList.drawMarked(g,title,highlights,Rectangle(padding,bottom,width-padding*2,titleHeight),flags,titleFont,
+            SettingsTreeList.drawMarked(g,title,highlights,Rectangle(padding,bottom,width-padding*2-(if groupScope then SwitchGroupIndicator.size()+gap else 0),titleHeight),flags,titleFont,
                                         (if highContrast then SystemColors.WindowText else p.text),p)
+        if groupScope then
+            SwitchGroupIndicator.draw g (width-padding) (height-padding/2-titleHeight) titleHeight
         bitmap
     member private this.wirePointer() =
         // The pointer may already rest over an icon when Alt+Tab opens; only moving it chooses.
@@ -560,15 +646,40 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
         if not (isNull previous) then previous.Dispose()
         form.Invalidate()
     interface ITaskSwitchView with
+        member this.showGroupScope enabled =
+            groupScope <- enabled
+            form.AccessibleDescription <- if enabled then tr Strings.SwitchScope.group else null
+            this.present()
         member this.beginSearch(changed,keys) =
             searchFieldHeight <- SwitchSearchField.height()
             startInput changed keys
             this.present()
         member this.showHints labels = hints <- labels; this.present()
         member _.navigationSteps = 1,(if items.Length>columns then columns else 1)
-        member this.replaceRows rows =
-            items <- rows |> List.map(fun result -> result.title,result.highlights,iconFor result.window) |> Array.ofList
-            if items.Length=0 then this.present()
+        member this.replaceRows results =
+            hints <- [||]
+            items <- results |> List.map(fun result -> result.title,result.highlights,iconFor result.window) |> Array.ofList
+            if searchFieldHeight=0 then
+                let maxRows = max 1 ((area.Height*85/100-gridTop-titleHeight-padding/2+gap)/(cell+gap))
+                let maxColumns = max 1 ((area.Width*9/10-padding*2+gap)/(cell+gap))
+                columns <- min maxColumns (max initialColumns ((items.Length+maxRows-1)/maxRows))
+                width <- max (Dpi.scale 360) (columns*cell+(columns-1)*gap+padding*2)
+                rows <- max 1 ((items.Length+columns-1)/columns)
+                let nextHeight = min (area.Height*85/100) (gridTop+rows*cell+(rows-1)*gap+titleHeight+padding/2)
+                if height<>nextHeight || form.Width<>width then
+                    shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
+                    shadow <- None
+                    height <- nextHeight
+                    form.Bounds <- Rectangle(area.Left+(area.Width-width)/2,area.Top+(area.Height-height)/2,width,height)
+                    if not SystemCorners.supported.Value then
+                        let previous = form.Region
+                        use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 radius)
+                        form.Region <- new Region(shape)
+                        if not (isNull previous) then previous.Dispose()
+                    if form.Visible && not SystemInformation.HighContrast then
+                        shadow <- Some(new TaskSwitchShadow(form))
+                        shadow.Value.Show()
+            this.present()
         member this.show() =
             this.wirePointer()
             this.present()
@@ -595,7 +706,15 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>, ?search:unit -> unit) =
         member this.hovered = hovered.Publish
         member this.clicked = clicked.Publish
 
-type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:bool, ?view:ITaskSwitchView, ?activate:IntPtr -> unit, ?search:unit -> (string -> SwitchSearchResult list)) as this =
+type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:bool, ?view:ITaskSwitchView, ?activate:IntPtr -> unit, ?search:unit -> (string -> SwitchSearchResult list), ?groupWindows:IntPtr -> TaskWindowItem list, ?origin:IntPtr, ?startInGroup:bool, ?scopeChanged:bool -> unit) as this =
+    let origin = defaultArg origin (WinUserApi.GetForegroundWindow())
+    let initialGroup =
+        if defaultArg startInGroup false then
+            groupWindows |> Option.map(fun load -> load origin) |> Option.filter(fun items -> items.Length>1)
+        else None
+    let mutable parent = initialGroup |> Option.map(fun _ -> windows,0)
+    let mutable windows = initialGroup |> Option.map(fun items -> List2(items)) |> Option.defaultValue windows
+    let scopeChanged = defaultArg scopeChanged ignore
     let os = OS()
     let activate = defaultArg activate (fun hwnd -> os.windowFromHwnd(hwnd).setForegroundOrRestore(false))
     let Cell = CellScope()
@@ -638,8 +757,11 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:boo
             setIndex index
 
     do
+        form.showGroupScope initialGroup.IsSome
         if windows.length > 0 then
             // The opening chord already advances the choice, before either view paints.
+            if initialGroup.IsSome then
+                switchIndex.set(windows.list |> List.tryFindIndex(fun (TaskWindowItem(hwnd,_)) -> hwnd=origin) |> Option.defaultValue 0)
             doSwitch (defaultArg backward false)
         form.show()
         
@@ -659,6 +781,34 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:boo
         form.inputControl.KeyUp.Add <| fun e ->
             this.processKeys(e)
 
+
+    member _.toggleGroup() =
+        if finished || searching || labels.Length>0 then false
+        else
+            let replace items index =
+                windows <- items
+                pageStart <- 0
+                form.replaceRows(items.list |> List.map(fun (TaskWindowItem(hwnd,_) as item) ->
+                    {window=item; title=os.windowFromHwnd(hwnd).text; highlights=[]}))
+                setIndex index
+            match parent with
+            | Some(items,index) ->
+                parent <- None
+                form.showGroupScope false
+                scopeChanged false
+                replace items index
+                true
+            | None when count()>0 ->
+                match groupWindows |> Option.map(fun load -> load origin) with
+                | Some items when items.Length>1 ->
+                    parent <- Some(windows,switchIndex.value)
+                    form.showGroupScope true
+                    scopeChanged true
+                    let index = items |> List.tryFindIndex(fun (TaskWindowItem(other,_)) -> other=origin) |> Option.defaultValue 0
+                    replace (List2 items) index
+                    true
+                | _ -> false
+            | _ -> false
 
     member _.moveArrow(key:Keys) =
         let horizontal,vertical = form.navigationSteps
@@ -682,12 +832,18 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:boo
         // Switching away makes the panel lose focus, which asks to end again: once is enough.
         if not finished then
             finished <- true
-            if cancel.not && count()>0 then
-                let (TaskWindowItem(hwnd,_)) = selectedWindow()
-                activate hwnd
+            let target =
+                if cancel.not && count()>0 then
+                    let (TaskWindowItem(hwnd,_)) = selectedWindow()
+                    Some hwnd
+                else None
             match view,form with
             | None,(:? TaskSwitchForm as owned) -> owned.close()
             | _ -> form.hide()
+            // Closing the foreground popup must finish before another STA activates its tab.
+            target |> Option.iter(fun hwnd ->
+                TaskbarPreviewTrace.write "switcher-target" hwnd "" (sprintf "foreground=%d" (WinUserApi.GetForegroundWindow().ToInt64()))
+                activate hwnd)
             endedEvent.Trigger()
 
     member _.enterHints(keys:string) =
@@ -727,6 +883,7 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:boo
         if not finished && not searching && labels.Length=0 then
             search |> Option.iter(fun load ->
                 searching <- true
+                form.showGroupScope false
                 let filter = lazy (load())
                 let update query =
                     if not finished then
@@ -774,6 +931,7 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop, ?search:IntPtr 
     let os = OS()
     let Cell = CellScope()
     let switcherCell = Cell.create(None:TaskSwitchAction option)
+    let mutable groupScope = false
     let mutable searchHook : IDisposable option = None
     let removeSearchHook() =
         searchHook |> Option.iter(fun hook -> hook.Dispose())
@@ -796,14 +954,15 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop, ?search:IntPtr 
                     Some 1
                 elif not ended && not up then
                     held.Add vk |> ignore
-                    if switcher.hintKey vk || ((alt || switcher.browsingWithoutAlt) && vk=int Keys.F && switcher.enterHints(settings.settings.numberLeaderKeys)) then Some 1
+                    if switcher.hintKey vk || ((alt || switcher.browsingWithoutAlt) && settings.settings.switcherShortcuts && vk=int Keys.F && switcher.enterHints(settings.settings.numberLeaderKeys)) then Some 1
+                    elif (alt || switcher.browsingWithoutAlt) && vk=int Keys.G && switcher.toggleGroup() then Some 1
                     elif switcher.browsingWithoutAlt && vk=int Keys.Escape then switcher.switchEnd(true); Some 1
                     elif switcher.browsingWithoutAlt && vk=int Keys.Enter then switcher.switchEnd(false); Some 1
                     elif switcher.browsingWithoutAlt && vk=int Keys.Q then switcher.enterSearch(); Some 1
                     elif switcher.browsingWithoutAlt && switcher.moveArrow(enum<Keys> vk) then Some 1
                     else
                         held.Remove vk |> ignore
-                        chord.Handle(msg,vk,alt,switcher.enterSearch)
+                        if settings.settings.switcherShortcuts then chord.Handle(msg,vk,alt,switcher.enterSearch) else None
                 elif ended && not chord.Held then None
                 else chord.Handle(msg,vk,alt,switcher.enterSearch)
             if ended && not chord.Held && held.Count=0 then removeSearchHook()
@@ -817,11 +976,15 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop, ?search:IntPtr 
             let original = WinUserApi.GetForegroundWindow()
             let windows = this.windows
             let openSearch = search |> Option.filter(fun _ -> settings.settings.switcherShortcuts) |> Option.map(fun load -> fun () -> load(original,windows))
-            let switcher = TaskSwitchAction(windows,settings.settings.switcherStyle,backward=not forward,activate=desktop.activate,?search=openSearch)
+            let switcher = TaskSwitchAction(windows,settings.settings.switcherStyle,backward=not forward,activate=desktop.activate,?search=openSearch,origin=original,startInGroup=groupScope,scopeChanged=(fun value -> groupScope <- value),
+                groupWindows=(fun hwnd ->
+                    desktop.groups.tryFind(fun group -> group.windows.contains hwnd)
+                    |> Option.map(fun group -> group.orderedWindows.list |> List.filter WinUserApi.IsWindow |> List.map(fun memberHwnd -> TaskWindowItem(memberHwnd,None)))
+                    |> Option.defaultValue []))
             switcher.ended.Add <| fun() ->
                 switcherCell.set(None)
             switcherCell.set(Some(switcher))
-            if openSearch.IsSome then watchSearchChord switcher
+            watchSearchChord switcher
         | Some switcher ->
             if forward then switcher.switchPrev() else switcher.switchNext()
 

@@ -8,6 +8,9 @@ open System.Windows.Forms
 
 /// What WindowTabs holds that the process's own counters do not tell apart, for the Support
 /// page's resources: event hooks, and the pictures kept for covered tabs.
+module WindowActivationTrace =
+    let reported = Event<IntPtr * IntPtr * IntPtr * bool * bool * bool * bool>()
+
 module ResourceCounters =
     let mutable private hooks = 0
     /// Hooks heard from every app on the desktop, not one process.
@@ -457,20 +460,26 @@ and
         WinUserApi.SetWindowPlacement(hwnd, ref wpStruct) |> ignore
 
     member this.setForeground(force) =
+        let before = WinUserApi.GetForegroundWindow()
+        let activate() =
+            let alt = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_MENU)
+            let tab = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_TAB)
+            let accepted = WinUserApi.SetForegroundWindow(hwnd)
+            WindowActivationTrace.reported.Trigger(hwnd,before,WinUserApi.GetForegroundWindow(),accepted,force,alt,tab)
         if force then
             let foregroundWindow = WinUserApi.GetForegroundWindow()
             let foregroundTID = Win32Helper.GetWindowThreadId(foregroundWindow)
             let targetTID = Win32Helper.GetWindowThreadId(hwnd)
             if foregroundTID = targetTID then
-                WinUserApi.SetForegroundWindow(hwnd).ignore
+                activate()
             else
                 //this is the most reliable way to ensure we can set foreground, case #729
                 //does not matter what key code we send
                 WinUserApi.keybd_event(0x3A, 0, 0, 0)              
                 WinUserApi.keybd_event(0x3A, 0, SendInputConstants.KEYEVENTF_KEYUP, 0)
-                WinUserApi.SetForegroundWindow(hwnd).ignore
+                activate()
         else
-            WinUserApi.SetForegroundWindow(hwnd).ignore
+            activate()
 
     member this.minimize() = WinUserApi.ShowWindow(hwnd, ShowWindowCommands.SW_MINIMIZE).ignore
     
