@@ -29,9 +29,10 @@ module TabShadow =
         let mutable horizontal = Array.empty<float>
         let mutable prefix = Array.empty<int>
         let mutable pixels = Array.empty<byte>
-        member _.Render(width, height, mask:byte[], padding, direction) =
+        member _.Render(width, height, mask:byte[], padding, direction, ?allSides:bool) =
             let w = width + padding * 2
-            let h = height + padding
+            let allSides = defaultArg allSides false
+            let h = height + padding * (if allSides then 2 else 1)
             if horizontal.Length < w*h then horizontal <- Array.zeroCreate (max (w*h) (horizontal.Length*2))
             if prefix.Length < width+1 then prefix <- Array.zeroCreate (width+1)
             if pixels.Length < w*4 then pixels <- Array.zeroCreate (w*4)
@@ -51,7 +52,7 @@ module TabShadow =
                     float mask.[row * width + sx] / 255.0
             let mutable solid = 0.0
             for weight in kernel do solid <- solid + weight
-            for y in padding .. h - 1 do
+            for y in padding .. padding + height - 1 do
                 let sy = y-padding
                 let row = if direction=TabDown then height-1-sy else sy
                 prefix.[0] <- 0
@@ -73,7 +74,7 @@ module TabShadow =
             try
               for y in 0 .. h - 1 do
                 Array.Clear(pixels,0,w*4)
-                let fade = min 1.0 (float (h - 1 - y) / float fadeHeight)
+                let fade = if allSides then 1.0 else min 1.0 (float (h - 1 - y) / float fadeHeight)
                 for x in 0 .. w - 1 do
                     // The helper is owned by (and above) the strip; cut the tabs out.
                     let exterior = 1.0 - sample x y
@@ -96,6 +97,17 @@ module TabShadow =
     /// Mirroring is done by row addressing, without another mask or bitmap pass.
     let renderForDirection width height (mask:byte[]) padding direction =
         Renderer().Render(width,height,mask,padding,direction)
+
+    /// Blur the combined preview so the junction inside it stays solid.
+    let withDragShadow padding (preview:Img) =
+        let bitmap = Renderer().Render(preview.width,preview.height,silhouette preview.bitmap,padding,TabUp,allSides=true)
+        try
+            use g = Graphics.FromImage(bitmap)
+            g.DrawImageUnscaled(preview.bitmap,padding,padding)
+            Img(bitmap)
+        with _ ->
+            bitmap.Dispose()
+            reraise()
 
 /// An owned, nonactivating, click-through window. Ownership keeps its stacking
 /// with the tab strip, without making it globally topmost or changing tab bounds.
