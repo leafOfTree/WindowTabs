@@ -210,6 +210,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             | MouseUp, MouseRight ->
                 let ptScreen = this.ts.toScreen(pt)
                 group.bb.write("contextMenuVisible", true)
+                this.ts.ownMenuOpen <- true
                 let images = ResizeArray<Img>()
                 try
                     try
@@ -217,6 +218,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         // Back over the tabs when the menu goes, the pointer has not moved, so the strip
                         // looks again before auto-hide decides; it collapsed under the pointer otherwise.
                         let menuClosed () =
+                            this.ts.ownMenuOpen <- false
                             this.ts.refreshHover()
                             group.bb.write("contextMenuVisible", false)
                         // Built again for a colour chosen, which keeps the menu up to remember it.
@@ -226,6 +228,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y,os.windowFromHwnd(this.ts.hwnd).bounds.Rectangle)
                     with _ ->
                         contextMenu |> Option.iter(fun menu -> menu.Dispose())
+                        this.ts.ownMenuOpen <- false
                         group.bb.write("contextMenuVisible", false)
                         reraise()
                 finally
@@ -531,7 +534,9 @@ type TabStripDecorator(group:WindowGroup) as this =
         if items.count>0 then
             contextMenu |> Option.iter(fun menu -> menu.Dispose())
             group.bb.write("contextMenuVisible", true)
+            this.ts.ownMenuOpen <- true
             let menuClosed () =
+                this.ts.ownMenuOpen <- false
                 this.ts.refreshHover()
                 group.bb.write("contextMenuVisible", false)
             let menu = new ThemedContextMenu(items,menuClosed,group.windows.contains)

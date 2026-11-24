@@ -901,12 +901,21 @@ let main() =
                         step()
                         check strip.isHoverOpen "An icons-only column did not open under the resting pointer"
                         pointAt (Point(-30000,-30000))
-                        OpenMenus.change 1
+                        strip.ownMenuOpen <- true
                         send WindowMessages.WM_MOUSELEAVE Pt.empty
                         check strip.isHoverOpen "An icons-only column shut under a menu of its own"
-                        OpenMenus.change -1
+                        strip.ownMenuOpen <- false
                         step()
                         check (not strip.isHoverOpen && not (waiting())) "An icons-only column stayed open after the pointer left"
+                        // A menu of another window does not hold it open.
+                        pointAt (Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        pointAt (Point(-30000,-30000))
+                        OpenMenus.change 1
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        OpenMenus.change -1
+                        check (not strip.isHoverOpen) "A menu of another window kept an icons-only column open"
                         strip.isIconOnly <- false
                     strip.dock <- TabDockTop
                     strip.setPlacement(placement start size false)
