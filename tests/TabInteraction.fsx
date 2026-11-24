@@ -886,6 +886,28 @@ let main() =
                     check (strip.position=Some 0.51) (sprintf "A column let go near the middle was moved: %A" strip.position)
                     strip.setAlignment(TabUp,TabLeft)
                     check (strip.position.IsNone) "An alignment chosen did not put the dragged column back"
+                    // An icons-only column opens to its full width once the pointer rests on it, stays
+                    // open under a menu of the strip, and shuts when the pointer is gone.
+                    do
+                        let flags = BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public
+                        let pointAt (point:Point) = typeof<TabStrip>.GetProperty("pointer",flags).SetValue(strip,box(fun () -> point))
+                        let step () = typeof<TabStrip>.GetMethod("stepHoverOpen",flags).Invoke(strip,[||]) |> ignore
+                        let waiting () = (typeof<TabStrip>.GetField("hoverOpenTimer",flags).GetValue(strip) :?> Timer).Enabled
+                        strip.isIconOnly <- true
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) false)
+                        pointAt (Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        check (waiting() && not strip.isHoverOpen) "An icons-only column did not wait for the pointer to rest before opening"
+                        step()
+                        check strip.isHoverOpen "An icons-only column did not open under the resting pointer"
+                        pointAt (Point(-30000,-30000))
+                        OpenMenus.change 1
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        check strip.isHoverOpen "An icons-only column shut under a menu of its own"
+                        OpenMenus.change -1
+                        step()
+                        check (not strip.isHoverOpen && not (waiting())) "An icons-only column stayed open after the pointer left"
+                        strip.isIconOnly <- false
                     strip.dock <- TabDockTop
                     strip.setPlacement(placement start size false)
                     strip.isIconOnly <- false

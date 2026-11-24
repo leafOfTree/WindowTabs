@@ -293,7 +293,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         | None ->
             this.ts.visible <- false
         | Some frame ->
-            let placement,span = this.placementFor(frame,group.isMaximized.value)
+            let placement,span = this.shownPlacement(frame,group.isMaximized.value)
             // A column dragged along the side needs its room to know where it is let go.
             span |> Option.iter(fun span -> this.ts.columnSpan <- span)
             this.ts.setPlacement(placement, ?owner=(group.zorder.value.tryHead |> Option.map Tab), ownerRight=frame.right)
@@ -309,9 +309,17 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// Where the strip goes and, for a column, the room it has along the side. A column being
     /// dragged sits where the pointer holds it; otherwise where it was dragged to, else aligned.
     member private this.placementAndSpan =
-        this.placementFor(group.bounds.value.def(Rect()),group.isMaximized.value)
+        this.shownPlacement(group.bounds.value.def(Rect()),group.isMaximized.value)
 
+    /// Where the strip stands now: a column the pointer opened is wider than the one saved.
+    member private this.shownPlacement(frame:Rect,maximized:bool) =
+        this.placementWith(frame,maximized,this.ts.isHoverOpen)
+
+    /// Where the strip would stand in its saved layout, for a window not yet there.
     member private this.placementFor(frame:Rect,maximized:bool) =
+        this.placementWith(frame,maximized,false)
+
+    member private this.placementWith(frame:Rect,maximized:bool,opened:bool) =
         let readAreas() = Mon.all.map(fun m -> m.workRect)
         let areas =
             if not group.isMoving.value then readAreas()
@@ -335,6 +343,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let position = match this.ts.columnSlide with Some fraction -> Some fraction | None -> this.ts.position
             let placed = decorator.sidePlacement(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
                                                  alignment=this.ts.getAlignment TabUp,maximized=maximized,?position=position)
+            let placed = if opened then decorator.widenSide(this.ts.dock,placed,Dpi.scale this.ts.columnOpenWidth) else placed
             let span = decorator.sideSpan(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
                                           alignment=this.ts.getAlignment TabUp,maximized=maximized,?position=position)
             placed,Some span
