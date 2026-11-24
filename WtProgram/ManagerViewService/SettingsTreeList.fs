@@ -193,6 +193,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// Said in the muted colour while the list has no rows: what would be listed, and how.
     member val EmptyText = "" with get,set
     member val IconSize = 16 with get,set
+    /// Optical adjustment for large icons without moving the text baseline.
+    member val IconOffsetY = 0 with get,set
     /// Leaves the scroll bar's room empty when there is nothing to scroll, so the columns stay
     /// where they are as the bar comes and goes: a thin strip, the bar standing in it like the
     /// system's overlay bars rather than pushing the rows aside.
@@ -417,7 +419,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let cell = this.columnBounds.[0]
         let size = Dpi.scale this.IconSize
         let left = cell.X+this.textLeft level
-        let iconBox = Rectangle(left,top+(this.rowHeight-size)/2,size,size)
+        let iconBox = Rectangle(left,top+(this.rowHeight-size)/2+Dpi.scale this.IconOffsetY,size,size)
         // Names line up after the most icons a row shown has.
         let icons = iconSlots*size+(iconSlots-1)*this.iconGap
         let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph || item.Swatch.IsSome then left+icons+Dpi.scale 8 else left

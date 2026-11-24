@@ -1215,11 +1215,53 @@ let main() =
     search.Close()
     pump 100
     check (search.IsClosed && ends=1) "Tab search did not end exactly once"
+    let firstRow = {mail with recency=10}
+    let recentRow = {notes with recency=0}
+    let opening = TabSearchForm([firstRow;recentRow],[])
+    opening.SelectFirst()
+    check (opening.Results=[recentRow;firstRow] && opening.Selected=Some recentRow)
+          "The recent default target stayed in the second row"
+    opening.Show()
+    opening.Refresh()
+    check (opening.Results=[recentRow;firstRow] && opening.Selected=Some recentRow)
+          "Showing or refreshing lost the promoted default target"
+    opening.SelectFirst(preferred=firstRow.hwnd)
+    check (opening.Results=[firstRow;recentRow] && opening.Selected=Some firstRow)
+          "Explicit remembered choice did not override recency"
+    opening.Refresh()
+    check (opening.Results.Head=firstRow) "Refresh lost the remembered row order"
+    opening.SelectFirst(preferred=recentRow.hwnd)
+    check (opening.Results=[recentRow;firstRow] && opening.Selected=Some recentRow)
+          "Remembered window was not promoted and selected at the top"
+    opening.SelectFirst(preferred=IntPtr(-1))
+    check (opening.Results=[recentRow;firstRow]) "A closed remembered window changed the displayed rows"
+    opening.Query <- "note"
+    check (opening.Selected=Some recentRow) "First-row opening prevented subsequent search matching"
+    opening.Close()
+    let emptyOpening = TabSearchForm([],[])
+    emptyOpening.SelectFirst()
+    check emptyOpening.Selected.IsNone "Empty window picker acquired a selection"
+    emptyOpening.Close()
     let picked = TabSearchForm([mail;notes],[])
     picked.Query <- "note"
     picked.Accept()
     pump 100
     check picked.IsClosed "Accepting a match did not close the tab search"
+    let mutable switchingHost : Form option = None
+    let mutable switched = IntPtr.Zero
+    let duplicateA = {mail with title="Home - File Explorer"}
+    let duplicateB = {notes with title="Home - File Explorer"}
+    let existingForms = Application.OpenForms |> Seq.cast<Form> |> Seq.toList
+    let switching = TabSearchForm([duplicateA;duplicateB],[],pick=(fun hwnd ->
+        check (switchingHost |> Option.exists(fun host -> not host.Visible)) "Switch windows activated before hiding its popup"
+        switched <- hwnd))
+    switching.Show()
+    switchingHost <- Application.OpenForms |> Seq.cast<Form> |> Seq.tryFind(fun form -> not (List.contains form existingForms))
+    switching.SelectNext()
+    let expected = switching.Selected.Value.hwnd
+    switching.Accept()
+    pump 100
+    check (switched=expected && switching.IsClosed) "Switch windows confused same-title targets"
     // The palette: pages beside the windows, > for the commands, and a command's choices in place.
     let mutable ran = []
     let option name = { label=name; detail=""; swatch=None; windows=[]; run=(fun () -> ran <- name::ran; Done); preview=None; undo=None; concealed=true }

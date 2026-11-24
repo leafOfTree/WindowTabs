@@ -55,6 +55,9 @@ module Strings =
                           ko="계속 실행 중입니다. 클릭하면 충돌 로그에서 자세한 내용을 볼 수 있습니다." }
 
     /// Tab context menu.
+    module SwitchScope =
+        let group = { en="In group"; zh="组内"; ja="グループ内"; ar="داخل المجموعة"; ko="그룹 내" }
+
     module TabMenu =
         let closeSelected = { en="Close selected tabs"; zh="关闭选中的标签"; ja="選択したタブを閉じる"; ar="إغلاق علامات التبويب المحددة"; ko="선택한 탭 닫기" }
         let windowBehavior = { en="Window behavior"; zh="窗口行为"; ja="ウィンドウの動作"; ar="سلوك النوافذ"; ko="창 동작" }
@@ -266,7 +269,7 @@ module Strings =
                               description={ en="Large icons in a row, or a list with full window titles."; zh="一排大图标，或显示完整窗口标题的列表。"; ja="大きなアイコンを横に並べるか、ウィンドウ タイトルを一覧で表示します。"; ar="أيقونات كبيرة في صف، أو قائمة تعرض عناوين النوافذ كاملة."; ko="큰 아이콘을 한 줄로 표시하거나, 전체 창 제목을 목록으로 표시합니다." }
                               keywords={ en="layout"; zh="布局"; ja="レイアウト"; ar="التخطيط"; ko="레이아웃 모양" } }
         let switcherShortcuts = { caption={ en="Use switcher shortcuts"; zh="使用切换器快捷键"; ja="切り替えショートカットを使う"; ar="استخدام اختصارات المبدّل"; ko="전환기 단축키 사용" }
-                                  description={ en="Press Q to search or F to show window keys."; zh="按 Q 搜索，按 F 显示窗口选择键。"; ja="Q で検索、F でウィンドウの選択キーを表示します。"; ar="اضغط Q للبحث أو F لعرض مفاتيح اختيار النوافذ."; ko="Q를 누르면 검색하고 F를 누르면 창 선택 키를 표시합니다." }
+                                  description={ en="Press Q to search, F to show window keys, and G to toggle group view."; zh="按 Q 搜索，按 F 显示窗口选择键，按 G 切换组内视图。"; ja="Q で検索し、F でウィンドウの選択キーを表示し、G でグループ表示を切り替えます。"; ar="اضغط Q للبحث، وF لعرض مفاتيح اختيار النوافذ، وG لتبديل عرض المجموعة."; ko="Q를 눌러 검색하고, F를 눌러 창 선택 키를 표시하고, G를 눌러 그룹 보기를 전환합니다." }
                                   keywords={ en="Alt+Tab"; zh="Alt+Tab"; ja="Alt+Tab"; ar="Alt+Tab"; ko="Alt+Tab" } }
         let groupWindowsInSwitcher = { caption={ en="Group windows in Alt+Tab"; zh="在 Alt+Tab 中按分组显示"; ja="Alt+Tab でグループをまとめる"; ar="تجميع النوافذ في Alt+Tab"; ko="Alt+Tab에서 창 그룹화" }
                                        description={ en="Each group appears as one item, with the icon its taskbar button has."; zh="每个分组只显示一项，图标与任务栏按钮相同。"; ja="各グループを、タスク バーのボタンと同じアイコンの 1 項目として表示します。"; ar="تظهر كل مجموعة كعنصر واحد بالأيقونة نفسها التي يحملها زر شريط المهام."; ko="각 그룹을 작업 표시줄 버튼과 같은 아이콘의 항목 하나로 표시합니다." }
@@ -855,7 +858,7 @@ module Strings =
         let private forThisGroup (setting:LocalizedText) (more:string) =
             { en=setting.en+" for this group"+more; zh=setting.zh+"（此分组）"+more; ja=setting.ja+"（このグループ）"+more; ar=setting.ar+" لهذه المجموعة"+more; ko=setting.ko+" (이 그룹)"+more }
         let iconsOnly = { caption=forThisGroup TabMenu.showIconsOnly ""; description={ en="Again, and the titles come back."; zh="再次执行则恢复标题。"; ja="もう一度実行するとタイトルが戻ります。"; ar="مرة أخرى، وتعود العناوين."; ko="한 번 더 실행하면 제목이 돌아옵니다." }; keywords={ en="titles compact"; zh="标题 紧凑"; ja="タイトル コンパクト"; ar="عناوين مضغوط"; ko="제목 간단히" } }
-        let groupTopmost = { caption=TabMenu.groupTopmost; description=TabMenu.windowBehavior; keywords={ en="always on top"; zh="始终置顶"; ja="最前面"; ar="دائما في المقدمة"; ko="항상 위" } }
+        let groupTopmost = { caption={ en="Pin window or group on top"; zh="窗口或分组置顶"; ja="ウィンドウまたはグループを最前面に固定"; ar="إبقاء النافذة أو المجموعة في المقدمة"; ko="창 또는 그룹을 항상 위에 고정" }; description=TabMenu.windowBehavior; keywords={ en="always on top"; zh="始终置顶"; ja="最前面"; ar="دائما في المقدمة"; ko="항상 위" } }
         let keepWindowSizes = { caption=TabMenu.keepWindowSizes; description=TabMenu.windowBehavior
                                 keywords={ en="independent windows"; zh="独立窗口"; ja="独立ウィンドウ"; ar="نوافذ مستقلة"; ko="독립 창 크기" } }
         let inactiveOffScreen = { caption=TabMenu.transparentMode; description=TabMenu.transparentModeNote; keywords=TabMenu.windowBehavior }

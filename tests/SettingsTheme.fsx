@@ -19,6 +19,12 @@ let rec controls (control:Control) = seq {
     yield control
     for child in control.Controls do yield! controls child }
 
+let settleSwitcherResize() =
+    let clock = Diagnostics.Stopwatch.StartNew()
+    while clock.ElapsedMilliseconds<220L do
+        Application.DoEvents()
+        Threading.Thread.Sleep(10)
+
 let main() =
     Application.EnableVisualStyles()
     let originalDirectory = Environment.CurrentDirectory
@@ -1052,6 +1058,7 @@ let main() =
                         let firstFrames = ResizeArray<int option>()
                         let mutable selected = None
                         let view = {new ITaskSwitchView with
+                            member _.showGroupScope _ = ()
                             member _.showHints _ = ()
                             member _.beginSearch(_,_) = ()
                             member _.navigationSteps = 1,1
@@ -1083,22 +1090,57 @@ let main() =
                 use input = new Control()
                 let mutable filterRows = ignore
                 let mutable displayedHints : string array = [||]
+                let mutable shownGroupScope = false
+                let mutable switcherHidden = false
                 let view = {new ITaskSwitchView with
+                    member _.showGroupScope enabled = shownGroupScope <- enabled
                     member _.showHints labels = displayedHints <- labels
                     member _.beginSearch(changed,_) = filterRows <- changed
                     member _.navigationSteps = 1,1
                     member _.replaceRows _ = ()
                     member _.show() = ()
-                    member _.hide() = ()
+                    member _.hide() = switcherHidden <- true
                     member _.select _ = ()
                     member _.inputControl = input
                     member _.deactivated = Event<unit>().Publish
                     member _.hovered = Event<int>().Publish
                     member _.clicked = Event<int>().Publish}
                 let activated = ResizeArray<IntPtr>()
-                let action = TaskSwitchAction(List2([TaskWindowItem(IntPtr 1,None);TaskWindowItem(IntPtr 2,None)]),"List",view=view,activate=activated.Add)
+                let activateAfterClose hwnd =
+                    check switcherHidden "Switcher activated its target before dismissing the popup"
+                    activated.Add hwnd
+                let action = TaskSwitchAction(List2([TaskWindowItem(IntPtr 1,None);TaskWindowItem(IntPtr 2,None)]),"List",view=view,activate=activateAfterClose)
                 action.switchEnd(false)
                 check (Seq.toList activated=[IntPtr 2]) (sprintf "The switcher did not hand the window chosen to the desktop: %A" (Seq.toList activated))
+                let grouped = TaskSwitchAction(List2([TaskWindowItem(1n,None);TaskWindowItem(2n,None)]),"List",view=view,activate=activated.Add,origin=1n,
+                    groupWindows=(fun hwnd -> if hwnd=1n then [TaskWindowItem(1n,None);TaskWindowItem(3n,None)] else []))
+                check (grouped.selectedHwnd=2n) "Opening Alt+Tab did not advance away from the active window"
+                check (grouped.toggleGroup() && shownGroupScope && grouped.selectedHwnd=1n) "G did not expand the original active window group"
+                grouped.switchPrev()
+                check (grouped.selectedHwnd=3n) "Expanded group did not navigate its members"
+                check (grouped.toggleGroup() && not shownGroupScope && grouped.selectedHwnd=2n) "G did not restore the parent selection"
+                grouped.toggleGroup() |> ignore
+                grouped.switchPrev()
+                grouped.releaseAlt()
+                check (activated.[activated.Count-1]=3n) "Alt release did not activate the selected group member"
+                activated.RemoveAt(activated.Count-1)
+                let mutable remembered = true
+                let resume origin backward =
+                    TaskSwitchAction(List2([TaskWindowItem(9n,None);TaskWindowItem(origin,None)]),"List",view=view,activate=activated.Add,
+                        origin=origin,backward=backward,startInGroup=remembered,scopeChanged=(fun value -> remembered <- value),
+                        groupWindows=(fun hwnd -> if hwnd=9n then [] else [TaskWindowItem(1n,None);TaskWindowItem(3n,None);TaskWindowItem(2n,None)]))
+                let resumed = resume 3n false
+                check (shownGroupScope && resumed.selectedHwnd=2n) "Remembered group did not advance in tab order from the active window"
+                resumed.switchEnd(true)
+                let reverse = resume 1n true
+                check (reverse.selectedHwnd=2n) "Remembered group did not wrap backwards"
+                reverse.switchEnd(true)
+                let fallback = resume 9n false
+                check (remembered && not (fallback.toggleGroup())) "Ungrouped fallback erased the remembered scope"
+                fallback.switchEnd(true)
+                let leave = resume 2n false
+                check (leave.toggleGroup() && not remembered) "Returning to all windows did not remember the scope"
+                leave.switchEnd(true)
                 let follow = TaskSwitchAction(List2([for i in 1..5 -> TaskWindowItem(nativeint i,None)]),"List",view=view,activate=activated.Add)
                 check (follow.enterHints("AS")) "F did not enter hint mode"
                 check (displayedHints = [|"AA";"AS";"SA";"SSA";"SSS"|]) "Switcher did not keep the earliest hints short at the two-key capacity boundary"
@@ -1138,6 +1180,21 @@ let main() =
                 let bounds = (tree.RowBounds tree.Roots.[0]).Value
                 check (tree.Left+bounds.Left=switcherForm.ClientSize.Width-tree.Left-bounds.Right)
                       "The vertical switcher's rows have uneven side padding"
+                let layout = typeof<SettingsTreeList>.GetMethod("nameLayout",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
+                let measure() = layout.Invoke(tree,[|box tree.Roots.[0];box 0;box 0|]) :?> (Rectangle * Rectangle)
+                let adjustedIcon,adjustedText = measure()
+                tree.IconOffsetY <- 0
+                let centeredIcon,centeredText = measure()
+                tree.IconOffsetY <- 1
+                check (adjustedIcon.Y=centeredIcon.Y+Dpi.scale 1 && adjustedText=centeredText)
+                      "Switcher icon adjustment moved the text or ignored DPI"
+                tree.SelectedItem <- tree.Roots.[0]
+                use selectedImage = new Bitmap(tree.Width,tree.Height)
+                tree.DrawToBitmap(selectedImage,Rectangle(Point.Empty,selectedImage.Size))
+                let palette = SettingsColors.current()
+                let selectedColor = palette.selection
+                check (selectedImage.GetPixel(tree.Width/2,Dpi.scale 5).ToArgb()=selectedColor.ToArgb())
+                      "Alt+Tab selection differs from the shared list theme"
                 let row = Dpi.scale tree.RowHeight
                 check (control.IndexAt(Point(Dpi.scale 40,row*2+row/2))=Some 2 && control.IndexAt(Point(Dpi.scale 40,row/2))=Some 0)
                       "List rows are not where the pointer finds them"
@@ -1145,6 +1202,15 @@ let main() =
             let windows = [ for title in ["Inbox - Mail";"Project plan.docx - Word";"WindowTabs - Visual Studio"] ->
                               new Form(Text=title,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false) ]
             try
+                let originalTitles = windows |> List.map(fun window -> window.Text)
+                windows.[0].Text <- "Home - File Explorer"
+                windows.[1].Text <- "Home - File Explorer"
+                let duplicateTargets = ResizeArray<IntPtr>()
+                let duplicateView = TaskSwitchIconView(List2([TaskWindowItem(windows.[0].Handle,None);TaskWindowItem(windows.[1].Handle,None)])) :> ITaskSwitchView
+                let duplicateAction = TaskSwitchAction(List2([TaskWindowItem(windows.[0].Handle,None);TaskWindowItem(windows.[1].Handle,None)]),"Icons",view=duplicateView,activate=duplicateTargets.Add)
+                duplicateAction.releaseAlt()
+                check (Seq.toList duplicateTargets=[windows.[1].Handle]) "Same-title windows were not selected by their distinct handles"
+                List.iter2(fun (window:Form) title -> window.Text <- title) windows originalTitles
                 let items count = List2([ for index in 0..count-1 -> TaskWindowItem(windows.[index%windows.Length].Handle,(if index=1 then Some(GroupOfApps []) else None)) ])
                 for style in ["Icons";"List"] do
                     let browsing = items 2
@@ -1164,6 +1230,10 @@ let main() =
                         action.enterSearch()
                         action.releaseAlt()
                         Application.DoEvents()
+                        settleSwitcherResize()
+                        let searchBounds = host.Bounds
+                        if style="List" then
+                            check (searchBounds.Height=(snd before).Height+Dpi.scale 28) "Search header stole space from the window rows"
                         let input = controls host |> Seq.pick(function :? TextBox as t -> Some t | _ -> None)
                         check (host.PointToClient(input.PointToScreen(Point.Empty)).Y < host.ClientSize.Height/2) "The search field was not above the windows"
                         let field = input.Parent
@@ -1181,7 +1251,7 @@ let main() =
                         check (action.selectedHwnd=windows.[0].Handle) "An empty search should keep the browsing selection"
                         input.Text <- "absent"
                         input.Text <- "Studio"
-                        check (host.Visible && (host.Handle,host.Bounds)=before && action.selectedHwnd=windows.[2].Handle)
+                        check (host.Visible && host.Handle=fst before && host.Bounds=searchBounds && action.selectedHwnd=windows.[2].Handle)
                               "Search did not filter in the original Alt+Tab window"
                         action.switchEnd(false)
                         check (Seq.toList accepted=[windows.[2].Handle]) "Inline search activated a different window"
@@ -1262,7 +1332,30 @@ let main() =
                           "Choosing the last window does not select it in the last column alone"
                     // A focused column with nothing chosen would outline its first row.
                     check (trees |> List.forall(fun t -> not t.Focused || not (isNull t.SelectedItem))) "Focus stays on a column without the choice"
+                    let mutable shortHeight = 0
+                    for count in [2;75;60] do
+                        let rows = (items count).list |> List.map(fun item -> {window=item;title="Group member";highlights=[]})
+                        (switcher :> ITaskSwitchView).replaceRows rows
+                        settleSwitcherResize()
+                        if count=2 then shortHeight <- listForm.Height
+                        else check (listForm.Height>shortHeight && listForm.Height<=Screen.FromHandle(listForm.Handle).WorkingArea.Height*85/100) "Switcher height did not grow with its rows"
+                        let labels = Array.create count "A"
+                        listControl.showHints labels
+                        listControl.select (count-1)
+                        let shown = trees |> List.collect(fun tree -> tree.Roots |> Seq.cast<TreeListItem> |> Seq.toList)
+                        check (shown.Length=count && (shown |> List.map(fun item -> item.HintKey))=List.ofArray labels)
+                              "Replacing switcher rows left stale hints or omitted group members"
                     switcher.hide()
+                let resizing = TaskSwitchIconView(items 2)
+                let resizingView = resizing :> ITaskSwitchView
+                try
+                    let small = resizing.Size.Height
+                    let replace count = resizingView.replaceRows ((items count).list |> List.map(fun item -> {window=item;title="Window";highlights=[]}))
+                    replace 6
+                    check (resizing.Size.Height>small) "Icon switcher did not grow when returning to more windows"
+                    replace 2
+                    check (resizing.Size.Height=small) "Icon switcher did not shrink back to its group"
+                finally resizingView.hide()
                 // The pointer finds each icon, left to right, and nothing in the title area.
                 let middle = Dpi.scale 20+Dpi.scale 48
                 let found = [ for x in 0..three.Size.Width-1 -> three.IndexAt(Point(x,middle)) ] |> List.choose id |> List.distinct

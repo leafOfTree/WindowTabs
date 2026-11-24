@@ -559,10 +559,23 @@ module Commands =
                         | None,Some layout -> Some layout.iconOnly
                         | None,None -> Some(Services.settings.getValue("showIconsOnly") :?> bool) }
         { choosing "group-tab-position" Strings.Commands.groupTabPosition GroupCommands hasGroup (snd positionChoice) with current=fst positionChoice }
-        { plain "group-always-on-top" Strings.Commands.groupTopmost GroupCommands hasGroup (onGroup(fun g ->
-              g.run ToggleGroupTopmost
-              readAgain g))
-          with state=fun hwnd -> if hasGroup hwnd then Some(shownChoices hwnd |> Option.exists(fun shown -> shown.alwaysOnTop)) else None }
+        { plain "group-always-on-top" Strings.Commands.groupTopmost GroupCommands WinUserApi.IsWindow (fun hwnd ->
+              match groupOf hwnd with
+              | Some g -> g.run ToggleGroupTopmost; readAgain g
+              | None when WinUserApi.IsWindow hwnd ->
+                  let window = OS().windowFromHwnd hwnd
+                  if window.isTopMost then
+                      window.makeNotTopMost()
+                      if not window.isTopMost then StandalonePinnedFrames.hide hwnd
+                  else
+                      window.makeTopMost()
+                      if window.isTopMost then StandalonePinnedFrames.show hwnd
+              | None -> ())
+          with scope=Everywhere
+               state=fun hwnd ->
+                   if hasGroup hwnd then Some(shownChoices hwnd |> Option.exists(fun shown -> shown.alwaysOnTop))
+                   elif WinUserApi.IsWindow hwnd then Some(OS().windowFromHwnd(hwnd).isTopMost)
+                   else None }
         windowBehavior "group-keep-window-sizes" Strings.Commands.keepWindowSizes ToggleKeepWindowSizes
             (fun shown -> shown.keepWindowSizes)
         windowBehavior "group-inactive-off-screen" Strings.Commands.inactiveOffScreen ToggleInactiveOffScreen

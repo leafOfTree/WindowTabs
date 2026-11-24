@@ -25,6 +25,9 @@ let pumpUntilShowing description (state:unit -> string) predicate =
     with _ -> failwithf "%s: %s" description (state())
 
 let main() =
+    check (SwitchActivation.shouldRetry 1n 2n 1n) "An unchanged foreground should allow one switcher retry"
+    check (not(SwitchActivation.shouldRetry 1n 2n 2n)) "A completed activation must not be repeated"
+    check (not(SwitchActivation.shouldRetry 1n 2n 3n)) "A switcher retry must not steal focus from another window"
     let press = POINT(100,100)
     check (BrowserTabDrag.moved press (POINT(450,200))) "A completed browser drag lost its displacement"
     check (not (BrowserTabDrag.moved press press)) "A browser click looked like a drag"
@@ -627,7 +630,10 @@ let main() =
                         (IndependentWindowParking.parked a) (IndependentWindowParking.parked b)) (fun () ->
                     switched a b && terminal.WindowState=FormWindowState.Normal && terminal.Size=browser.Size &&
                     onGroup fixture (fun group -> group.topWindow=a && group.isPlacementIdle))
-                onGroup fixture (fun group -> group.keepWindowSizes <- true)
+                onGroup fixture (fun group ->
+                    group.keepWindowSizes <- true
+                    check (group.layoutFrame=(OS().windowFromHwnd a).visibleBounds)
+                          "Enabling independent mode did not use the front window frame")
                 let browserSize = browser.Size
                 terminal.WindowState <- FormWindowState.Maximized
                 pumpUntil "The independent terminal did not maximize" (fun () -> onGroup fixture (fun group -> group.isMaximized.value))
@@ -638,6 +644,8 @@ let main() =
                         terminal.WindowState=FormWindowState.Maximized && browser.WindowState=FormWindowState.Normal && browser.Size=browserSize)
                 select b
                 pumpUntil "The restored tab did not appear" (fun () -> switched b a)
+                pumpUntil "Independent switching left the strip at the previous window frame" (fun () ->
+                    onGroup fixture (fun group -> group.bounds.value=Some((OS().windowFromHwnd b).visibleBounds)))
                 let work = Screen.FromHandle(b).WorkingArea
                 let location = Drawing.Point(work.Left + 90, work.Top + 160)
                 browser.Height <- work.Height
@@ -1063,6 +1071,17 @@ let main() =
             pumpUntil "Tab reorder did not reach desktop registry" (fun () -> publicOrder source = [c;a;b])
             check (nativeOrder source = [c;a;b]) "Native tab order differs from registry"
 
+            (source :> IGroup).removeWindow b
+            pumpUntil "Pinned insertion fixture did not detach" (fun () -> publicOrder source=[c;a])
+            PinnedTabs.set b true
+            try
+                (source :> IGroup).addWindow(b,false)
+                pumpUntil "Pinned insertion did not synchronize the full strip order" (fun () ->
+                    nativeOrder source=[b;c;a] && publicOrder source=[b;c;a])
+            finally PinnedTabs.set b false
+            onGroup source (fun group -> group.ts.moveTab(Tab(b),2))
+            pumpUntil "Pinned insertion fixture did not restore order" (fun () -> publicOrder source=[c;a;b])
+
             // The detach completion is observed before attaching to the other STA.
             (source :> IGroup).removeWindow b
             pumpUntil "Detach did not remove source membership" (fun () -> publicOrder source = [c;a])
@@ -1174,6 +1193,20 @@ let main() =
                 (fun () -> sprintf "top %A, foreground %A" (onGroup combined (fun group -> group.topWindow)) (WinUserApi.GetForegroundWindow()))
                 (fun () -> onGroup combined (fun group -> group.topWindow=a))
             checkStripOwner combined
+            let titleA,titleB = forms.[0].Text,forms.[1].Text
+            forms.[0].Text <- "Home - File Explorer"
+            forms.[1].Text <- "Home - File Explorer"
+            for target in [b;a;b;a] do
+                combined.activateFromSwitcher target
+                pumpUntil "Switcher activation did not raise the requested same-title window" (fun () ->
+                    onGroup combined (fun group -> group.topWindow=target))
+            // Finish the switcher's delayed foreground confirmation before testing unrelated placement.
+            let settled = Diagnostics.Stopwatch.StartNew()
+            while settled.ElapsedMilliseconds<200L do
+                Application.DoEvents()
+                Thread.Sleep(5)
+            forms.[0].Text <- titleA
+            forms.[1].Text <- titleB
             // From windows a user could have, on screen: these were made off screen, and Windows had
             // parked them a pixel inside the screen's corner, (1023,719) on a CI runner's small
             // screen, where maximizing the one in front did not hold.

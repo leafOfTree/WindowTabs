@@ -685,6 +685,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             TabSearchNative.SendMessage(input.Handle,TabSearchNative.EM_SETCUEBANNER,IntPtr(1),currentPrompt()) |> ignore
     /// Lists the rows again for a value that changed, the chosen row kept.
     let mutable keptRow : IntPtr option = None
+    let mutable promotedRow : (string * IntPtr) option = None
     /// The row chosen at each level a command's choices or value were opened from, chosen again
     /// on the way back rather than the first.
     let mutable backRows : IntPtr option list = []
@@ -712,6 +713,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     item.Dimmed && not (entry.title.Equals(typed,StringComparison.CurrentCultureIgnoreCase))
                 let dimmed,live = ranked |> List.partition later
                 Array.ofList (live @ dimmed)
+        let shown =
+            match promotedRow with
+            | Some(query,hwnd) when query=input.Text && choices.IsEmpty && (scope=AllTabs || scope=GroupTabs) ->
+                let first,others = shown |> Array.partition(fun (_,entry) -> entry.hwnd=hwnd)
+                Array.append first others
+            | _ -> shown
         // At the right: the row's own detail (the program, a shortcut) or its switch.
         let aside (entry:TabSearchEntry) : PaletteAside =
             match choices,page() with
@@ -808,7 +815,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             match chosen,pickMany,marked with
             | Some _,Some choose,Some selected -> items |> Array.choose(fun (_,entry) -> if selected.Contains entry.hwnd then Some entry.hwnd else None) |> List.ofArray |> choose
             | Some hwnd,Some choose,None -> choose [hwnd]
-            | _ -> chosen |> Option.iter pick
+            | _ -> chosen |> Option.iter(fun hwnd ->
+                // A queued group activation must start after the popup releases foreground.
+                form.Hide()
+                pick hwnd)
             shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
             shadow <- None
             ended.Trigger()
@@ -1360,6 +1370,16 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         try apply() finally keptRow <- None
     member _.SelectWindow(hwnd,keys) =
         list.Roots |> Seq.tryFind(fun row -> (entryOf row).hwnd=hwnd) |> Option.iter(fun row -> selectWindow row keys true)
+    /// Promote the old default choice as well as an explicit remembered window.
+    member _.SelectFirst(?preferred:IntPtr) =
+        let visible hwnd = list.Roots |> Seq.exists(fun item -> (entryOf item).hwnd=hwnd)
+        let target = preferred |> Option.filter visible |> Option.orElseWith selectedRow
+        promotedRow <- target |> Option.map(fun hwnd -> input.Text,hwnd)
+        keptRow <- target
+        try apply() finally keptRow <- None
+        if list.Roots.Count>0 then
+            list.SelectedItem <- list.Roots.[0]
+            list.EnsureVisible list.Roots.[0]
     member _.SelectNext() = move 1
     /// A key pressed in the box, as typing it would.
     member _.Press(keys:Keys) = keyDown (KeyEventArgs(keys))

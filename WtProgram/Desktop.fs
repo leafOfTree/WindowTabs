@@ -42,6 +42,9 @@ type GroupChoicesShown = {
     dock:TabDock; alignment:Bemo.TabAlignment; placed:bool; autoHide:string option; iconOnly:bool
     alwaysOnTop:bool; keepWindowSizes:bool; transparentMode:bool }
 
+module SwitchActivation =
+    let shouldRetry previous target current = current=previous && current<>target
+
 type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =
     let Cell = CellScope(true, true)
     let windowsCell = Cell.create(List2())
@@ -65,19 +68,50 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
         (_group, InvokerService.invoker)
 
     do
-        _group.added.Add <| fun hwnd ->
-            desktopDispatcher.Post <| fun() ->
-                windowsCell.map <| fun l -> l.where((<>) hwnd).append hwnd
-
-        _group.moved.Add <| fun(hwnd, index) ->
-            desktopDispatcher.Post <| fun() ->
-                windowsCell.map <| fun l -> l.move((=) hwnd, index)
+        // Insertion and restart restoration can reorder tabs before the added notification.
+        let publishOrder() =
+            let order = _group.lorder
+            desktopDispatcher.Post(fun () -> windowsCell.set order)
+        _group.added.Add(fun _ -> publishOrder())
+        _group.moved.Add(fun _ -> publishOrder())
 
         _group.removed.Add <| fun hwnd ->
             desktopDispatcher.Post <| fun() ->
                 windowsCell.map <| fun l -> l.where((<>) hwnd)
 
+    do _group.foregroundChanged.Add(fun () ->
+        TaskbarPreviewTrace.write "group-foreground" (WinUserApi.GetForegroundWindow()) "" (sprintf "top=%d" (_group.topWindow.ToInt64())))
+
+    let mutable switchActivation = 0
+
     member this.invokeGroup = invoker.asyncInvoke
+    /// The switcher's input belongs to the main STA; its queued tab activation needs foreground permission.
+    member this.activateFromSwitcher hwnd =
+        this.invokeGroup(fun () ->
+            switchActivation <- switchActivation+1
+            let request = switchActivation
+            let previous = WinUserApi.GetForegroundWindow()
+            TaskbarPreviewTrace.write "switcher-group-before" hwnd "" (sprintf "foreground=%d member=%b" (previous.ToInt64()) (_group.windows.contains hwnd))
+            if _group.windows.contains hwnd then
+                _group.tabActivate(Tab hwnd,true)
+                let timer = new System.Windows.Forms.Timer(Interval=80)
+                let mutable subscription : IDisposable option = None
+                let stop() =
+                    timer.Stop()
+                    timer.Dispose()
+                    subscription |> Option.iter(fun item -> item.Dispose())
+                    subscription <- None
+                subscription <- Some(_group.exited.Subscribe(fun _ -> stop()))
+                timer.Tick.Add(fun _ ->
+                    stop()
+                    let current = WinUserApi.GetForegroundWindow()
+                    TaskbarPreviewTrace.write "switcher-settled" hwnd "" (sprintf "foreground=%d" (current.ToInt64()))
+                    if request=switchActivation && WinUserApi.IsWindow hwnd && _group.windows.contains hwnd && SwitchActivation.shouldRetry previous hwnd current then
+                        TaskbarPreviewTrace.write "switcher-retry" hwnd "" ""
+                        _group.tabActivate(Tab hwnd,true))
+                timer.Start()
+            TaskbarPreviewTrace.write "switcher-group-after" hwnd "" (sprintf "foreground=%d top=%d" (WinUserApi.GetForegroundWindow().ToInt64()) (_group.topWindow.ToInt64())))
+
     /// The group's choices as last read, for the palette to show beside its commands. Main thread only.
     member val shownChoices : GroupChoicesShown option = None with get,set
     member _.shownChoicesChanged = shownChoicesChangedEvent.Publish
