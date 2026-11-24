@@ -59,7 +59,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// Waits for the pointer to rest before the column opens; once open, waits for a menu of the
     /// strip to close before it can shut.
     let hoverOpenTimer = new Timer(Interval=350)
-    let mutable ownMenuOpen = false
+    let mutable ownMenuShown = false
     let dockCell = Cell.create(
         match Services.settings.getValue("tabPosition") :?> string with
         | "Left" -> TabDockLeft
@@ -421,7 +421,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         hoverOpenTimer.Stop()
         if hoverOpenCell.value then
             // A menu of the strip takes the pointer from it: wait for the menu to close.
-            if ownMenuOpen then hoverOpenTimer.Start()
+            if ownMenuShown then hoverOpenTimer.Start()
             else
                 this.withUpdate(fun () ->
                     hoverOpenCell.set(false)
@@ -430,7 +430,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member private this.stepHoverOpen() =
         hoverOpenTimer.Stop()
         if hoverOpenCell.value then
-            if ownMenuOpen then hoverOpenTimer.Start()
+            if ownMenuShown then hoverOpenTimer.Start()
             elif not this.pointerInside then this.closeHoverOpen()
         elif this.visible && this.isVertical && this.isIconOnly && not this.isShrunk && this.slide.IsNone &&
              capturedCell.value.IsNone && columnResize.IsNone && columnScroll.IsNone && rowPress.IsNone &&
@@ -441,7 +441,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 dockChangedEvent.Trigger())
 
     /// Whether a menu opened from this strip is up; menus of other windows do not hold a column open.
-    member this.ownMenuOpen with get() = ownMenuOpen and set(value) = ownMenuOpen <- value
+    member this.ownMenuOpen with get() = ownMenuShown and set(value) = ownMenuShown <- value
 
     /// An icons-only column shows at its full width while the pointer rests on it.
     member this.isHoverOpen = hoverOpenCell.value && this.isVertical && this.isIconOnly
