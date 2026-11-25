@@ -539,9 +539,17 @@ type TabStripDecorator(group:WindowGroup) as this =
                 this.ts.ownMenuOpen <- false
                 this.ts.refreshHover()
                 group.bb.write("contextMenuVisible", false)
-            let menu = new ThemedContextMenu(items,menuClosed,group.windows.contains)
-            contextMenu <- Some menu
-            menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y,os.windowFromHwnd(this.ts.hwnd).bounds.Rectangle)
+            try
+                let menu = new ThemedContextMenu(items,menuClosed,group.windows.contains)
+                contextMenu <- Some menu
+                menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y,os.windowFromHwnd(this.ts.hwnd).bounds.Rectangle)
+            with _ ->
+                // A menu that never showed must not hold an opened column open, or keep auto-hide off.
+                contextMenu |> Option.iter(fun menu -> menu.Dispose())
+                contextMenu <- None
+                this.ts.ownMenuOpen <- false
+                group.bb.write("contextMenuVisible", false)
+                reraise()
 
     member private this.contextMenu(hwnd,images:ResizeArray<Img>) =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()

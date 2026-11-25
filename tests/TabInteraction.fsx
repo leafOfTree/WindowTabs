@@ -916,6 +916,45 @@ let main() =
                         send WindowMessages.WM_MOUSELEAVE Pt.empty
                         OpenMenus.change -1
                         check (not strip.isHoverOpen) "A menu of another window kept an icons-only column open"
+                        // Each move starts the wait again, and the resize edge never opens it.
+                        let restPoint () = typeof<TabStrip>.GetField("hoverRestPoint",flags).GetValue(strip) :?> Pt option
+                        let over = Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20)
+                        pointAt over
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 60))
+                        check (waiting() && restPoint()=Some(Pt(Dpi.scale 20,Dpi.scale 60))) "A moving pointer did not start the wait to open again"
+                        send WindowMessages.WM_MOUSEMOVE (Pt(1,Dpi.scale 20))
+                        check (not (waiting()) && not strip.isHoverOpen) "The resize edge of an icons-only column started to open it"
+                        // A press on the edge of an opened column changes nothing; dragging it keeps
+                        // the titles at the width let go.
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) true)
+                        let edge = Dpi.scale 48-1
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        let savedWidth = strip.columnWidth
+                        let openWidth = strip.columnOpenWidth
+                        let layouts = ref 0
+                        use _layouts = strip.layoutChanged.Subscribe(fun _ -> incr layouts)
+                        send WindowMessages.WM_LBUTTONDOWN (Pt(edge,Dpi.scale 20))
+                        send WindowMessages.WM_LBUTTONUP (Pt(edge,Dpi.scale 20))
+                        check (strip.isHoverOpen && strip.isIconOnly && strip.columnWidth=savedWidth && layouts.Value=0)
+                              "A press without a drag on an opened column's edge changed its layout"
+                        send WindowMessages.WM_LBUTTONDOWN (Pt(edge,Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(edge+Dpi.scale 32,Dpi.scale 20))
+                        send WindowMessages.WM_LBUTTONUP (Pt(edge+Dpi.scale 32,Dpi.scale 20))
+                        check (not strip.isIconOnly && not strip.isHoverOpen && strip.columnWidth=min (snd SettingsCatalog.columnWidthRange) (openWidth+32))
+                              (sprintf "Dragging an opened column's edge did not keep titles at its width: %d" strip.columnWidth)
+                        // Titles shown by a width end an opened column: the next icons-only width
+                        // does not open it with no pointer on it.
+                        strip.columnWidth <- fst SettingsCatalog.columnWidthRange
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        check strip.isHoverOpen "A column icons-only by its width did not open under the resting pointer"
+                        strip.columnWidth <- 220
+                        strip.columnWidth <- fst SettingsCatalog.columnWidthRange
+                        check (not strip.isHoverOpen) "A width with titles left the column to open again by itself"
+                        strip.columnWidth <- savedWidth
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) false)
                         strip.isIconOnly <- false
                     strip.dock <- TabDockTop
                     strip.setPlacement(placement start size false)
