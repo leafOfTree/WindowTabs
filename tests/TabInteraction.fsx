@@ -919,6 +919,15 @@ let main() =
                         send WindowMessages.WM_MOUSELEAVE Pt.empty
                         OpenMenus.change -1
                         check (not strip.isHoverOpen) "A menu of another window kept an icons-only column open"
+                        // Hidden while open under the pointer, it hears no leave; shown again, it is shut.
+                        pointAt (Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        check strip.isHoverOpen "An icons-only column did not open before it was hidden"
+                        strip.visible <- false
+                        strip.visible <- true
+                        check (not strip.isHoverOpen && strip.hoverOpenProgress=0.0 && not (waiting()))
+                              "An icons-only column hidden while open came back open"
                         // Where Windows animates, the column widens over a moment and keeps its titles
                         // until it has narrowed again.
                         let animate () = typeof<TabStrip>.GetMethod("stepHoverOpenAnimation",flags).Invoke(strip,[||]) |> ignore

@@ -1425,7 +1425,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         and set(value) =
             // Windows may hide an owned popup independently of our desired state.
             // Keep the equal-value fast path, but restore externally hidden strips.
-            if not value then this.cancelShortcutMove()
+            if not value then
+                this.cancelShortcutMove()
+                // Hidden under the pointer, the column hears no leave: shown again, it was still open.
+                this.dropHoverOpen()
             if value && visibleCell.value && not this.window.isVisible then this.update()
             else visibleCell.set(value)
             
