@@ -897,9 +897,12 @@ let main() =
                         strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) false)
                         pointAt (Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20))
                         send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
-                        check (waiting() && not strip.isHoverOpen) "An icons-only column did not wait for the pointer to rest before opening"
+                        check (waiting() && not strip.isHoverOpen) "An icons-only column opened inside the move that reached it, not on the next turn"
+                        check ((typeof<TabStrip>.GetField("hoverOpenTimer",flags).GetValue(strip) :?> Timer).Interval<=1) "An icons-only column waited before opening"
+                        let titleWaiting () = (typeof<TabStrip>.GetField("titleTimer",flags).GetValue(strip) :?> Timer).Enabled
                         step()
-                        check strip.isHoverOpen "An icons-only column did not open under the resting pointer"
+                        check strip.isHoverOpen "An icons-only column did not open under the pointer"
+                        check (titleWaiting()) "The tab under the pointer did not start its tip wait again once the column opened"
                         pointAt (Point(-30000,-30000))
                         strip.ownMenuOpen <- true
                         send WindowMessages.WM_MOUSELEAVE Pt.empty
