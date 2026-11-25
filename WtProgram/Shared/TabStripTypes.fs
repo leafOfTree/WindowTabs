@@ -1,6 +1,8 @@
 namespace Bemo
 open System
 open System.Drawing
+open System.Drawing.Drawing2D
+open System.Drawing.Imaging
 
 type Tab = Tab of IntPtr
 
@@ -152,7 +154,7 @@ and TabAppearanceInfo = {
 /// place within the grabbed tab even when earlier tabs join it in the picture.
 module DragTabs =
     /// Centre the grabbed tab over its window preview.
-    let withPreview (limit:Sz) (tab:Img) (preview:Img) =
+    let withPreview cornerRadius (limit:Sz) (tab:Img) (preview:Img) =
         let width = max tab.width limit.width
         let ratio = min (float width / float preview.width) (float limit.height / float preview.height)
         let w,h = max 1 (int(float preview.width*ratio)),max 1 (int(float preview.height*ratio))
@@ -160,7 +162,20 @@ module DragTabs =
         try
             use g = image.graphics
             g.DrawImageUnscaled(tab.bitmap,(width-tab.width)/2,0)
-            g.DrawImage(preview.bitmap,Rectangle((width-w)/2,tab.height,w,h))
+            let bounds = Rectangle((width-w)/2,tab.height,w,h)
+            use scaled = new Bitmap(w,h)
+            do
+                use previewGraphics = Graphics.FromImage(scaled)
+                // Keep the resampler from mixing transparent pixels into the thumbnail's edges.
+                use edges = new ImageAttributes()
+                edges.SetWrapMode(WrapMode.TileFlipXY)
+                previewGraphics.DrawImage(preview.bitmap,Rectangle(0,0,w,h),0,0,preview.width,preview.height,GraphicsUnit.Pixel,edges)
+            use brush = new TextureBrush(scaled,WrapMode.TileFlipXY)
+            brush.TranslateTransform(float32 bounds.X,float32 bounds.Y)
+            use outline = DrawingPaths.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 w,float32 h)) cornerRadius
+            g.SmoothingMode <- SmoothingMode.AntiAlias
+            g.PixelOffsetMode <- PixelOffsetMode.Half
+            g.FillPath(brush,outline)
             image
         with _ ->
             image.bitmap.Dispose()

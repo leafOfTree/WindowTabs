@@ -31,19 +31,42 @@ let frames strip = frameProperty.GetValue(strip) :?> int64
 let main() =
     do
         let tab = Img(Sz(100,24))
-        let preview = Img(Sz(800,600))
+        use source = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,
+                              StartPosition=FormStartPosition.Manual,Location=Point(40,40),
+                              ClientSize=Size(800,600),BackColor=Color.Blue)
+        source.Show()
+        source.Update()
+        let mutable captured = false
+        use capture = Win32Helper.PrintWindow(source.Handle,&captured)
+        check captured "The dragged thumbnail fixture could not be captured"
+        use stream = new MemoryStream()
+        capture.Save(stream,System.Drawing.Imaging.ImageFormat.Png)
+        stream.Position <- 0L
+        use decoded = new Bitmap(stream)
+        let preview = Img(decoded)
         try
             use g = tab.graphics
             g.Clear(Color.Red)
-            let image = DragTabs.withPreview (Sz(240,180)) tab preview
+            let image = DragTabs.withPreview 6.0f (Sz(240,180)) tab preview
             try
                 check (image.height>tab.height && image.width>=tab.width) "A single dragged tab has no preview area"
                 let left = (image.width-tab.width)/2
                 check (image.bitmap.GetPixel(left+5,5)=Color.FromArgb(255,255,0,0) && image.bitmap.GetPixel(left-1,5).A=0uy && image.bitmap.GetPixel(left+tab.width,5).A=0uy) "The dragged tab is not centred over its preview"
+                let top,bottom = tab.height,image.height-1
+                let right = image.width-1
+                for x,y in [0,top; right,top; 0,bottom; right,bottom] do
+                    check (image.bitmap.GetPixel(x,y).A=0uy) "A dragged thumbnail corner is opaque"
+                check (image.bitmap.GetPixel(image.width/2,top-1).A=255uy && image.bitmap.GetPixel(image.width/2,top).A=255uy) "A transparent seam separates the tab from its preview"
+                let padding = 9
+                let shaded = TabShadow.withDragShadow padding image
+                use shadedBitmap = shaded.bitmap
+                let centre = image.width/2
+                check (shadedBitmap.GetPixel(centre+padding,bottom+padding+1).A>0uy) "The drag preview has no shadow below it"
+                for y in [top-1; top] do
+                    check (shadedBitmap.GetPixel(centre+padding,y+padding)=image.bitmap.GetPixel(centre,y)) "The shadow changed the tab and thumbnail junction"
             finally image.bitmap.Dispose()
         finally
             tab.bitmap.Dispose()
-            preview.bitmap.Dispose()
     // Frame counts below assume a change paints once; the auto-hide animation is tested on its own.
     TabReveal.forced <- Some false
     let original = Environment.CurrentDirectory

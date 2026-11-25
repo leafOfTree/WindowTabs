@@ -532,6 +532,8 @@ type DragAction(info:DragActionInfo) =
                     carriedImage <- Some(info.image())
                     let (Tab hwnd) = drag.tab
                     let limit = Sz(Dpi.scale 240,Dpi.scale 180)
+                    let cornerRadius = float32 (Dpi.scale 6)
+                    let shadowPadding = Dpi.scale 9
                     // A detached tab leaves its group's capture cache; this picture belongs to
                     // the drag so that completion still arrives after that membership is gone.
                     ThreadHelper.queueBackground(fun () ->
@@ -545,8 +547,10 @@ type DragAction(info:DragActionInfo) =
                                 | Some tab when not finished ->
                                     use stream = new System.IO.MemoryStream(bytes)
                                     use bitmap = new System.Drawing.Bitmap(stream)
-                                    let image = DragTabs.withPreview limit tab (Img(bitmap))
-                                    previewOffset <- Pt((image.width-tab.width)/2,0)
+                                    let preview = DragTabs.withPreview cornerRadius limit tab (Img(bitmap))
+                                    use previewBitmap = preview.bitmap
+                                    let image = TabShadow.withDragShadow shadowPadding preview
+                                    previewOffset <- Pt((preview.width-tab.width)/2+shadowPadding,shadowPadding)
                                     animationWindowCell.value.Value.setImage(image)
                                 | _ -> ())
                         with _ -> ())
