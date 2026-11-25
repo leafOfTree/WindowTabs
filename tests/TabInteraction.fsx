@@ -916,15 +916,36 @@ let main() =
                         send WindowMessages.WM_MOUSELEAVE Pt.empty
                         OpenMenus.change -1
                         check (not strip.isHoverOpen) "A menu of another window kept an icons-only column open"
-                        // Each move starts the wait again, and the resize edge never opens it.
-                        let restPoint () = typeof<TabStrip>.GetField("hoverRestPoint",flags).GetValue(strip) :?> Pt option
-                        let over = Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20)
-                        pointAt over
+                        // Where Windows animates, the column widens over a moment and keeps its titles
+                        // until it has narrowed again.
+                        let animate () = typeof<TabStrip>.GetMethod("stepHoverOpenAnimation",flags).Invoke(strip,[||]) |> ignore
+                        TabReveal.forced <- Some true
+                        pointAt (Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20))
                         send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
-                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 60))
-                        check (waiting() && restPoint()=Some(Pt(Dpi.scale 20,Dpi.scale 60))) "A moving pointer did not start the wait to open again"
+                        step()
+                        check (strip.isHoverOpen && strip.hoverOpenProgress<1.0) "An icons-only column opened at once where Windows animates"
+                        Threading.Thread.Sleep(int TabReveal.duration+50)
+                        animate()
+                        check (strip.hoverOpenProgress=1.0) (sprintf "An opening column did not reach its full width: %f" strip.hoverOpenProgress)
+                        pointAt (Point(-30000,-30000))
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        check (strip.isHoverOpen && strip.hoverOpenProgress=1.0) "A shutting column dropped its titles before it narrowed"
+                        Threading.Thread.Sleep(int TabReveal.duration+50)
+                        animate()
+                        check (not strip.isHoverOpen && strip.hoverOpenProgress=0.0) "A shut column kept its titles"
+                        TabReveal.forced <- Some false
+                        // The resize edge never opens it, whether the pointer comes to it first or
+                        // moves onto it while the column waits to open.
+                        let over = Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20)
+                        pointAt (Point(start.x+1,start.y+Dpi.scale 20))
                         send WindowMessages.WM_MOUSEMOVE (Pt(1,Dpi.scale 20))
                         check (not (waiting()) && not strip.isHoverOpen) "The resize edge of an icons-only column started to open it"
+                        pointAt over
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        pointAt (Point(start.x+1,start.y+Dpi.scale 20))
+                        step()
+                        check (not strip.isHoverOpen) "An icons-only column opened under a pointer on its resize edge"
+                        pointAt over
                         // A press on the edge of an opened column changes nothing; dragging it keeps
                         // the titles at the width let go.
                         strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) true)

@@ -316,13 +316,14 @@ type TabStripDecorator(group:WindowGroup) as this =
 
     /// Where the strip stands now: a column the pointer opened is wider than the one saved.
     member private this.shownPlacement(frame:Rect,maximized:bool) =
-        this.placementWith(frame,maximized,this.ts.isHoverOpen)
+        this.placementWith(frame,maximized,this.ts.hoverOpenProgress)
 
     /// Where the strip would stand in its saved layout, for a window not yet there.
     member private this.placementFor(frame:Rect,maximized:bool) =
-        this.placementWith(frame,maximized,false)
+        this.placementWith(frame,maximized,0.0)
 
-    member private this.placementWith(frame:Rect,maximized:bool,opened:bool) =
+    /// `opened`: how far a column the pointer opens has widened, 0 to 1.
+    member private this.placementWith(frame:Rect,maximized:bool,opened:float) =
         let readAreas() = Mon.all.map(fun m -> m.workRect)
         let areas =
             if not group.isMoving.value then readAreas()
@@ -346,7 +347,11 @@ type TabStripDecorator(group:WindowGroup) as this =
             let position = match this.ts.columnSlide with Some fraction -> Some fraction | None -> this.ts.position
             let placed = decorator.sidePlacement(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
                                                  alignment=this.ts.getAlignment TabUp,maximized=maximized,?position=position)
-            let placed = if opened then decorator.widenSide(this.ts.dock,placed,Dpi.scale this.ts.columnOpenWidth) else placed
+            let placed =
+                if opened<=0.0 then placed
+                else
+                    let wide = Dpi.scale this.ts.columnOpenWidth
+                    decorator.widenSide(this.ts.dock,placed,width+int(Math.Round(float(wide-width)*opened)))
             let span = decorator.sideSpan(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
                                           alignment=this.ts.getAlignment TabUp,maximized=maximized,?position=position)
             placed,Some span

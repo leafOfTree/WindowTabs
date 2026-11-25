@@ -56,11 +56,15 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// An icons-only column opens to its full width while the pointer rests on it, as a browser's
     /// collapsed side bar does. Presentation only: the saved layout stays icons only.
     let hoverOpenCell = Cell.create(false)
-    /// Waits for the pointer to rest before the column opens; once open, waits for a menu of the
-    /// strip to close before it can shut.
-    let hoverOpenTimer = new Timer(Interval=350)
-    /// Where the pointer last moved to on the strip; each new point starts the wait again.
-    let mutable hoverRestPoint : Pt option = None
+    /// A pointer only passing over the column does not open it; once open, waits for a menu of
+    /// the strip to close before it can shut.
+    let hoverOpenTimer = new Timer(Interval=150)
+    /// How far the column has opened, eased from 0 to 1, as it widens and narrows in the time an
+    /// auto-hidden strip takes to expand.
+    let mutable hoverOpenShare = 0.0
+    let mutable hoverOpenFrom = 0.0
+    let hoverOpenClock = Diagnostics.Stopwatch()
+    let hoverOpenAnimation = new Timer(Interval=15)
     let mutable ownMenuShown = false
     let dockCell = Cell.create(
         match Services.settings.getValue("tabPosition") :?> string with
@@ -232,6 +236,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             | _ -> dragScrollTimer.Stop())
         titleTimer.Tick.Add(fun _ -> titleTimer.Stop(); this.showTitle())
         hoverOpenTimer.Tick.Add(fun _ -> this.stepHoverOpen())
+        hoverOpenAnimation.Tick.Add(fun _ -> this.stepHoverOpenAnimation())
         captureWatch.Tick.Add(fun _ ->
             if this.isVertical && WinUserApi.GetCapture()=IntPtr.Zero then
                 this.refreshHover(trackLeave=false)
@@ -416,30 +421,23 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 hoverCell.set(None)
                 heldLayoutCell.set(None))
 
-    /// The pointer on an icons-only column, at rest, opens it, see stepHoverOpen.
-    /// Each move starts the wait again, and the resize edge never opens it: the edge would move
-    /// away from the pointer about to take it.
+    /// The pointer on an icons-only column opens it a moment later, see stepHoverOpen. The resize
+    /// edge never does: the edge would move away from the pointer about to take it.
     member private this.armHoverOpen(pt:Pt) =
-        if hoverOpenCell.value then ()
+        if hoverOpenCell.value || hoverOpenTimer.Enabled then ()
         elif this.isVertical && this.isIconOnly && not this.isShrunk && not (this.isColumnResizeEdge pt) then
-            if hoverRestPoint<>Some pt then
-                hoverRestPoint <- Some pt
-                hoverOpenTimer.Stop()
-                hoverOpenTimer.Start()
-        else
-            hoverRestPoint <- None
-            hoverOpenTimer.Stop()
+            hoverOpenTimer.Start()
 
     member private this.closeHoverOpen() =
         hoverOpenTimer.Stop()
-        hoverRestPoint <- None
         if hoverOpenCell.value then
             // A menu of the strip takes the pointer from it: wait for the menu to close.
             if ownMenuShown then hoverOpenTimer.Start()
-            else
-                this.withUpdate(fun () ->
-                    hoverOpenCell.set(false)
-                    dockChangedEvent.Trigger())
+            else this.setHoverOpen(false)
+
+    member private this.pointerOnEdge =
+        let cursor = pointerSource()
+        this.isColumnResizeEdge(Pt(cursor.X-location.x,cursor.Y-location.y))
 
     member private this.stepHoverOpen() =
         hoverOpenTimer.Stop()
@@ -448,17 +446,48 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             elif not this.pointerInside then this.closeHoverOpen()
         elif this.visible && this.isVertical && this.isIconOnly && not this.isShrunk && this.slide.IsNone &&
              capturedCell.value.IsNone && columnResize.IsNone && columnScroll.IsNone && rowPress.IsNone &&
-             not (OpenMenus.any()) && this.pointerInside then
+             not (OpenMenus.any()) && this.pointerInside && not this.pointerOnEdge then
             this.hideTitle()
-            this.withUpdate(fun () ->
-                hoverOpenCell.set(true)
-                dockChangedEvent.Trigger())
+            this.setHoverOpen(true)
+
+    /// Widens or narrows the column from where it is, or at once where Windows does not animate.
+    member private this.setHoverOpen(value) =
+        this.withUpdate(fun () ->
+            hoverOpenCell.set(value)
+            if this.visible && renderedFrames>0L && TabReveal.enabled() then
+                hoverOpenFrom <- hoverOpenShare
+                hoverOpenClock.Restart()
+                hoverOpenAnimation.Start()
+            else
+                hoverOpenAnimation.Stop()
+                hoverOpenShare <- if value then 1.0 else 0.0
+            dockChangedEvent.Trigger())
+
+    member private this.stepHoverOpenAnimation() =
+        let target = if hoverOpenCell.value then 1.0 else 0.0
+        let span = TabReveal.duration*abs(target-hoverOpenFrom)
+        let t = if span<=0.0 then 1.0 else min 1.0 (hoverOpenClock.Elapsed.TotalMilliseconds/span)
+        hoverOpenShare <- hoverOpenFrom+(target-hoverOpenFrom)*TabReveal.ease t
+        if t>=1.0 then
+            hoverOpenShare <- target
+            hoverOpenAnimation.Stop()
+        this.withUpdate(fun () -> dockChangedEvent.Trigger())
+
+    /// Shuts an opened column at once, for a change of layout that leaves nothing to open.
+    member private this.dropHoverOpen() =
+        hoverOpenTimer.Stop()
+        hoverOpenAnimation.Stop()
+        hoverOpenShare <- 0.0
+        hoverOpenCell.set(false)
 
     /// Whether a menu opened from this strip is up; menus of other windows do not hold a column open.
     member this.ownMenuOpen with get() = ownMenuShown and set(value) = ownMenuShown <- value
 
-    /// An icons-only column shows at its full width while the pointer rests on it.
-    member this.isHoverOpen = hoverOpenCell.value && this.isVertical && this.isIconOnly
+    /// An icons-only column shows its titles while the pointer keeps it open, and while it shuts.
+    member this.isHoverOpen = (hoverOpenCell.value || hoverOpenShare>0.0) && this.isVertical && this.isIconOnly
+
+    /// How far the column has opened, 0 to 1, for its owner to place it.
+    member this.hoverOpenProgress = if this.isVertical && this.isIconOnly then hoverOpenShare else 0.0
 
     /// The width it opens to, in logical pixels: the column's own, else the default.
     member this.columnOpenWidth =
@@ -876,8 +905,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         with get() = iconOnlyCell.value || (this.isVertical && columnWidthValue=fst SettingsCatalog.columnWidthRange)
         and set(value) =
             if value<>this.isIconOnly then
-                hoverOpenTimer.Stop()
-                hoverOpenCell.set(false)
+                this.dropHoverOpen()
                 iconOnlyCell.set(value)
                 if this.isVertical && not value && columnWidthValue=fst SettingsCatalog.columnWidthRange then this.columnWidth <- SettingsCatalog.columnWidthDefault
                 else
@@ -888,9 +916,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         with get() = dockCell.value
         and set(value) =
             this.hideTitle()
-            hoverOpenTimer.Stop()
             this.withUpdate(fun () ->
-                hoverOpenCell.set(false)
+                this.dropHoverOpen()
                 slideCell.set(None)
                 heldLayoutCell.set(None)
                 scrollOffsetCell.set(0)
@@ -913,7 +940,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if next<>columnWidthValue || reveal then
             columnWidthValue <- next
             // Titles shown, by the edge or a width from a layout, end a column the pointer opened.
-            if not this.isIconOnly then hoverOpenCell.set(false)
+            if not this.isIconOnly then this.dropHoverOpen()
             dockChangedEvent.Trigger()
             layoutChangedEvent.Trigger(true)
 
@@ -1442,6 +1469,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         captureWatch.Dispose()
         titleTimer.Dispose()
         hoverOpenTimer.Dispose()
+        hoverOpenAnimation.Dispose()
         tipRequest <- tipRequest+1
         tipTarget <- None
         titleTip |> Option.iter(fun tip -> tip.Dispose())
