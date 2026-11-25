@@ -593,7 +593,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 titleTip <- Some tip
                 tip
         tip.show(text,font,anchor.Rectangle,?pointerX=(aim |> Option.map(fun pt -> pt.X)),
-                 ?side=(if this.isVertical && aim.IsSome then Some this.dock else None),
+                 // Beside a column, toward the window: below a tab it covered the next one.
+                 ?side=(if this.isVertical then Some this.dock else None),
                  ?pointerY=(aim |> Option.map(fun pt -> pt.Y)),?image=picture)
 
     member internal _.titleTipShown = titleTip |> Option.exists(fun tip -> tip.Visible)

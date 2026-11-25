@@ -1066,6 +1066,17 @@ let main() =
                               "The title tip followed the pointer instead of staying centered under its tab"
                         hover 460
                         check (tip.Visible && centeredOn (Tab(IntPtr 103))) "The title tip did not move under the next tab"
+                        // In a column the tip stands beside its tab, level with it, clear of the tabs below.
+                        strip.dock <- TabDockLeft
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(220,400))) false)
+                        let first = Tab(IntPtr 101)
+                        typeof<TabStrip>.GetMethod("showTip",flags).Invoke(strip,[|box first;box (None:Bitmap option)|]) |> ignore
+                        let at = strip.tabLocation first
+                        check (tip.Visible && tip.Left>=start.x+Dpi.scale 150 && tip.Top=start.y+at.y)
+                              (sprintf "A column's title tip did not stand beside its tab: at %A, tab at %A" tip.Location at)
+                        strip.dock <- TabDockTop
+                        strip.setPlacement(placement start size false)
+                        rest()
                     hover 460
                     check (shown()) "Moving between cut-short titles did not show the next one at once"
                     hover 260
