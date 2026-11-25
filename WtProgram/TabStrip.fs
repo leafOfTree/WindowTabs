@@ -500,9 +500,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// How far the column has opened, 0 to 1, for its owner to place it.
     member this.hoverOpenProgress = if this.isVertical && this.isIconOnly then hoverOpenShare else 0.0
 
-    /// The width it opens to, in logical pixels: the column's own, else the default.
-    member this.columnOpenWidth =
-        if columnWidthValue>fst SettingsCatalog.columnWidthRange then columnWidthValue else SettingsCatalog.columnWidthDefault
+    /// The width it opens to, in logical pixels: a sidebar's width, or wider if the column was
+    /// already given more.
+    member this.columnOpenWidth = max 250 columnWidthValue
 
     member private this.hideTitle() =
         titleTimer.Stop()

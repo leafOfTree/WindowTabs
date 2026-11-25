@@ -115,7 +115,7 @@ let main() =
             // monitor is not moved onto one.
             let screen = Rect(Pt(0,0),Dpi.scaleSize(Sz(1920,1080)))
             let narrow = Dpi.scale 48
-            let wide = Dpi.scale 220
+            let wide = Dpi.scale 250
             let opening = {windowBounds=screen;monitorBounds=List2([screen]);decoratorHeight=Dpi.scale 32
                            decoratorHeightOffset=0;decoratorIndentNormal=0;decoratorIndentFlipped=0}
             let column x inside = {bounds=Rect(Pt(x,Dpi.scale 100),Sz(narrow,Dpi.scale 400));showInside=inside}

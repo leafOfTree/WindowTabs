@@ -29,7 +29,7 @@ Changes since v2026.10.25-beta.1. This remains a preview release.
 - Show icons only, under Settings → General, starts new groups with icons only and
   reaches the open ones; a group's own choice is saved with its layout and goes with a tab
   dragged out. Contributed by @hawdgeal.
-- An icons-only vertical column slides open to its full width when the pointer comes onto it,
+- An icons-only vertical column slides open to a sidebar's width when the pointer comes onto it,
   as a browser's collapsed tab bar does, and slides shut when the pointer leaves. A column inside the
   window opens over it; dragging the open column's edge keeps it at that width, with titles.
 - New tab (Ctrl + Alt + N or the tab menu) opens its window in the same group, right after

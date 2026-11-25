@@ -966,6 +966,23 @@ let main() =
                         step()
                         let savedWidth = strip.columnWidth
                         let openWidth = strip.columnOpenWidth
+                        check (openWidth>=250) (sprintf "An icons-only column opened narrower than a sidebar: %d" openWidth)
+                        // Icons stay on the 48px rail's centre across collapsed, intermediate and open widths.
+                        let iconX () =
+                            let loc,tab = strip.tabSprites.head
+                            (tab :> ISprite).children.list |> List.pick(fun (pt,child) -> if child :? IconSprite then Some(loc.x+pt.x) else None)
+                        strip.visible <- false; strip.visible <- true
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) true)
+                        let closedIconX = iconX()
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(64,400))) true)
+                        let midIconX = iconX()
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(openWidth,400))) true)
+                        let openIconX = iconX()
+                        check (closedIconX=midIconX && midIconX=openIconX)
+                              (sprintf "Opening an icons-only column shifted its icons: %d -> %d -> %d" closedIconX midIconX openIconX)
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) true)
                         let layouts = ref 0
                         use _layouts = strip.layoutChanged.Subscribe(fun _ -> incr layouts)
                         send WindowMessages.WM_LBUTTONDOWN (Pt(edge,Dpi.scale 20))
