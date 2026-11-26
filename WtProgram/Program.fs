@@ -72,12 +72,13 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let mutable startupInputReady = false
     let tabSearchCell = Cell.create(None:TabSearchForm option)
     let groupEditorCell = Cell.create(None:GroupEditorForm option)
-    /// What was typed when each box last closed, the window search's and the palette's, offered
-    /// again, selected, the next time it opens.
+    /// What was typed when each box last closed, offered again, selected, the next time it opens.
     let mutable lastWindowQuery = ""
+    let mutable lastGroupQuery = ""
     let mutable lastPaletteQuery = ""
     /// The row each box had chosen as it closed, chosen again with its search.
     let mutable lastWindowRow : IntPtr option = None
+    let mutable lastGroupRow : IntPtr option = None
     let mutable lastPaletteRow : IntPtr option = None
     let isTabMonitoringSuspendedCell = Cell.create(0)
     let llMouseEvent = Event<_>()
@@ -150,6 +151,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// The window each key was given to in the window search, by its code: the key goes there while
     /// it is open, whatever its name has become or however many share it.
     let boundWindows = Dictionary<int,IntPtr>()
+    /// The live group each key was given to in Switch groups, by its code -> groupToken.
+    let boundGroups = Dictionary<int,int>()
     // Native events can pump during startup, before the filter is registered in run.
     // The initial full refresh processes those windows once the services are ready.
     let refreshQueue = lifetime.Own(new WindowRefreshQueue(30, this.updateChangedWindows, this.updateAppWindows,
@@ -1249,9 +1252,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// open on that scope already; open on another scope, it goes there instead.
     member this.togglePalette(scope:PaletteScope option) =
         match tabSearchCell.value with
-        // The window search and the command palette are two boxes: the key of the one open closes
-        // it, the other's puts its box up instead.
-        | Some search when search.HasWindows<>scope.IsNone ->
+        // The window search, group search and command palette are separate boxes: the key of the
+        // one open closes it, another's puts its box up instead.
+        | Some search when (match scope with None -> not search.HasWindows | Some wanted -> search.HasWindows || not (search.HasScope wanted)) ->
             search.Close()
             (this.openPalette(scope) : TabSearchForm).Show()
         | Some search when (match scope with None -> true | Some wanted -> search.Scope=wanted) -> search.Close()
@@ -1259,9 +1262,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         | None -> (this.openPalette(scope) : TabSearchForm).Show()
 
     /// The box over the window in front, built but not shown: the window search for no scope,
-    /// else the command palette on that scope.
+    /// else Switch groups or the command palette on that scope.
     member private this.openPalette(scope:PaletteScope option) : TabSearchForm =
         let active = WinUserApi.GetForegroundWindow()
+        let mutable activeGroupId = IntPtr.Zero
         let search =
             match scope with
             | None ->
@@ -1315,6 +1319,16 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                                { name=defaultArg name other.title; key=""
                                                  release=(fun () -> replace keys [] |> ignore)
                                                  restore=(fun () -> replace [] keys |> ignore) })
+                                           |> Option.orElseWith(fun () ->
+                                               let groups = this.shortcutGroups()
+                                               this.groupShortcuts() |> List.tryFind(fun other -> other.code=code)
+                                               |> Option.map(fun other ->
+                                                   let target = GroupShortcuts.target this.boundGroup groups other
+                                                   let keys = match target with Some g -> GroupShortcuts.landingOn this.boundGroup groups (this.groupShortcuts()) g.groupToken |> List.map(fun key -> key,this.boundGroup key) | None -> [other,this.boundGroup other]
+                                                   let name = target |> Option.map(fun g -> g.label) |> Option.defaultValue (if String.IsNullOrWhiteSpace other.label then tr Strings.Settings.switchGroups.caption else other.label)
+                                                   { name=name; key=""
+                                                     release=(fun () -> this.replaceGroupShortcuts keys [] |> ignore)
+                                                     restore=(fun () -> this.replaceGroupShortcuts [] keys |> ignore) }))
                                // The row's keys give way to this one, which goes to this window.
                                set=fun code -> replace (landing entry.hwnd) [{ path=path; title=entry.title; code=code },Some entry.hwnd]
                                inList=false }
@@ -1329,6 +1343,117 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                         | key -> { entry with keys=[key.ToLowerInvariant()] })
                 TabSearchForm(entries,group,settings=(settingsManager :> ISettings),pick=this.activateWindow,
                               windowShortcut=windowShortcut,windowShortcutText=windowShortcutText)
+            | Some GroupScope ->
+                let candidates = this.shortcutGroups()
+                let activeGroup = candidates |> List.tryFind(fun group -> List.contains active group.windows)
+                activeGroup |> Option.iter(fun group -> activeGroupId <- IntPtr(group.groupToken))
+                // The group in front last: Enter switches to the previous group, while the active
+                // group stays listed to be found by name and given a shortcut.
+                let ordered =
+                    match activeGroup with
+                    | Some current -> (candidates |> List.filter(fun group -> group.groupToken<>current.groupToken)) @ [current]
+                    | None -> candidates
+                let byId = ordered |> List.map(fun group -> IntPtr(group.groupToken),group) |> Map.ofList
+                let known : GroupShortcut list option ref = ref None
+                let shortcuts() =
+                    match known.Value with
+                    | Some saved -> saved
+                    | None ->
+                        let saved = this.groupShortcuts()
+                        known.Value <- Some saved
+                        saved
+                let liveGroups = lazy candidates
+                let bound shortcut = this.boundGroup shortcut
+                let shortcutOf (group:GroupShortcutCandidate) = GroupShortcuts.shownOn bound liveGroups (shortcuts()) group.groupToken
+                let shortcutText (group:GroupShortcutCandidate) =
+                    shortcutOf group |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""
+                let processPath hwnd = try os.windowFromHwnd(hwnd).pid.processPath with _ -> ""
+                let iconWindows (group:GroupShortcutCandidate) =
+                    group.windows
+                    |> List.distinctBy(fun hwnd -> match AppIdentity.key (processPath hwnd) with "" -> string hwnd | key -> key)
+                    |> List.truncate 6
+                let groupShortcut (entry:TabSearchEntry) =
+                    Map.tryFind entry.hwnd byId |> Option.map(fun group ->
+                        let program = this :> IProgram
+                        let saved() : GroupShortcut list = shortcuts()
+                        let current() = shortcutOf group |> Option.map(fun s -> s.code) |> Option.defaultValue 0
+                        let landing token = GroupShortcuts.landingOn bound liveGroups.Value (saved()) token |> List.map(fun key -> key,bound key)
+                        let replace removed added =
+                            let done' = this.replaceGroupShortcuts removed added
+                            known.Value <- None
+                            done'
+                        { current=current()
+                          usedBy=fun code ->
+                              if code=0 then None
+                              else
+                                  let settings = settingsManager :> ISettings
+                                  match Commands.holderOf program.getHotKey program.setHotKey (fun key code -> settings.setHotKey key code) "" code with
+                                  | Some holder -> Some holder
+                                  | None ->
+                                      let lands = landing group.groupToken |> List.map fst
+                                      saved() |> List.tryFind(fun other -> other.code=code && not (List.contains other lands))
+                                      |> Option.map(fun other ->
+                                          let target = GroupShortcuts.target bound liveGroups.Value other
+                                          let keys = match target with Some g -> landing g.groupToken | None -> [other,bound other]
+                                          let name = target |> Option.map(fun g -> g.label) |> Option.defaultValue (if String.IsNullOrWhiteSpace other.label then tr Strings.Settings.switchGroups.caption else other.label)
+                                          { name=name; key=""
+                                            release=(fun () -> replace keys [] |> ignore)
+                                            restore=(fun () -> replace [] keys |> ignore) })
+                                      |> Option.orElseWith(fun () ->
+                                          let windows = this.shortcutWindows()
+                                          this.windowShortcuts() |> List.tryFind(fun other -> other.code=code)
+                                          |> Option.map(fun other ->
+                                              let window = WindowShortcuts.target this.boundWindow windows other
+                                              let keys = match window with Some hwnd -> WindowShortcuts.landingOn this.boundWindow windows (this.windowShortcuts()) hwnd |> List.map(fun key -> key,this.boundWindow key) | None -> [other,this.boundWindow other]
+                                              let name = windows |> List.tryPick(fun (hwnd,_,title) -> if Some hwnd=window then Some title else None)
+                                              { name=defaultArg name other.title; key=""
+                                                release=(fun () -> this.replaceWindowShortcuts keys [] |> ignore)
+                                                restore=(fun () -> this.replaceWindowShortcuts [] keys |> ignore) }))
+                          set=fun code ->
+                              replace (landing group.groupToken)
+                                      [{ ruleGroupId=defaultArg group.ruleGroupId ""; groupToken=group.groupToken; paths=group.paths; titles=group.titles; label=group.label; code=code },Some group.groupToken]
+                          inList=false })
+                let entries =
+                    ordered |> List.mapi(fun index group ->
+                        let desktop = match List.tryHead group.windows with Some front -> TabSearch.desktopOf (os.windowFromHwnd front) | None -> ""
+                        let origTitles = group.windows |> List.map(fun hwnd -> try os.windowFromHwnd(hwnd).text with _ -> "")
+                        let programs =
+                            group.windows |> List.choose(fun hwnd ->
+                                let window = os.windowFromHwnd hwnd
+                                if window.className="ApplicationFrameWindow" then None
+                                else try Some(IO.Path.GetFileNameWithoutExtension(window.pid.exeName)) with _ -> None)
+                        let keywords =
+                            (group.label :: group.titles @ origTitles @ programs @ [desktop])
+                            |> List.filter(fun text -> not (String.IsNullOrWhiteSpace text))
+                            |> List.distinct
+                            |> List.map(fun text -> text.ToLowerInvariant())
+                        let key = (shortcutText group).ToLowerInvariant()
+                        { hwnd=IntPtr(group.groupToken)
+                          title=group.label
+                          program=tr (Strings.TabSearch.windows group.windows.Length)
+                          keywords=keywords
+                          keys=(if key="" then [] else [key])
+                          group=index
+                          recency=index
+                          desktop=desktop })
+                let page : PalettePage =
+                    { scope=GroupScope
+                      caption=tr Strings.TabSearch.groups
+                      prompt=tr Strings.TabSearch.groupPrompt
+                      noMatches=tr Strings.TabSearch.noGroups
+                      noEntries=tr Strings.TabSearch.noOpenGroups
+                      glyph=WindowGlyph
+                      icons=(fun entry -> Map.tryFind entry.hwnd byId |> Option.map iconWindows |> Option.defaultValue [])
+                      entries=entries
+                      choose=(fun _ -> Done)
+                      shortcut=groupShortcut
+                      dimmed=(fun _ -> false)
+                      assignOnEnter=(fun _ -> false)
+                      aside=(fun _ entry ->
+                          let shortcut = Map.tryFind entry.hwnd byId |> Option.map shortcutText |> Option.defaultValue ""
+                          { detail=TabSearch.source entry; switch=None; swatch=None; shortcut=shortcut; dropdown=false; small=false })
+                      concealed=(fun _ -> true) }
+                TabSearchForm([],[],settings=(settingsManager :> ISettings),pick=(fun id -> this.activateGroupByToken (int id)),pages=[page],scope=GroupScope,windows=false)
             | Some wanted ->
                 let pages = [CommandPalette.actionsPage active]
                 let palette = TabSearchForm([],[],settings=(settingsManager :> ISettings),pick=this.activateWindow,pages=pages,scope=wanted,windows=false)
@@ -1340,15 +1465,25 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     info.readShownChoices ignore
                 | _ -> ()
                 palette
-        let isWindows = scope.IsNone
-        search.Query <- if isWindows then lastWindowQuery else lastPaletteQuery
-        if isWindows then search.SelectFirst(?preferred=(lastWindowRow |> Option.filter((<>) active)))
-        else lastPaletteRow |> Option.iter search.ChooseRow
+        match scope with
+        | None ->
+            search.Query <- lastWindowQuery
+            search.SelectFirst(?preferred=(lastWindowRow |> Option.filter((<>) active)))
+        | Some GroupScope ->
+            search.Query <- lastGroupQuery
+            search.SelectFirst(?preferred=(lastGroupRow |> Option.filter((<>) activeGroupId)))
+        | Some _ ->
+            search.Query <- lastPaletteQuery
+            lastPaletteRow |> Option.iter search.ChooseRow
         search.Ended.Add(fun () ->
-            if isWindows then
+            match scope with
+            | None ->
                 lastWindowQuery <- search.BaseQuery
                 lastWindowRow <- search.BaseRow
-            else
+            | Some GroupScope ->
+                lastGroupQuery <- search.BaseQuery
+                lastGroupRow <- search.BaseRow
+            | Some _ ->
                 lastPaletteQuery <- search.BaseQuery
                 lastPaletteRow <- search.BaseRow
             tabSearchCell.set(None))
@@ -1439,6 +1574,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
                 hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) (this.runCommand command) |> ignore)
         for shortcut in this.windowShortcuts() do this.registerWindowShortcut shortcut |> ignore
+        for shortcut in this.groupShortcuts() do this.registerGroupShortcut shortcut |> ignore
 
     member private this.windowShortcuts() : WindowShortcut list = WindowShortcuts.read (Services.settings.root.["windowShortcuts"])
 
@@ -1491,6 +1627,90 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         | None ->
             try Process.Start(ProcessStartInfo(shortcut.path,UseShellExecute=true)) |> ignore
             with error -> Notice.error (IO.Path.GetFileName shortcut.path) error.Message
+
+    member private this.groupShortcuts() : GroupShortcut list = GroupShortcuts.read (Services.settings.root.["groupShortcuts"])
+
+    member private this.registerGroupShortcut(shortcut:GroupShortcut) =
+        let chord = HotKeyShortcut(HotKeyControlCode=int16 shortcut.code)
+        hotKeyManager.register (GroupShortcuts.key shortcut) (chord.RegisterHotKeyModifierFlags,chord.RegisterHotKeyVirtualKeyCode) (fun () -> this.switchToGroup shortcut)
+
+    member private this.boundGroup(shortcut:GroupShortcut) =
+        match boundGroups.TryGetValue shortcut.code with
+        | true,token -> Some token
+        | _ -> None
+
+    member private this.replaceGroupShortcuts (removed:(GroupShortcut * int option) list) (added:(GroupShortcut * int option) list) =
+        for shortcut,_ in removed do
+            hotKeyManager.unregister (GroupShortcuts.key shortcut)
+            boundGroups.Remove shortcut.code |> ignore
+        let registered = added |> List.forall(fun (shortcut,_) -> this.registerGroupShortcut shortcut)
+        let kept,taken = if registered then added,removed else removed,added
+        if not registered then
+            for shortcut,_ in added do hotKeyManager.unregister (GroupShortcuts.key shortcut)
+            for shortcut,_ in removed do this.registerGroupShortcut shortcut |> ignore
+        for shortcut,token in kept do
+            if shortcut.code<>0 then token |> Option.iter(fun token -> boundGroups.[shortcut.code] <- token)
+        let root = Services.settings.root
+        root.["groupShortcuts"] <- GroupShortcuts.write (GroupShortcuts.replace (this.groupShortcuts()) (List.map fst taken) (List.map fst kept))
+        Services.settings.root <- root
+        registered
+
+    /// Open groups a shortcut or Switch groups can target, most recently used first.
+    member private this.shortcutGroups() : GroupShortcutCandidate list =
+        let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+        let zorders = os.windowZorders
+        let depth hwnd = zorders.tryFind(hwnd).def(Int32.MaxValue)
+        let ruleNames =
+            settingsManager.settings.appGroupingTargets
+            |> List.map(fun target -> target.id,target.name)
+            |> Map.ofList
+        let tabTitle hwnd =
+            nameOverride hwnd |> Option.defaultValue (try os.windowFromHwnd(hwnd).text with _ -> "")
+        let processPath hwnd = try os.windowFromHwnd(hwnd).pid.processPath with _ -> ""
+        this.desktop.groups.list
+        |> List.choose(fun group ->
+            let live = match group with :? GroupInfo as info -> not info.isExited && not info.isRetiring | _ -> true
+            let windows = group.windows.list
+            if not live || windows.IsEmpty then None
+            else
+                let front = windows |> List.minBy depth
+                let ordered = front :: List.filter ((<>) front) windows
+                let groupToken,ruleGroupId =
+                    match group with
+                    | :? GroupInfo as info -> info.group.groupToken,info.ruleGroupId
+                    | _ -> int group.hwnd,None
+                let ruleName = ruleGroupId |> Option.bind(fun id -> Map.tryFind id ruleNames)
+                let titles = ordered |> List.map tabTitle |> List.filter(fun text -> not (String.IsNullOrWhiteSpace text))
+                let paths =
+                    ordered
+                    |> List.map processPath
+                    |> List.filter(fun path -> not (String.IsNullOrWhiteSpace path))
+                    |> List.distinctBy AppIdentity.key
+                let label =
+                    match Option.toList ruleName @ titles with
+                    | [] -> paths |> List.map(fun path -> try IO.Path.GetFileNameWithoutExtension path with _ -> path) |> String.concat " · "
+                    | parts -> parts |> String.concat " · "
+                Some(depth front,{ groupToken=groupToken; ruleGroupId=ruleGroupId; paths=paths; titles=titles; label=label; windows=ordered }))
+        |> List.sortBy fst
+        |> List.map snd
+
+    /// Brings the group identified by its token to the front, activating whichever tab is active in it.
+    member this.activateGroupByToken(token:int) =
+        this.desktop.groups.list
+        |> List.tryFind(fun group ->
+            match group with
+            | :? GroupInfo as info -> not info.isExited && not info.isRetiring && info.group.groupToken=token
+            | _ -> int group.hwnd=token)
+        |> Option.iter(fun group ->
+            match group with
+            | :? GroupInfo as info -> info.activateGroupFromSwitcher()
+            | _ -> group.windows.list |> List.tryHead |> Option.iter group.activate)
+
+    /// The group a key names comes to the front, with its active tab in view.
+    member private this.switchToGroup(shortcut:GroupShortcut) =
+        match GroupShortcuts.target this.boundGroup (this.shortcutGroups()) shortcut with
+        | Some group -> this.activateGroupByToken group.groupToken
+        | None -> ()
 
     /// A command from its hotkey, for the window in front; a choice it leaves opens the palette.
     member this.runCommand (command:Command) () =
@@ -1741,6 +1961,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             let old = this.windowShortcuts() |> List.filter(fun other -> WindowShortcuts.same other shortcut || (shortcut.code<>0 && other.code=shortcut.code))
             this.replaceWindowShortcuts (old |> List.map(fun other -> other,this.boundWindow other))
                                         (if shortcut.code=0 then [] else [shortcut,None])
+        member x.groupShortcuts() = this.groupShortcuts()
+        member x.setGroupShortcut shortcut =
+            let old = this.groupShortcuts() |> List.filter(fun other -> GroupShortcuts.same other shortcut || (shortcut.code<>0 && other.code=shortcut.code))
+            this.replaceGroupShortcuts (old |> List.map(fun other -> other,this.boundGroup other))
+                                       (if shortcut.code=0 then [] else [shortcut,None])
 
         // As a tab dragged out onto the desktop: marked as dropped, it starts a group by hand when
         // the next scan finds it on its own.

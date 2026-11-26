@@ -58,6 +58,8 @@ module SettingsCatalog =
         // Unbound, as the split view keys are: the key is picked in the palette.
         { id="last-used-tab"; page=HotKeySettings; text=Strings.Settings.lastUsedTab; binding=Shortcut("lastUsedTab",0) }
         { id="search-tabs"; page=HotKeySettings; text=Strings.Settings.searchTabs; binding=Shortcut("searchTabs",1620) }
+        // Ctrl+Alt+G, beside Switch windows' Ctrl+Alt+T and Command palette's Ctrl+Alt+P.
+        { id="switch-groups"; page=HotKeySettings; text=Strings.Settings.switchGroups; binding=Shortcut("switchGroups",1607) }
         // Ctrl+Alt+P, beside the window search's Ctrl+Alt+T.
         { id="command-palette"; page=HotKeySettings; text=Strings.Settings.commandPalette; binding=Shortcut("commandPalette",1616) }
         // Keys inside the palette and the window search, never registered for the whole desktop.

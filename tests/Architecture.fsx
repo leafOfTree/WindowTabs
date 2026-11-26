@@ -271,7 +271,9 @@ let main() =
             member _.detachTab _ = ()
             member _.editGroups _ = ()
             member _.windowShortcuts() = []
-            member _.setWindowShortcut _ = true})
+            member _.setWindowShortcut _ = true
+            member _.groupShortcuts() = []
+            member _.setGroupShortcut _ = true})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()},api,dispatcher)
@@ -739,7 +741,7 @@ let main() =
         // with tabs has its key only on one, and the rest, the search and the palette first, everywhere.
         for command in Commands.all |> List.filter(fun command -> command.shortcut.IsSome && command.scope=TabbedWindow) do
             check (not (command.enabled IntPtr.Zero)) (sprintf "%s holds its key only on windows with tabs but can run without one" command.id)
-        check (Commands.scopeOf "searchTabs"=Everywhere && Commands.scopeOf "commandPalette"=Everywhere && Commands.scopeOf "saveWorkspace"=Everywhere)
+        check (Commands.scopeOf "searchTabs"=Everywhere && Commands.scopeOf "switchGroups"=Everywhere && Commands.scopeOf "commandPalette"=Everywhere && Commands.scopeOf "saveWorkspace"=Everywhere)
               "A command that opens over any window does not hold its key everywhere"
         // The group editor lists loose windows too, and its key puts it away again while it is in front.
         check (Commands.scopeOf "editGroups"=Everywhere && (Commands.find "edit-groups").Value.enabled IntPtr.Zero)
@@ -1266,7 +1268,7 @@ let main() =
     let mutable ran = []
     let option name = { label=name; detail=""; swatch=None; windows=[]; run=(fun () -> ran <- name::ran; Done); preview=None; undo=None; concealed=true }
     let commandsPage =
-        { scope=ActionScope; caption="Actions"; prompt="cmd"; noMatches="none"; noEntries="empty"; glyph=NoGlyph
+        { scope=ActionScope; caption="Actions"; prompt="cmd"; noMatches="none"; noEntries="empty"; glyph=NoGlyph; icons=(fun _ -> [])
           entries=[ { TabSearch.create (IntPtr 1) "Close tab" "Close tab" "Ctrl+Alt+W" with recency=0 }
                     { TabSearch.create (IntPtr 2) "Restore workspace" "Restore workspace" "" with recency=1 } ]
           choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
@@ -1645,5 +1647,69 @@ let main() =
           (sprintf "A key moved to another window did not show at once on its row alone: %A" both.RowNotes)
     both.Close()
     pump 100
+    // Group shortcuts: named rule groups stay bound by ruleGroupId without stealing unrelated
+    // groups; manual and auto-grouped groups resolve by live binding, persisted token, or apps+titles.
+    let ruleShortcut : GroupShortcut = { ruleGroupId="rule-1"; groupToken=10; paths=[@"C:\Apps\chatgpt.exe"]; titles=["ChatGPT"]; label="Group 1 · ChatGPT"; code=1601 }
+    let obsShortcut : GroupShortcut = { ruleGroupId=""; groupToken=20; paths=[@"C:\Apps\obsidian.exe"]; titles=["README";"Downloads"]; label="README · Downloads"; code=1602 }
+    let noteShortcutA : GroupShortcut = { ruleGroupId=""; groupToken=30; paths=[@"C:\Apps\notepad.exe"]; titles=["Alpha.txt"]; label="Alpha.txt"; code=1603 }
+    let noteShortcutB : GroupShortcut = { ruleGroupId=""; groupToken=31; paths=[@"C:\Apps\notepad.exe"]; titles=["Beta.txt"]; label="Beta.txt"; code=1604 }
+    let roundTripped = GroupShortcuts.read (GroupShortcuts.write [ruleShortcut;obsShortcut])
+    check (roundTripped=[ruleShortcut;obsShortcut]) "Group shortcuts did not survive JSON round-trip"
+    check (GroupShortcuts.set [obsShortcut] { obsShortcut with code=0 }=[] && (GroupShortcuts.set [obsShortcut] { obsShortcut with code=1605 }).Head.code=1605)
+          "Setting or clearing a group shortcut did not replace it"
+    let candRule = { groupToken=100; ruleGroupId=Some "rule-1"; paths=[@"C:\Apps\chrome.exe"]; titles=["Docs"]; label="Group 1 · Docs"; windows=[IntPtr 101] }
+    let candObs = { groupToken=200; ruleGroupId=None; paths=[@"D:\Apps\OBSIDIAN.EXE"]; titles=["Daily Note"]; label="Daily Note"; windows=[IntPtr 201;IntPtr 202] }
+    let candNoteA = { groupToken=300; ruleGroupId=None; paths=[@"C:\Apps\notepad.exe"]; titles=["Alpha.txt"]; label="Alpha.txt"; windows=[IntPtr 301] }
+    let candNoteB = { groupToken=301; ruleGroupId=None; paths=[@"C:\Apps\notepad.exe"]; titles=["Beta.txt"]; label="Beta.txt"; windows=[IntPtr 302] }
+    let openGroups = [candRule;candObs;candNoteA;candNoteB]
+    let unboundGroup (_:GroupShortcut) : int option = None
+    check (GroupShortcuts.target unboundGroup openGroups ruleShortcut=Some candRule) "A named rule group shortcut did not follow its ruleGroupId"
+    check (GroupShortcuts.target unboundGroup [candObs;candNoteA] ruleShortcut).IsNone "A closed named rule group shortcut stole an unrelated group"
+    check (GroupShortcuts.target unboundGroup openGroups obsShortcut=Some candObs) "A single-app group shortcut did not match after restart with new titles"
+    check (GroupShortcuts.target unboundGroup openGroups noteShortcutA=Some candNoteA
+           && GroupShortcuts.target unboundGroup openGroups noteShortcutB=Some candNoteB)
+          "Two separate groups of the same app were not told apart by title"
+    let boundGroup (s:GroupShortcut) = if s.code=noteShortcutB.code then Some 301 else None
+    let renamedNotes = [{ candNoteA with titles=["Renamed 1"] }; { candNoteB with titles=["Renamed 2"] }]
+    check (GroupShortcuts.target boundGroup renamedNotes noteShortcutB=Some renamedNotes.[1])
+          "A live bound group shortcut lost its group when titles changed"
+    check (GroupShortcuts.shownOn boundGroup (lazy openGroups) [noteShortcutA;noteShortcutB] 300=Some noteShortcutA
+           && GroupShortcuts.shownOn boundGroup (lazy openGroups) [noteShortcutA;noteShortcutB] 301=Some noteShortcutB)
+          "Separate groups did not each show their own shortcut"
+    // Switch groups popup: hides before activating, promotes remembered row, and assigns shortcuts.
+    do
+        let mutable groupPopupHost : Form option = None
+        let mutable pickedGroup = IntPtr.Zero
+        let mutable assignedGroupCode = 0
+        let groupEntryA = { TabSearch.create (IntPtr 100) "Group 1 · ChatGPT" "Group 1 · ChatGPT" "1 window" with recency=0 }
+        let groupEntryB = { TabSearch.create (IntPtr 200) "Obsidian · Notes" "Obsidian · Notes" "3 windows" with recency=1 }
+        let groupPage : PalettePage =
+            { scope=GroupScope; caption="Groups"; prompt="group"; noMatches="none"; noEntries="empty"; glyph=WindowGlyph
+              icons=(fun _ -> []); entries=[groupEntryA;groupEntryB]
+              choose=(fun _ -> Done)
+              shortcut=(fun entry -> if entry.hwnd=IntPtr 200 then Some { current=assignedGroupCode; usedBy=(fun _ -> None); set=(fun code -> assignedGroupCode <- code; true); inList=false } else None)
+              dimmed=(fun _ -> false); assignOnEnter=(fun _ -> false)
+              aside=(fun _ entry -> { detail=entry.program; switch=None; swatch=None; shortcut=(if entry.hwnd=IntPtr 200 then SettingsShortcut.text assignedGroupCode else ""); dropdown=false; small=false })
+              concealed=(fun _ -> true) }
+        let existingForms = Application.OpenForms |> Seq.cast<Form> |> Seq.toList
+        let groupBox = TabSearchForm([],[],pick=(fun id ->
+            check (groupPopupHost |> Option.exists(fun host -> not host.Visible)) "Switch groups activated before hiding its popup"
+            pickedGroup <- id),pages=[groupPage],scope=GroupScope,windows=false)
+        groupBox.SelectFirst(preferred=IntPtr 200)
+        check (groupBox.Results=[groupEntryB;groupEntryA] && groupBox.Selected=Some groupEntryB)
+              "Switch groups did not promote its preferred group"
+        groupBox.Show()
+        groupPopupHost <- Application.OpenForms |> Seq.cast<Form> |> Seq.tryFind(fun form -> not (List.contains form existingForms))
+        groupBox.BeginAssign()
+        let groupKey = Keys.Control ||| Keys.Alt ||| Keys.D9
+        press groupBox.ShortcutEditor.Value groupKey
+        check (assignedGroupCode=SettingsShortcut.encode groupKey) "Alt+Enter did not set a group shortcut"
+        let clock = Diagnostics.Stopwatch.StartNew()
+        while groupBox.ShortcutEditor.IsSome && clock.ElapsedMilliseconds<3000L do
+            Application.DoEvents()
+            Thread.Sleep 10
+        groupBox.Accept()
+        pump 100
+        check (pickedGroup=IntPtr 200 && groupBox.IsClosed) "Accepting a group did not switch to it and close"
     printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup, popup disposal and tab search."
 TestInit.run main

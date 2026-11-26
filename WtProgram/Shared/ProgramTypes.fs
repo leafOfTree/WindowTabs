@@ -154,10 +154,12 @@ type IManagerView =
     /// Opens the window on the page of a setting, scrolled to it, as choosing it in the search does.
     abstract member showSetting : string -> unit
 
-/// Which rows the palette lists: the active group's tabs, every window, or one of its pages.
+/// Which rows the palette lists: the active group's tabs, every window, every group, or one of its pages.
 type PaletteScope =
     | GroupTabs
     | AllTabs
+    /// Open window groups, to switch to or bind a shortcut to.
+    | GroupScope
     /// The commands and the settings, as one list.
     | ActionScope
 
@@ -232,6 +234,11 @@ type IProgram =
     /// Gives a window its key, or with a code of 0 takes it away; false when another program
     /// holds the key.
     abstract member setWindowShortcut : WindowShortcut -> bool
+    /// The keys given to groups from Switch groups.
+    abstract member groupShortcuts : unit -> GroupShortcut list
+    /// Gives a group its key, or with a code of 0 takes it away; false when another program
+    /// holds the key.
+    abstract member setGroupShortcut : GroupShortcut -> bool
 
 /// Whether a group set to combine its taskbar icons has its one button, and if not, why its
 /// windows keep their own: else the setting looked on while nothing was combined.

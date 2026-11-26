@@ -286,6 +286,9 @@ module Strings =
         let searchTabs = { caption={ en="Switch windows"; zh="切换窗口"; ja="ウィンドウを切り替え"; ar="التبديل بين النوافذ"; ko="창 전환" }
                            description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。"; ar="الانتقال إلى نافذة باستخدام عنوانها أو اسم التطبيق."; ko="제목이나 앱 이름으로 창을 찾아 전환합니다." }
                            keywords={ en="find"; zh="查找"; ja="検索"; ar="بحث"; ko="찾기 검색" } }
+        let switchGroups = { caption={ en="Switch groups"; zh="切换分组"; ja="グループを切り替え"; ar="التبديل بين المجموعات"; ko="그룹 전환" }
+                             description={ en="Switch to a window group by name, title or app."; zh="按分组名、标题或应用名查找并切换分组。"; ja="グループ名、タイトル、アプリ名でグループを探して切り替えます。"; ar="الانتقال إلى مجموعة نوافذ باسمها أو عنوانها أو تطبيقها."; ko="그룹 이름, 제목 또는 앱 이름으로 그룹을 찾아 전환합니다." }
+                             keywords={ en="find group tabs"; zh="查找 分组 组 标签"; ja="検索 グループ タブ"; ar="بحث مجموعة علامات التبويب"; ko="찾기 검색 그룹 탭" } }
         /// Keys inside the palette and the window search only, beside the arrows.
         let listNext = { caption={ en="Move down the list"; zh="在列表中下移"; ja="リストで下へ移動"; ar="النزول في القائمة"; ko="목록에서 아래로 이동" }
                          description={ en="Moves the choice down in the command palette and the window search, as ↓ does. Only there."
@@ -677,11 +680,11 @@ module Strings =
         let keyboard = { en="Keyboard"; zh="键盘"; ja="キーボード"; ar="لوحة المفاتيح"; ko="키보드" }
         /// The card of the two keys that reach everything else: the window search and the palette.
         let startHere = { en="Start here"; zh="从这里开始"; ja="ここから始める"; ar="ابدأ من هنا"; ko="여기서 시작" }
-        let startHereNote = { en="Type a few letters to find any window, or to run any command or setting."
-                              zh="输入几个字，即可找到任意窗口，或运行任意命令和设置。"
-                              ja="数文字入力するだけで、任意のウィンドウを探したり、コマンドや設定を実行したりできます。"
-                              ar="اكتب بضعة أحرف للعثور على أي نافذة، أو لتشغيل أي أمر أو إعداد."
-                              ko="몇 글자만 입력하면 원하는 창을 찾거나 명령과 설정을 실행할 수 있습니다." }
+        let startHereNote = { en="Type a few letters to find any window or group, or to run any command or setting."
+                              zh="输入几个字，即可找到任意窗口或分组，或运行任意命令和设置。"
+                              ja="数文字入力するだけで、任意のウィンドウやグループを探したり、コマンドや設定を実行したりできます。"
+                              ar="اكتب بضعة أحرف للعثور على أي نافذة أو مجموعة، أو لتشغيل أي أمر أو إعداد."
+                              ko="몇 글자만 입력하면 원하는 창이나 그룹을 찾거나 명령과 설정을 실행할 수 있습니다." }
         let mouse = { en="Mouse"; zh="鼠标"; ja="マウス"; ar="الفأرة"; ko="마우스" }
         /// Cards for the commands that turn settings on or off and open pages, and the app's own.
         let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels. The command palette sets one too: Alt+Enter on a command."
@@ -690,11 +693,11 @@ module Strings =
                              ar="انقر اختصارًا ثم اضغط مجموعة المفاتيح الجديدة. اضغط Esc للإلغاء. وتعيّنه لوحة الأوامر أيضًا: Alt+Enter على أمر."
                              ko="단축키를 클릭한 다음 새 키 조합을 누르세요. Esc를 누르면 취소됩니다. 명령 팔레트에서 명령을 선택하고 Alt+Enter를 눌러도 설정할 수 있습니다." }
         /// Hovering the reset button: what it resets and what it leaves.
-        let restoreDefaultsHelp = { en="Restore default shortcuts: the ones on this page, every key given to a command or a list in the command palette, and the keys given to windows in the window search, which are cleared."
-                                    zh="恢复默认快捷键：包括本页的快捷键、在命令面板中为命令或列表设置的按键，以及在窗口搜索中为窗口设置的按键（会被清除）。"
-                                    ja="既定のショートカットに戻します。このページのショートカット、コマンドパレットでコマンドやリストに設定したキー、ウィンドウ検索でウィンドウに設定したキー（解除されます）が対象です。"
-                                    ar="استعادة الاختصارات الافتراضية: اختصارات هذه الصفحة، وكل مفتاح عُيّن لأمر أو لقائمة في لوحة الأوامر، والمفاتيح المعيّنة للنوافذ في بحث النوافذ، التي تُزال."
-                                    ko="단축키를 기본값으로 되돌립니다. 이 페이지의 단축키와 명령 팔레트에서 명령이나 목록에 지정한 키가 대상이며, 창 검색에서 창에 지정한 키는 지워집니다." }
+        let restoreDefaultsHelp = { en="Restore default shortcuts: the ones on this page, every key given to a command or a list in the command palette, and the keys given to windows or groups, which are cleared."
+                                    zh="恢复默认快捷键：包括本页的快捷键、在命令面板中为命令或列表设置的按键，以及为窗口或分组设置的按键（会被清除）。"
+                                    ja="既定のショートカットに戻します。このページのショートカット、コマンドパレットでコマンドやリストに設定したキー、ウィンドウやグループに設定したキー（解除されます）が対象です。"
+                                    ar="استعادة الاختصارات الافتراضية: اختصارات هذه الصفحة، وكل مفتاح عُيّن لأمر أو لقائمة في لوحة الأوامر، والمفاتيح المعيّنة للنوافذ أو المجموعات، التي تُزال."
+                                    ko="단축키를 기본값으로 되돌립니다. 이 페이지의 단축키와 명령 팔레트에서 명령이나 목록에 지정한 키가 대상이며, 창이나 그룹에 지정한 키는 지워집니다." }
         let restoreDefaults = { en="Restore default shortcuts"; zh="恢复默认快捷键"; ja="既定のショートカットに戻す"; ar="استعادة الاختصارات الافتراضية"; ko="기본 단축키로 되돌리기" }
         let inUse = { en="Shortcut already in use"; zh="快捷键已被占用"; ja="ショートカットは使用中です"; ar="الاختصار مستخدم بالفعل"; ko="이미 사용 중인 단축키" }
         /// A key pressed for one command that another had: it moves, and the other is left without.
@@ -1008,9 +1011,13 @@ module Strings =
         let allTabs count = { en=sprintf "All windows · %d" count; zh=sprintf "全局窗口 · %d" count; ja=sprintf "すべてのウィンドウ · %d" count; ar=sprintf "كل النوافذ · %d" count; ko=sprintf "모든 창 · %d" count }
         /// The palette's other pages, beside the windows.
         let actions = { en="Actions"; zh="操作"; ja="アクション"; ar="الإجراءات"; ko="동작" }
+        let groups = { en="Groups"; zh="分组"; ja="グループ"; ar="المجموعات"; ko="그룹" }
         let actionPrompt = { en="Type a command or setting"; zh="输入命令或设置名"; ja="コマンドや設定名を入力"; ar="اكتب أمرًا أو إعدادًا"; ko="명령 또는 설정 입력" }
+        let groupPrompt = { en="Type a group name, title or app to switch groups"; zh="输入分组名、标题或应用名，切换分组"; ja="グループ名、タイトル、アプリ名を入力してグループを切り替え"; ar="اكتب اسم مجموعة أو عنوانًا أو تطبيقًا للتبديل بين المجموعات"; ko="그룹 이름, 제목 또는 앱 이름을 입력해 그룹 전환" }
         let choicePrompt = { en="Choose, or type to filter"; zh="选择一项，或输入以筛选"; ja="選択するか、入力して絞り込み"; ar="اختر، أو اكتب للتصفية"; ko="선택하거나 입력해 필터링" }
         let noActions = { en="No matching commands or settings."; zh="没有匹配的命令或设置。"; ja="一致するコマンドや設定はありません。"; ar="لا توجد أوامر أو إعدادات مطابقة."; ko="일치하는 명령이나 설정이 없습니다." }
+        let noGroups = { en="No matching groups."; zh="没有匹配的分组。"; ja="一致するグループはありません。"; ar="لا توجد مجموعات مطابقة."; ko="일치하는 그룹이 없습니다." }
+        let noOpenGroups = { en="No open groups."; zh="当前没有打开的分组。"; ja="開いているグループはありません。"; ar="لا توجد مجموعات مفتوحة."; ko="열려 있는 그룹이 없습니다." }
         let noChoices = { en="No matching choices."; zh="没有匹配的选项。"; ja="一致する項目はありません。"; ar="لا توجد خيارات مطابقة."; ko="일치하는 항목이 없습니다." }
         /// Asking for a size: the hint in the box, the line under it, and why a value is refused.
         let numberPrompt low high = { en=sprintf "A number from %d to %d" low high; zh=sprintf "输入 %d 到 %d 之间的数字" low high; ja=sprintf "%d～%d の数値" low high; ar=sprintf "رقم من %d إلى %d" low high; ko=sprintf "%d~%d 사이의 숫자" low high }

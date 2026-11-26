@@ -420,6 +420,7 @@ module Commands =
         fromCatalog "last-used-tab" TabCommands hasOtherTabs (onGroup(fun g -> g.switchToLastActive false))
         // Opened over any window, so their keys are held everywhere.
         { fromCatalog "search-tabs" TabCommands always (fun _ -> Services.program.toggleSearch None) with scope=Everywhere }
+        { fromCatalog "switch-groups" TabCommands always (fun _ -> Services.program.toggleSearch (Some GroupScope)) with scope=Everywhere }
         { fromCatalog "command-palette" TabCommands always (fun _ -> Services.program.toggleSearch (Some ActionScope)) with scope=Everywhere }
         fromCatalog "new-tab" TabCommands hasGroup (fun hwnd -> Services.program.newTab hwnd)
         // As the tab menu's Close: the window of the tab in front, and only a tab's.
@@ -726,3 +727,20 @@ module Commands =
             listKeys |> List.tryFind(fun k -> k<>key && getHotKey k=code) |> Option.bind(fun other ->
                 listKeyName other |> Option.map(fun name ->
                     { name=name; key=other; release=(fun () -> setListKey other 0); restore=(fun () -> setListKey other code) }))
+    /// Any holder of `code` besides `key`, including shortcuts bound to windows or groups.
+    let anyHolderOf key code =
+        match holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code with
+        | Some holder -> Some holder
+        | None when code=0 -> None
+        | None ->
+            Services.program.windowShortcuts() |> List.tryFind(fun other -> other.code=code)
+            |> Option.map(fun other ->
+                { name=other.title; key=""
+                  release=(fun () -> Services.program.setWindowShortcut { other with code=0 } |> ignore)
+                  restore=(fun () -> Services.program.setWindowShortcut other |> ignore) })
+            |> Option.orElseWith(fun () ->
+                Services.program.groupShortcuts() |> List.tryFind(fun other -> other.code=code)
+                |> Option.map(fun other ->
+                    { name=(if String.IsNullOrWhiteSpace other.label then tr Strings.Settings.switchGroups.caption else other.label); key=""
+                      release=(fun () -> Services.program.setGroupShortcut { other with code=0 } |> ignore)
+                      restore=(fun () -> Services.program.setGroupShortcut other |> ignore) }))

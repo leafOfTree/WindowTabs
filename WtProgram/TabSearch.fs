@@ -279,6 +279,8 @@ type PalettePage = {
     /// Said when the page has nothing to list, nothing typed, such as before any workspace is saved.
     noEntries:string
     glyph:TreeListGlyph
+    /// Windows whose app icons show before the row's name, side by side; empty to use `glyph`.
+    icons:TabSearchEntry -> IntPtr list
     entries:TabSearchEntry list
     choose:TabSearchEntry -> CommandOutcome
     /// For a row that can be given a shortcut with Alt+Enter.
@@ -362,8 +364,20 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let pageItems =
         pages |> List.map(fun page ->
             page.scope,
-            page.entries |> List.map(fun entry -> TreeListItem(entry.title,Values=[|"";""|],Glyph=page.glyph,Dimmed=page.dimmed entry),entry) |> Array.ofList)
+            page.entries |> List.map(fun entry ->
+                let item = TreeListItem(entry.title,Values=[|"";""|],Glyph=page.glyph,Dimmed=page.dimmed entry)
+                let iconWindows = page.icons entry
+                if not iconWindows.IsEmpty then
+                    match iconWindows |> List.choose(fun hwnd -> ImgHelper.knownWindowIcon (OS().windowFromHwnd hwnd)) with
+                    | first::rest ->
+                        item.Icon <- first
+                        item.MoreIcons <- rest
+                    | [] -> item.Glyph <- WindowGlyph
+                item,entry) |> Array.ofList)
         |> Map.ofList
+    do
+        let iconWindows = pages |> List.collect(fun page -> page.entries |> List.collect page.icons)
+        if not iconWindows.IsEmpty then ImgHelper.refreshWindowIcons iconWindows
     let preferred =
         settings |> Option.map(fun api -> api.getValue("tabSearchScope") :?> string)
         |> Option.defaultValue SettingsCatalog.tabSearchScopeDefault
@@ -715,7 +729,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 Array.ofList (live @ dimmed)
         let shown =
             match promotedRow with
-            | Some(query,hwnd) when query=input.Text && choices.IsEmpty && (scope=AllTabs || scope=GroupTabs) ->
+            | Some(query,hwnd) when query=input.Text && choices.IsEmpty && (scope=AllTabs || scope=GroupTabs || scope=GroupScope) ->
                 let first,others = shown |> Array.partition(fun (_,entry) -> entry.hwnd=hwnd)
                 Array.append first others
             | _ -> shown
@@ -828,6 +842,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 let dispose() =
                     form.Dispose()
                     ImgHelper.disposeItems (Array.map fst items)
+                    for KeyValue(_,rows) in pageItems do ImgHelper.disposeItems (Array.map fst rows)
                     ImgHelper.disposeItems choiceItems
                 if form.IsHandleCreated then form.BeginInvoke(Action dispose) |> ignore else dispose()
             // Out of sight but still in front while its command ran: put away only once the command
@@ -1091,6 +1106,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 | [],Some page when page.assignOnEnter entry ->
                     list.SelectedItem <- target
                     assignChosen()
+                | [],Some page when page.scope=GroupScope -> finish (Some entry.hwnd)
                 | [],Some page -> outcome entry.title (page.concealed entry) (fun () -> page.choose entry)
                 | [],None -> finish (Some entry.hwnd))
     /// Alt+Enter: the chosen row's shortcut is recorded in a box over the row, as on the
@@ -1345,6 +1361,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// The search typed on the scope's rows, under any command's choices: the one to offer again.
     member _.BaseQuery = match List.tryLast choices with Some(_,_,_,query) -> query | None -> input.Text
     member _.Scope = scope
+    member _.HasScope target = List.contains target scopes
     /// Goes to a scope, as Tab does when it comes round to it.
     member _.SetScope target = setScope target
     /// Goes round the scopes, as Tab does.

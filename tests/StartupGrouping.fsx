@@ -474,6 +474,35 @@ let main() =
             check (ruleGroups |> List.forall(fun group -> not (group :?> GroupInfo).group.isManual)) "Dissolving a manual group kept its manual flag"
             check (not disabledDuringRegroup && filter.getIsTabbingEnabledForProcess path) "Rule editing transiently disabled the application's tabs"
             check (handles |> List.forall WinUserApi.IsWindow) "Rule editing destroyed an application HWND"
+            // Switch groups: a live named rule group is listed, Alt+Enter binds a shortcut carrying
+            // its ruleGroupId, and toggling between Command palette and Switch groups replaces cleanly.
+            do
+                let cellField = typeof<Program.Program>.GetFields(Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic) |> Array.find(fun field -> field.Name.StartsWith "tabSearchCell")
+                let currentSearch() =
+                    let cell = cellField.GetValue(program)
+                    cell.GetType().GetProperty("value").GetValue(cell) :?> TabSearchForm option
+                program.togglePalette (Some ActionScope)
+                program.togglePalette (Some GroupScope)
+                let search = currentSearch().Value
+                check (search.Scope=GroupScope) "Switch groups did not replace the open command palette"
+                search.Query <- "game"
+                Application.DoEvents()
+                check (search.Selected.IsSome && search.Selected.Value.title.Contains "game")
+                      (sprintf "Switch groups did not list the live rule group: %A" search.Selected)
+                search.BeginAssign()
+                let editor = match search.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter on a group opened no key box"
+                let code = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Shift ||| Keys.F8)
+                let mutable message = Message()
+                let processKey = editor.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
+                processKey.Invoke(editor,[|box message;box (Keys.Control ||| Keys.Alt ||| Keys.Shift ||| Keys.F8)|]) |> ignore
+                Application.DoEvents()
+                let saved = programApi.groupShortcuts() |> List.tryFind(fun shortcut -> shortcut.code=code)
+                let said = editor.Message
+                program.togglePalette (Some GroupScope)
+                check (currentSearch().IsNone) "Toggling Switch groups again did not close it"
+                saved |> Option.iter(fun shortcut -> programApi.setGroupShortcut { shortcut with code=0 } |> ignore)
+                check (saved.IsSome && saved.Value.ruleGroupId=secondTarget) (sprintf "A key given in Switch groups did not keep ruleGroupId=%s: %A (box said %A)" secondTarget saved said)
+                check (string (runtimeSettings :> ISettings).root.["groupShortcuts"] |> fun text -> not (text.Contains secondTarget)) "Clearing a group shortcut did not remove it from settings"
             form.Close()
         finally
             discovering <- false
