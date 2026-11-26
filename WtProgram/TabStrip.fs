@@ -111,10 +111,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let positionCell = Bemo.Cell<float option>(Cell, None, (=))
     /// The row's left edge while the right button drags it along the strip.
     let rowSlideCell = Bemo.Cell<float option>(Cell, None, (=))
-    /// The right button down on a tab: the pointer's place along the strip (on screen for a
-    /// column, which moves under it), the tabs' offset then, and the tab. The tabs follow the
-    /// pointer once it moves a few pixels; let go in place, the press opens the tab menu as before.
-    let mutable rowPress : (int * float * Tab) option = None
+    let mutable ownerFrame : Rect option = None
+    let mutable rowPress : (Pt * float * Tab) option = None
     let mutable rowDragging = false
     let rowDraggedEvent = Event<Tab * float>()
     /// A column's room along the side, from its owner: the top and how far it can move down.
@@ -222,12 +220,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             | Some _ when Control.MouseButtons &&& MouseButtons.Right <> MouseButtons.Right ->
                 // Let go off the strip: the row stays where it got to, and no menu opens.
                 rowDragTimer.Stop()
-                this.endRowDrag() |> ignore
-                this.refreshHover()
-            | Some _ when rowDragging ->
                 let cursor = pointerSource()
                 this.moveRowDrag(Pt(cursor.X-location.x,cursor.Y-location.y)) |> ignore
-            | Some _ -> ())
+                this.endRowDrag() |> ignore
+                this.refreshHover()
+            | Some _ ->
+                let cursor = pointerSource()
+                this.moveRowDrag(Pt(cursor.X-location.x,cursor.Y-location.y)) |> ignore)
         dragScrollTimer.Tick.Add(fun _ ->
             match dragScrollLocation with
             | Some pt when this.isVertical && slideCell.value.IsSome ->
@@ -618,7 +617,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 columnScroll <- None
                 this.window.releaseCapture()
                 this.refreshHover()
-            elif btn=MouseRight && this.endRowDrag() then this.refreshHover()
+            elif btn=MouseRight && (this.moveRowDrag(mousePt()) |> ignore; this.endRowDrag()) then this.refreshHover()
             else this.processMouse(MouseClick(mousePt(), btn, MouseUp, clickKeys()))
             msg.def()
         let mouseDblClick btn =
@@ -1168,9 +1167,23 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member private this.dragCursor = if this.isVertical then Cursors.SizeNS else Cursors.SizeWE
 
-    /// The pointer's place along the strip: across it for a row, and down the screen for a
-    /// column, which moves under the pointer as it is dragged.
-    member private this.alongStrip(pt:Pt) = if this.isVertical then pt.y+location.y else pt.x
+    /// Leave the current edge deliberately. The corner belongs to the current dock so
+    /// sliding the row all the way to either end cannot turn it into a column.
+    member private this.dragDock(start:Pt, point:Pt) =
+        let dock = this.dock
+        match ownerFrame with
+        | None -> dock
+        | Some frame ->
+            let band = Dpi.scale 30
+            let across = if this.isVertical then abs(point.x-start.x) else abs(point.y-start.y)
+            if across<Dpi.scale 12 then dock
+            elif dock<>TabDockTop && abs(point.y-frame.top)<=band &&
+                 point.x>frame.left+band && point.x<frame.right-band then TabDockTop
+            elif point.y>frame.top+band && point.y<=frame.bottom+band then
+                if abs(point.x-frame.left)<=band then TabDockLeft
+                elif abs(point.x-frame.right)<=band then TabDockRight
+                else dock
+            else dock
 
     /// Where a column sits in its room now, in pixels: as dragged to, else as aligned.
     member private this.columnOffset =
@@ -1189,7 +1202,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 // A layout held from a close is let go: the row is being laid out anew.
                 heldLayoutCell.set(None)
                 let offset = if this.isVertical then this.columnOffset else snd this.ts.layout
-                rowPress <- Some(this.alongStrip pt,offset,tab)
+                rowPress <- Some(this.toScreen pt,offset,tab)
                 rowDragging <- false
                 this.window.setCapture()
                 rowDragTimer.Start()
@@ -1198,9 +1211,24 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// True while the right button holds the tabs: the move is theirs, not a hover.
     member private this.moveRowDrag(pt:Pt) =
         match rowPress with
-        | Some(start,startOffset,_) ->
-            let moved = this.alongStrip pt-start
-            if not rowDragging && abs moved>=Dpi.scale 4 then
+        | Some(start,initialOffset,tab) ->
+            let point = this.toScreen pt
+            let next = this.dragDock(start,point)
+            let changingEdge = next<>this.dock
+            let moved,startOffset =
+                if not changingEdge then
+                    (if this.isVertical then point.y-start.y else point.x-start.x),initialOffset
+                else
+                    rowSlideCell.set(None)
+                    columnHeld <- None
+                    this.dock <- next
+                    let origin = this.toScreen(this.tabLocation tab)
+                    let offset =
+                        if this.isVertical then this.columnOffset+float(point.y-origin.y-Dpi.scale 12)
+                        else snd this.ts.layout+float(point.x-origin.x-Dpi.scale 12)
+                    rowPress <- Some(point,offset,tab)
+                    0,offset
+            if not rowDragging && (changingEdge || abs moved>=Dpi.scale 4) then
                 rowDragging <- true
                 this.hideTitle()
             if rowDragging then
@@ -1378,11 +1406,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             shortcutTarget <- Some(tab,origin)
             entryClock.Restart()
 
-    member this.setPlacement(placement, ?owner:Tab, ?ownerRight:int) =
+    member this.setPlacement(placement, ?owner:Tab, ?frame:Rect) =
+        ownerFrame <- frame
         let previous = location
         let previousReserve = this.hoverButtonReserve
         let previousRight = windowRight
-        windowRight <- ownerRight |> Option.map(fun right -> right-placement.bounds.x)
+        windowRight <- frame |> Option.map(fun bounds -> bounds.right-placement.bounds.x)
         let oldButton = if this.showsAddButton && not this.isEmpty then this.ts.buttonPlacement else None
         let area = Screen.FromRectangle(placement.bounds.Rectangle).WorkingArea
         screenArea <- if area.IntersectsWith(placement.bounds.Rectangle) then area else Rectangle.Empty
