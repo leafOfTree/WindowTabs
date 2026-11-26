@@ -112,15 +112,6 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                 timer.Start()
             TaskbarPreviewTrace.write "switcher-group-after" hwnd "" (sprintf "foreground=%d top=%d" (WinUserApi.GetForegroundWindow().ToInt64()) (_group.topWindow.ToInt64())))
 
-    /// Activates the group's currently active tab from a switcher or group shortcut.
-    member this.activateGroupFromSwitcher() =
-        this.invokeGroup(fun () ->
-            let target =
-                _group.activeWindow
-                |> Option.filter(fun hwnd -> _group.windows.contains hwnd)
-                |> Option.orElseWith(fun () -> _group.lorder.list |> List.tryFind(fun hwnd -> _group.windows.contains hwnd))
-            target |> Option.iter this.activateFromSwitcher)
-
     /// The group's choices as last read, for the palette to show beside its commands. Main thread only.
     member val shownChoices : GroupChoicesShown option = None with get,set
     member _.shownChoicesChanged = shownChoicesChangedEvent.Publish

@@ -142,9 +142,9 @@ module GroupShortcuts =
                                 |> List.tryHead
                                 |> Option.map(fun (group, _, _, _) -> group))))
 
-    /// The keys a group holds, those that bring it when pressed: the one given to it while open
-    /// first; then one matching its rule group id or token; then fallback matches.
-    let private heldBy bound (groups:GroupShortcutCandidate list) (shortcuts:GroupShortcut list) groupToken =
+    /// The keys a group holds, split into those it owns directly (live bound, matching ruleGroupId
+    /// or matching groupToken) and fallback keys that currently resolve to it.
+    let private partitionHeld bound (groups:GroupShortcutCandidate list) (shortcuts:GroupShortcut list) groupToken =
         let lands = shortcuts |> List.filter(fun shortcut -> target bound groups shortcut |> Option.exists(fun group -> group.groupToken = groupToken))
         let current = groups |> List.tryFind(fun group -> group.groupToken = groupToken)
         let given, free = lands |> List.partition(fun shortcut -> bound shortcut = Some groupToken)
@@ -155,12 +155,22 @@ module GroupShortcuts =
                     (not (String.IsNullOrEmpty shortcut.ruleGroupId) && group.ruleGroupId = Some shortcut.ruleGroupId)
                     || (shortcut.groupToken <> 0 && shortcut.groupToken = groupToken)
                 | None -> false)
-        given @ exact @ fallback
+        given @ exact, fallback
 
-    /// Every key this group holds, which go with it when one is moved or replaced.
+    /// Every key this group holds, owned keys first.
     let landingOn bound (groups:GroupShortcutCandidate list) (shortcuts:GroupShortcut list) groupToken =
-        heldBy bound groups shortcuts groupToken
+        let owned, fallback = partitionHeld bound groups shortcuts groupToken
+        owned @ fallback
+
+    /// Keys to remove when setting a group's shortcut to `code`: assigning a new key only replaces
+    /// keys owned by this group (never deleting fallback keys from closed groups); clearing (`code = 0`)
+    /// removes owned keys, or the displayed fallback key when the group owns none.
+    let replaceableOn bound (groups:GroupShortcutCandidate list) (shortcuts:GroupShortcut list) groupToken code =
+        let owned, fallback = partitionHeld bound groups shortcuts groupToken
+        if code <> 0 || not owned.IsEmpty then owned
+        else List.truncate 1 fallback
 
     /// The key a group shows beside its name: the first it holds.
     let shownOn bound (groups:Lazy<GroupShortcutCandidate list>) (shortcuts:GroupShortcut list) groupToken =
-        heldBy bound groups.Value shortcuts groupToken |> List.tryHead
+        let owned, fallback = partitionHeld bound groups.Value shortcuts groupToken
+        (owned @ fallback) |> List.tryHead

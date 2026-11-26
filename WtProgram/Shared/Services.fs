@@ -135,6 +135,12 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.setWindowShortcut shortcut = dispatcher.Send(fun () -> inner.setWindowShortcut shortcut)
         member _.groupShortcuts() = dispatcher.Send(fun () -> inner.groupShortcuts())
         member _.setGroupShortcut shortcut = dispatcher.Send(fun () -> inner.setGroupShortcut shortcut)
+        member _.shortcutHolder code =
+            dispatcher.Send(fun () -> inner.shortcutHolder code)
+            |> Option.map(fun holder ->
+                { holder with
+                    release=(fun () -> dispatcher.Send(fun () -> holder.release()))
+                    restore=(fun () -> dispatcher.Send(fun () -> holder.restore())) })
 
 type DispatchedFilterService(inner:IFilterService, dispatcher:IDispatcher) =
     interface IFilterService with

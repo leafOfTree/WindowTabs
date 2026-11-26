@@ -527,7 +527,8 @@ let main() =
         member _.groupShortcuts() = groupKeys.Value
         member _.setGroupShortcut shortcut =
             groupKeys.Value <- GroupShortcuts.set groupKeys.Value shortcut
-            true})
+            true
+        member _.shortcutHolder _ = None})
     let command (control:Control) (keys:Keys) =
         let mutable msg = Message()
         let processKey = control.GetType().GetMethod("ProcessCmdKey",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)

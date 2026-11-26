@@ -228,4 +228,5 @@ module CommandPalette =
                   | Number _ | Colour | Shortcut _ -> false
                   | Text(key,_) when key="numberLeaderKeys" -> false
                   | _ -> true
-              | _ -> false }
+              | _ -> false
+          hideOnChoose=false }

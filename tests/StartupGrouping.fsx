@@ -500,8 +500,35 @@ let main() =
                 let said = editor.Message
                 program.togglePalette (Some GroupScope)
                 check (currentSearch().IsNone) "Toggling Switch groups again did not close it"
-                saved |> Option.iter(fun shortcut -> programApi.setGroupShortcut { shortcut with code=0 } |> ignore)
                 check (saved.IsSome && saved.Value.ruleGroupId=secondTarget) (sprintf "A key given in Switch groups did not keep ruleGroupId=%s: %A (box said %A)" secondTarget saved said)
+                // Pressing the group shortcut raises the target group's front window above other windows.
+                first.Show()
+                second.Show()
+                use other = new Form(Text="Other foreground",StartPosition=FormStartPosition.Manual,Location=Drawing.Point(40,40),Size=Drawing.Size(200,140))
+                other.Show()
+                OS().windowFromHwnd(other.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+                Application.DoEvents()
+                let zdepth hwnd = OS().windowZorders.tryFind(hwnd).def(Int32.MaxValue)
+                check (handles |> List.forall(fun hwnd -> zdepth other.Handle < zdepth hwnd)) "Setup window was not above the target group"
+                saved |> Option.iter program.switchToGroup
+                pumpUntil "Group shortcut did not raise the target group above other windows" (fun () ->
+                    handles |> List.exists(fun hwnd -> zdepth hwnd < zdepth other.Handle))
+                // Pressing a shortcut whose rule group is not open shows a notice without crashing.
+                program.switchToGroup { ruleGroupId="missing-rule-group"; groupToken=0; paths=[]; titles=[]; label="Missing group"; code=0 }
+                Application.DoEvents()
+                // Releasing a conflicting twin window shortcut removes only that code, leaving the other twin's key intact.
+                let twinCode1 = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Shift ||| Keys.F6)
+                let twinCode2 = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Shift ||| Keys.F7)
+                let twinRoot = api.root
+                twinRoot.["windowShortcuts"] <- WindowShortcuts.write [{ path=exePath; title="Twin"; code=twinCode1 };{ path=exePath; title="Twin"; code=twinCode2 }]
+                api.root <- twinRoot
+                let holder = (programApi.shortcutHolder twinCode1).Value
+                holder.release()
+                let remaining = programApi.windowShortcuts()
+                check (remaining |> List.exists(fun s -> s.code=twinCode2) && remaining |> List.forall(fun s -> s.code<>twinCode1))
+                      (sprintf "Releasing one twin window shortcut did not keep the other: %A" remaining)
+                programApi.setWindowShortcut { path=exePath; title="Twin"; code=0 } |> ignore
+                saved |> Option.iter(fun shortcut -> programApi.setGroupShortcut { shortcut with code=0 } |> ignore)
                 check (string (runtimeSettings :> ISettings).root.["groupShortcuts"] |> fun text -> not (text.Contains secondTarget)) "Clearing a group shortcut did not remove it from settings"
             form.Close()
         finally

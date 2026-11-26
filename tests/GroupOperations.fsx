@@ -506,7 +506,8 @@ let main() =
             member _.windowShortcuts() = []
             member _.setWindowShortcut _ = true
             member _.groupShortcuts() = []
-            member _.setGroupShortcut _ = true})
+            member _.setGroupShortcut _ = true
+            member _.shortcutHolder _ = None})
         Services.register<IFilterService>({new IFilterService with
             member _.isAppWindow _ = false
             member _.isAppWindowStyle _ = false

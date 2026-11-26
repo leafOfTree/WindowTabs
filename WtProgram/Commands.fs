@@ -73,10 +73,6 @@ type Command = {
     chooses:bool
     run:IntPtr -> CommandOutcome }
 
-/// What has a shortcut key already: its name, its settings key for a command or a key of the
-/// lists, and how to take the key from it, and give it back when the key cannot be taken.
-type ShortcutHolder = { name:string; key:string; release:unit -> unit; restore:unit -> unit }
-
 /// What a setting's row in the palette does, which its own shortcut does too: its values listed
 /// to pick from, a value typed, a colour picked, or its page opened.
 module SettingRows =
@@ -732,15 +728,4 @@ module Commands =
         match holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code with
         | Some holder -> Some holder
         | None when code=0 -> None
-        | None ->
-            Services.program.windowShortcuts() |> List.tryFind(fun other -> other.code=code)
-            |> Option.map(fun other ->
-                { name=other.title; key=""
-                  release=(fun () -> Services.program.setWindowShortcut { other with code=0 } |> ignore)
-                  restore=(fun () -> Services.program.setWindowShortcut other |> ignore) })
-            |> Option.orElseWith(fun () ->
-                Services.program.groupShortcuts() |> List.tryFind(fun other -> other.code=code)
-                |> Option.map(fun other ->
-                    { name=(if String.IsNullOrWhiteSpace other.label then tr Strings.Settings.switchGroups.caption else other.label); key=""
-                      release=(fun () -> Services.program.setGroupShortcut { other with code=0 } |> ignore)
-                      restore=(fun () -> Services.program.setGroupShortcut other |> ignore) }))
+        | None -> Services.program.shortcutHolder code

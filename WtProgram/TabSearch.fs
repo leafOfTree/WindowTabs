@@ -294,7 +294,10 @@ type PalettePage = {
     aside:string -> TabSearchEntry -> PaletteAside
     /// Whether the palette goes out of sight while a row's command runs, so the window it acts
     /// on is in front: not for a setting turned on or off, which the palette stays up to show.
-    concealed:TabSearchEntry -> bool }
+    concealed:TabSearchEntry -> bool
+    /// Hides the popup and releases foreground before running `choose`, for pages that directly
+    /// activate another window or group.
+    hideOnChoose:bool }
 
 /// What a page's row shows besides its name: at the right, its detail, such as a value or a
 /// page, with a down arrow when the value is picked from a list, or a switch, for a setting that
@@ -729,7 +732,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 Array.ofList (live @ dimmed)
         let shown =
             match promotedRow with
-            | Some(query,hwnd) when query=input.Text && choices.IsEmpty && (scope=AllTabs || scope=GroupTabs || scope=GroupScope) ->
+            | Some(query,hwnd) when query=input.Text && choices.IsEmpty ->
                 let first,others = shown |> Array.partition(fun (_,entry) -> entry.hwnd=hwnd)
                 Array.append first others
             | _ -> shown
@@ -820,16 +823,20 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             previewed <- false
             previewOptions |> List.tryPick(fun option -> option.undo) |> Option.iter(fun undo -> undo())
         previewOptions <- []
-    let finish (chosen:IntPtr option) =
+    let finishWith (chosen:IntPtr option) (afterHide:(unit -> unit) option) =
         // Switching away deactivates the box, which asks to close again: once is enough.
         if not closed then
             restorePreview()
             closed <- true
             endAssign()
-            match chosen,pickMany,marked with
-            | Some _,Some choose,Some selected -> items |> Array.choose(fun (_,entry) -> if selected.Contains entry.hwnd then Some entry.hwnd else None) |> List.ofArray |> choose
-            | Some hwnd,Some choose,None -> choose [hwnd]
-            | _ -> chosen |> Option.iter(fun hwnd ->
+            match afterHide,chosen,pickMany,marked with
+            | Some run,_,_,_ ->
+                // A queued group activation must start after the popup releases foreground.
+                form.Hide()
+                run()
+            | None,Some _,Some choose,Some selected -> items |> Array.choose(fun (_,entry) -> if selected.Contains entry.hwnd then Some entry.hwnd else None) |> List.ofArray |> choose
+            | None,Some hwnd,Some choose,None -> choose [hwnd]
+            | None,_,_,_ -> chosen |> Option.iter(fun hwnd ->
                 // A queued group activation must start after the popup releases foreground.
                 form.Hide()
                 pick hwnd)
@@ -859,6 +866,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                         close())
                 timer.Start()
             else close()
+    let finish (chosen:IntPtr option) = finishWith chosen None
     /// The choices a command left take the rows' place, under its name, until one is chosen or
     /// Esc goes back.
     let choiceRows (options:CommandChoice list) =
@@ -1106,7 +1114,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 | [],Some page when page.assignOnEnter entry ->
                     list.SelectedItem <- target
                     assignChosen()
-                | [],Some page when page.scope=GroupScope -> finish (Some entry.hwnd)
+                | [],Some page when page.hideOnChoose -> finishWith None (Some(fun () -> page.choose entry |> ignore))
                 | [],Some page -> outcome entry.title (page.concealed entry) (fun () -> page.choose entry)
                 | [],None -> finish (Some entry.hwnd))
     /// Alt+Enter: the chosen row's shortcut is recorded in a box over the row, as on the

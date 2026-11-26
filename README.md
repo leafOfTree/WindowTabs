@@ -118,10 +118,10 @@ with its shortcut beside it. A setting that is on or off shows a switch and is t
 place; a choice is picked from its list, a size typed and saved as you type, a colour picked,
 and anything else opens the settings window on it. **Restore workspace…** lists the saved
 workspaces. Alt + Enter on an action sets its shortcut, as **Settings → Shortcuts** does; a
-setting's shortcut opens the palette on its choices or its box. The window search (**Ctrl + Alt + T**) is a box
-of its own, over the group's tabs or every window.
+setting's shortcut opens the palette on its choices or its box. The window search (**Ctrl + Alt + T**) and group search (**Ctrl + Alt + G**) are boxes
+of their own: Switch windows searches the group's tabs or every window, and Switch groups lists open groups (with **Alt + Enter** to bind a global shortcut to a whole group).
 
-Searching works the same in both boxes:
+Searching works the same in all three boxes:
 
 - Type words in any order; each can be part of a name, an app or a word a command is known
   by, so `color tab` finds **Tab color…** and `merge` finds **Group this app**.

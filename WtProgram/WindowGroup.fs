@@ -1126,7 +1126,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.ts.hwnd = hwnd || this.windows.contains(hwnd)
     
     member this.topWindow = zorderCell.value.head
-    member this.activeWindow = zorderCell.value.tryHead
    
 
     member this.windows : Set2<IntPtr> = windowsCell.value

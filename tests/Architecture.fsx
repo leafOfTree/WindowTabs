@@ -273,7 +273,8 @@ let main() =
             member _.windowShortcuts() = []
             member _.setWindowShortcut _ = true
             member _.groupShortcuts() = []
-            member _.setGroupShortcut _ = true})
+            member _.setGroupShortcut _ = true
+            member _.shortcutHolder _ = None})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()},api,dispatcher)
@@ -1276,7 +1277,8 @@ let main() =
           dimmed=(fun _ -> false)
           assignOnEnter=(fun _ -> false)
           aside=(fun _ entry -> { detail=entry.program; switch=None; swatch=None; shortcut=""; dropdown=false; small=false })
-          concealed=fun _ -> true }
+          concealed=fun _ -> true
+          hideOnChoose=false }
     let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
     check (palette.Scope=GroupTabs) "The palette did not open on the group"
     palette.SwitchScope()
@@ -1676,7 +1678,20 @@ let main() =
     check (GroupShortcuts.shownOn boundGroup (lazy openGroups) [noteShortcutA;noteShortcutB] 300=Some noteShortcutA
            && GroupShortcuts.shownOn boundGroup (lazy openGroups) [noteShortcutA;noteShortcutB] 301=Some noteShortcutB)
           "Separate groups did not each show their own shortcut"
-    // Switch groups popup: hides before activating, promotes remembered row, and assigns shortcuts.
+    // Reassigning a key on an open group must never delete a fallback key from another closed group of the same app.
+    let closedNoteB = [candNoteA]
+    let boundA (s:GroupShortcut) = if s.code=noteShortcutA.code then Some 300 else None
+    let replacedOwned = GroupShortcuts.replaceableOn boundA closedNoteB [noteShortcutA;noteShortcutB] 300 1609
+    check (replacedOwned=[noteShortcutA]) (sprintf "Reassigning group A would drop closed group B's shortcut: %A" replacedOwned)
+    let afterReassign = GroupShortcuts.replace [noteShortcutA;noteShortcutB] replacedOwned [{ noteShortcutA with code=1609 }]
+    check (afterReassign |> List.exists(fun s -> s.code=noteShortcutB.code) && afterReassign |> List.exists(fun s -> s.code=1609))
+          "Closed group B's shortcut was lost when group A got a new shortcut"
+    // Even if group A owned no key of its own, assigning a new key keeps B's fallback key, while clearing (code 0) clears the shown fallback.
+    check (GroupShortcuts.replaceableOn unboundGroup closedNoteB [noteShortcutB] 300 1609=[])
+          "Assigning a key to a group with no own key deleted a closed group's fallback key"
+    check (GroupShortcuts.replaceableOn unboundGroup closedNoteB [noteShortcutB] 300 0=[noteShortcutB])
+          "Clearing a displayed fallback shortcut did not remove it"
+    // Switch groups popup: hides before choosing, promotes remembered row, and assigns shortcuts.
     do
         let mutable groupPopupHost : Form option = None
         let mutable pickedGroup = IntPtr.Zero
@@ -1686,15 +1701,17 @@ let main() =
         let groupPage : PalettePage =
             { scope=GroupScope; caption="Groups"; prompt="group"; noMatches="none"; noEntries="empty"; glyph=WindowGlyph
               icons=(fun _ -> []); entries=[groupEntryA;groupEntryB]
-              choose=(fun _ -> Done)
+              choose=(fun entry ->
+                  check (groupPopupHost |> Option.exists(fun host -> not host.Visible)) "Switch groups activated before hiding its popup"
+                  pickedGroup <- entry.hwnd
+                  Done)
               shortcut=(fun entry -> if entry.hwnd=IntPtr 200 then Some { current=assignedGroupCode; usedBy=(fun _ -> None); set=(fun code -> assignedGroupCode <- code; true); inList=false } else None)
               dimmed=(fun _ -> false); assignOnEnter=(fun _ -> false)
               aside=(fun _ entry -> { detail=entry.program; switch=None; swatch=None; shortcut=(if entry.hwnd=IntPtr 200 then SettingsShortcut.text assignedGroupCode else ""); dropdown=false; small=false })
-              concealed=(fun _ -> true) }
+              concealed=(fun _ -> false)
+              hideOnChoose=true }
         let existingForms = Application.OpenForms |> Seq.cast<Form> |> Seq.toList
-        let groupBox = TabSearchForm([],[],pick=(fun id ->
-            check (groupPopupHost |> Option.exists(fun host -> not host.Visible)) "Switch groups activated before hiding its popup"
-            pickedGroup <- id),pages=[groupPage],scope=GroupScope,windows=false)
+        let groupBox = TabSearchForm([],[],pages=[groupPage],scope=GroupScope,windows=false)
         groupBox.SelectFirst(preferred=IntPtr 200)
         check (groupBox.Results=[groupEntryB;groupEntryA] && groupBox.Selected=Some groupEntryB)
               "Switch groups did not promote its preferred group"

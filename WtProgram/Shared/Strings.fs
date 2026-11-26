@@ -558,6 +558,7 @@ module Strings =
               ar=sprintf "تم الحفظ (%d نافذة)" windows
               ko=sprintf "저장했습니다(창 %d개)" windows }
         let deleted = { en="Deleted"; zh="已删除"; ja="削除しました"; ar="تم الحذف"; ko="삭제됨" }
+        let groupNotOpen = { en="Group is not open"; zh="该分组未打开"; ja="このグループは開いていません"; ar="المجموعة غير مفتوحة"; ko="그룹이 열려 있지 않습니다" }
         /// Why a saved window was not found, after its app in the restore notice and log.
         let unknownApp = { en="Saved without its app"; zh="保存时未记录应用"; ja="アプリが記録されていません"; ar="حُفظت دون تطبيقها"; ko="앱 정보 없이 저장됨" }
         /// The reason, then what to do about it as a sentence of its own, so the two do not read as one.
