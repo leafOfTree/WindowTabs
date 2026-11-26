@@ -37,3 +37,82 @@
 @media(max-width:760px){#wt-claude .hero{gap:32px}}
 
 #wt-claude .media-player {position:relative}
+html[data-theme=light], :where(html[data-theme=light]) body, :where(html[data-theme=light]) #wt-claude, :where(html[data-theme=light]) #wt-claude > .inside:first-child {background:#fafafa;color:#202328;color-scheme:light}
+  :where(html[data-theme=light]) #wt-claude .walkthrough, :where(html[data-theme=light]) #wt-claude .command {background:#eff1f3}
+  :where(html[data-theme=light]) #wt-claude :is(h1,h2,h3,.brand,.footer-brand), :where(html[data-theme=light]) #wt-claude .walk-copy article.is-current h3,
+  :where(html[data-theme=light]) #wt-claude .walk-copy article:not(.is-current) h3 {color:#202328}
+  :where(html[data-theme=light]) #wt-claude :is(.subtitle,.three p,.walk-copy p,.site-footer p,.media-note,.download-feedback),
+  :where(html[data-theme=light]) #wt-claude .recorded-demo .subtitle, :where(html[data-theme=light]) #wt-claude .real-demo .media-note, :where(html[data-theme=light]) #wt-claude .site-footer nav a:not(.primary), :where(html[data-theme=light]) #wt-claude .navlinks {color:#505963}
+  :where(html[data-theme=light]) #wt-claude .walk-tabs {background:#dde1e5}
+  :where(html[data-theme=light]) #wt-claude .walk-tabs button {color:#48515b}
+  :where(html[data-theme=light]) #wt-claude .walk-tabs button[aria-pressed=true] {background:white;color:#17232c}
+  :where(html[data-theme=light]) #wt-claude .site-footer {border-color:#d4d9df}
+  :where(html[data-theme=light]) #wt-claude .site-footer :is(nav,p) a:not(.primary):is(:hover,:focus-visible),
+  :where(html[data-theme=light]) #wt-claude .navlinks>a:not(.primary):is(:hover,:focus-visible) {background:#dfe6ec;color:#17232c}
+  :where(html[data-theme=light]) #wt-claude .media-player:not(:fullscreen) .media-controls button {color:#384956}
+  :where(html[data-theme=light]) #wt-claude .media-player:not(:fullscreen) .media-controls button:hover {background:#dbe3e9}
+  :where(html[data-theme=light]) #wt-claude .media-player:not(:fullscreen) .media-seek::-webkit-slider-runnable-track {background:linear-gradient(to right,#0078cb var(--played),#b8c2ca var(--played))}
+  :where(html[data-theme=light]) #wt-claude .media-player:not(:fullscreen) .media-seek::-moz-range-track {background:#b8c2ca}
+  :where(html[data-theme=light]) #wt-claude a[data-download-exe] {color:white}
+
+#wt-claude .pref-control {position:relative;display:grid;place-items:center;width:36px;height:36px;border-radius:8px}
+#wt-claude .pref-control svg {width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6}
+#wt-claude .pref-control select {position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+#wt-claude .pref-control:has(.language-short) {display:flex;justify-content:center;align-items:center;gap:5px;width:auto;padding-inline:8px}
+#wt-claude .language-short {font-size:14px;font-weight:500}
+#site-theme {display:inline-flex;align-items:center;gap:2px;padding:3px;border:0;border-radius:18px;background:color-mix(in srgb,currentColor 10%,transparent);cursor:pointer}
+#site-theme svg {width:24px;height:24px;padding:4px;border-radius:50%;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round}
+#site-theme[aria-checked=false] svg:first-child,#site-theme[aria-checked=true] svg:last-child {background:light-dark(white,#53575b);box-shadow:0 1px 3px #0002}
+#site-theme:focus-visible {outline:2px solid #479cec;outline-offset:2px}
+@media (hover:hover) {
+  #site-theme:hover {background:color-mix(in srgb,currentColor 20%,transparent)}
+}
+@media (prefers-reduced-motion:no-preference) {
+  #site-theme {transition:background-color .15s ease}
+}
+#wt-claude .pref-control:is(:hover,:has(:focus-visible)) {background:color-mix(in srgb,currentColor 12%,transparent)}
+#wt-claude .pref-control:has(:focus-visible) {outline:2px solid #479cec}
+#wt-claude .media-controls {direction:ltr}
+html[dir=rtl] #wt-claude .walk-copy {text-align:start}
+
+#wt-claude .walk-tabs button:focus-visible {outline:2px solid #408ac4;outline-offset:1px}
+html[data-theme=light] #wt-claude .walk-copy article {
+  --heading:#80868d;--body:#767c82;opacity:1
+}
+html[data-theme=light] #wt-claude .walk-copy article:is(:hover,:focus-within) {
+  --heading:#41484f;--body:#444b52
+}
+html[data-theme=light] #wt-claude .walk-copy article.is-current {
+  --heading:#111417;--body:#262c31
+}
+html[data-theme=light] #wt-claude .walk-copy article h3 {color:var(--heading)}
+html[data-theme=light] #wt-claude .walk-copy article p {color:var(--body)}
+@media (hover:hover) {
+  #wt-claude .walk-tabs button:not([aria-pressed=true]):hover {background:#40474e;color:#fff}
+  html[data-theme=light] #wt-claude .walk-tabs button:not([aria-pressed=true]):hover {background:#eef3f8;color:#23394a}
+}
+@supports (appearance:base-select) {
+  #wt-claude .pref-control select,
+  #wt-claude .pref-control select::picker(select) {appearance:base-select}
+  #wt-claude .pref-control select {
+    opacity:1;font-size:0;color:transparent;border:0;background:transparent;padding:0;border-radius:inherit
+  }
+  #wt-claude .pref-control select::picker-icon {display:none}
+  #wt-claude .pref-control select::picker(select) {
+    inset:auto;top:anchor(bottom);inset-inline-end:anchor(end);margin-top:6px;
+    min-width:10rem;max-width:calc(100vw - 24px);padding:6px;border-radius:10px;
+    color-scheme:inherit;color:CanvasText;background:light-dark(#fff,#303030);border:1px solid color-mix(in srgb,CanvasText 12%,Canvas);
+    box-shadow:0 6px 20px #0002;font:400 14px/1.5 var(--site-font)
+  }
+  #wt-claude .pref-control option {
+    position:relative;display:flex;align-items:center;min-height:36px;padding:5px 16px;border-radius:5px;
+    color:CanvasText;font:400 14px/1.5 var(--site-font);cursor:pointer
+  }
+  #wt-claude .pref-control option:checked {background:light-dark(#edf0f3,#404040)}
+  #wt-claude .pref-control option:is(:hover,:focus-visible) {background:light-dark(#e5e9ed,#484848)}
+  @media (forced-colors:none) {
+    #wt-claude .pref-control option:focus {outline:none}
+  }
+  #wt-claude .pref-control option::checkmark {display:none}
+  #wt-claude .pref-control option:checked::before {content:"";position:absolute;inset-inline-start:4px;top:50%;transform:translateY(-50%);width:3px;height:16px;border-radius:3px;background:light-dark(#0073bd,#80c7ff)}
+}

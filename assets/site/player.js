@@ -16,6 +16,14 @@ document.querySelectorAll('video').forEach((video, index) => {
   const toggle = controls.querySelector('.media-toggle');
   const seek = controls.querySelector('.media-seek');
   const fullscreen = controls.querySelector('.media-fullscreen');
+  const label = key => translate(key).replace('{n}', index + 1);
+  document.addEventListener('site-languagechange', () => {
+    seek.setAttribute('aria-label', label('Seek within video {n}'));
+    fullscreen.setAttribute('aria-label', label(document.fullscreenElement === player ? 'Exit fullscreen for video {n}' : 'Show video {n} in fullscreen'));
+    update();
+  });
+  seek.setAttribute('aria-label', label('Seek within video {n}'));
+  fullscreen.setAttribute('aria-label', label('Show video {n} in fullscreen'));
   let frame = 0;
   function update() {
     cancelAnimationFrame(frame);
@@ -24,9 +32,9 @@ document.querySelectorAll('video').forEach((video, index) => {
     seek.max = duration || 100;
     seek.value = video.currentTime;
     seek.style.setProperty('--played', `${duration ? video.currentTime / duration * 100 : 0}%`);
-    seek.setAttribute('aria-valuetext', `${clock(video.currentTime)} of ${clock(duration)}`);
+    seek.setAttribute('aria-valuetext', `${clock(video.currentTime)} / ${clock(duration)}`);
     toggle.innerHTML = video.paused ? playIcon : pauseIcon;
-    toggle.setAttribute('aria-label', `${video.paused ? (video.ended ? 'Replay' : 'Play') : 'Pause'} video ${index + 1}`);
+    toggle.setAttribute('aria-label', label(video.paused ? (video.ended ? 'Replay video {n}' : 'Play video {n}') : 'Pause video {n}'));
     if (!video.paused && !video.ended) frame = requestAnimationFrame(update);
   }
   function togglePlayback() {
@@ -50,7 +58,7 @@ document.querySelectorAll('video').forEach((video, index) => {
       else await player.requestFullscreen();
     } catch { /* Leave the inline player available if fullscreen is unavailable. */ }
   });
-  document.addEventListener('fullscreenchange', () => fullscreen.setAttribute('aria-label', `${document.fullscreenElement === player ? 'Exit fullscreen' : 'Fullscreen'} video ${index + 1}`));
+  document.addEventListener('fullscreenchange', () => fullscreen.setAttribute('aria-label', label(document.fullscreenElement === player ? 'Exit fullscreen for video {n}' : 'Show video {n} in fullscreen')));
   update();
 });
 
