@@ -119,7 +119,10 @@ let main() =
             member _.detachTab hwnd = calls.Enqueue(sprintf "detachTab %d" hwnd)
             member _.editGroups hwnd = calls.Enqueue(sprintf "editGroups %d" hwnd)
             member _.windowShortcuts() = []
-            member _.setWindowShortcut _ = true})
+            member _.setWindowShortcut _ = true
+            member _.groupShortcuts() = []
+            member _.setGroupShortcut _ = true
+            member _.shortcutHolder _ = None})
         let tabbing = ConcurrentDictionary<string,bool>(StringComparer.OrdinalIgnoreCase)
         Services.register<IFilterService>({new IFilterService with
             member _.isAppWindow _ = false
@@ -201,7 +204,7 @@ let main() =
         let needsSplit = set ["split-focus-left";"split-focus-right";"split-focus-up";"split-focus-down";"split-focus-other";"split-swap";"split-equalize";"split-turn";"split-close-pane";"split-end"]
         let needsTab = set [TabCommands;GroupCommands;SplitCommands]
         // Listed with the tab and group commands, but open a box wherever the user is.
-        let anywhere = set ["search-tabs";"command-palette";"edit-groups";"new-group"]
+        let anywhere = set ["search-tabs";"switch-groups";"command-palette";"edit-groups";"new-group"]
         // Dimmed while there is no workspace to choose.
         let needsWorkspace = set ["restore-workspace-named";"delete-workspace"]
         // Open a system dialog and wait on the user: listed, but not run unattended.
@@ -235,6 +238,7 @@ let main() =
         attempt "previous-tab" (fun () -> runDone "previous-tab" active; settle active)
         attempt "last-used-tab" (fun () -> runDone "last-used-tab" active; settle active)
         attempt "search-tabs" (fun () -> runDone "search-tabs" active; note (called "toggleSearch None") "Switch windows did not open the window search")
+        attempt "switch-groups" (fun () -> runDone "switch-groups" active; note (called (sprintf "toggleSearch %A" (Some GroupScope))) "Switch groups did not open the group search")
         attempt "command-palette" (fun () -> runDone "command-palette" active; note (called (sprintf "toggleSearch %A" (Some ActionScope))) "Command palette did not open the palette")
         attempt "new-tab" (fun () -> runDone "new-tab" active; note (called (sprintf "newTab %d" active)) "New tab did not start the app again")
         attempt "number-leader" (fun () -> runDone "number-leader" active)

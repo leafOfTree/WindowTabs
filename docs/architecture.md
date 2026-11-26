@@ -351,6 +351,10 @@ preserves the working shortcut and does not persist the rejected value. While an
 records (`ShortcutRecording`), every hotkey is released, as Windows would otherwise hand a
 registered key to the program before the box saw it and run its command; they are registered
 again as the last recording ends, before the recorded key is taken.
+While a shortcut box has focus and records, a temporary keyboard hook detects chords
+already registered elsewhere before Windows dispatches them. A brief registration probe
+distinguishes a conflict from an ordinary key; only conflicts are swallowed and reported
+on the next UI turn. Ending recording disposes the hook and invalidates queued notices.
 
 Each command has a scope (`CommandScope`): a tab, group or split command's key is held only
 while the command is `enabled` for the window in front, one with tabs, and more than one for

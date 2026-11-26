@@ -11,7 +11,7 @@ module CommandPalette =
     let private row index title texts extra group =
         { hwnd=IntPtr(index+1); title=title; program=""; keywords=words texts extra; keys=[]; group=group; recency=index; desktop="" }
     /// What has a key besides `key`, which gives it up as the Shortcuts page's boxes do.
-    let holderOf key code = Commands.holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code
+    let holderOf key code = Commands.anyHolderOf key code
     /// Setting a command's shortcut from its row, as the Shortcuts page does.
     let assignment (command:Command) =
         command.shortcut |> Option.map(fun key ->
@@ -110,7 +110,7 @@ module CommandPalette =
             (match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> [SettingsCatalog.storageKey item])
             @ [shownValue action]
         { scope=ActionScope; caption=tr Strings.TabSearch.actions; prompt=tr Strings.TabSearch.actionPrompt
-          noMatches=tr Strings.TabSearch.noActions; noEntries=tr Strings.TabSearch.noActions; glyph=NoGlyph
+          noMatches=tr Strings.TabSearch.noActions; noEntries=tr Strings.TabSearch.noActions; glyph=NoGlyph; icons=(fun _ -> [])
           entries=listed |> Array.mapi(fun index action ->
                       let text = text action
                       let recency = rank action
@@ -228,4 +228,5 @@ module CommandPalette =
                   | Number _ | Colour | Shortcut _ -> false
                   | Text(key,_) when key="numberLeaderKeys" -> false
                   | _ -> true
-              | _ -> false }
+              | _ -> false
+          hideOnChoose=false }

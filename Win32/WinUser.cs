@@ -3066,7 +3066,7 @@ namespace Bemo
         public static extern IntPtr GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
         [DllImport("user32.dll", CharSet = CharSet.Ansi)]
         public static extern bool LockSetForegroundWindow(int uLockCode);
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         public static extern bool RegisterHotKey(IntPtr hWnd, int id, int fsModifiers, int vk);
         [DllImport("user32.dll")]
         public static extern bool UnregisterHotKey(IntPtr hWnd, int id);

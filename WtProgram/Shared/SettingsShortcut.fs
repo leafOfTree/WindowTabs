@@ -85,3 +85,44 @@ module SettingsShortcut =
     /// desktop: Tab, with Shift or not, may be one too. Keys that type into the box still may not.
     let isAcceptableInList (keyData:Keys) =
         isAcceptable keyData || (keyData &&& Keys.KeyCode)=Keys.Tab && (keyData &&& Keys.Modifiers &&& ~~~Keys.Shift)=Keys.None
+
+/// Registered hotkeys never reach a focused control. Catch conflicts before Windows dispatches
+/// them, so recording can explain the refusal without activating the other application.
+type ShortcutConflictCapture(owner:Control, refused:Keys -> unit) as this =
+    let mutable active = true
+    let captured = Collections.Generic.HashSet<int>()
+    let hook =
+        OS().registerKeyboardLLHook(fun (message,data) ->
+            let modifier key flag = if Win32Helper.IsKeyPressed key then flag else Keys.None
+            let keys = enum<Keys> data.vkCode
+                       ||| modifier VirtualKeyCodes.VK_CONTROL Keys.Control
+                       ||| modifier VirtualKeyCodes.VK_SHIFT Keys.Shift
+                       ||| (if data.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN<>0 then Keys.Alt else Keys.None)
+            if Win32Helper.IsKeyPressed(int Keys.LWin) || Win32Helper.IsKeyPressed(int Keys.RWin) then None
+            elif this.Handle(message.ToInt32(),keys) then Some 1 else None)
+
+    /// The same event path is exercised with a real competing registration on the test desktop.
+    member _.Handle(message:int, keys:Keys) =
+        let key = int (keys &&& Keys.KeyCode)
+        if not active || owner.IsDisposed || not owner.Focused then false
+        elif message=WindowMessages.WM_KEYUP || message=WindowMessages.WM_SYSKEYUP then captured.Remove key
+        elif message<>WindowMessages.WM_KEYDOWN && message<>WindowMessages.WM_SYSKEYDOWN then false
+        elif captured.Contains key then true
+        elif not (SettingsShortcut.isAcceptable keys) then false
+        else
+            let chord = Bemo.Win32.HotKeyShortcut(HotKeyControlCode=int16(SettingsShortcut.encode keys))
+            let id = 0x5371
+            if WinUserApi.RegisterHotKey(owner.Handle,id,chord.RegisterHotKeyModifierFlags,chord.RegisterHotKeyVirtualKeyCode) then
+                WinUserApi.UnregisterHotKey(owner.Handle,id) |> ignore
+                false
+            elif Runtime.InteropServices.Marshal.GetLastWin32Error()<>1409 then false
+            else
+                captured.Add key |> ignore
+                owner.BeginInvoke(Action(fun () -> if active && not owner.IsDisposed && owner.Focused then refused keys)) |> ignore
+                true
+
+    interface IDisposable with
+        member _.Dispose() =
+            active <- false
+            captured.Clear()
+            hook.Dispose()

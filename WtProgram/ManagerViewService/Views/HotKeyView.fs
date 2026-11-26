@@ -40,7 +40,7 @@ type HotKeyView() =
         editor.Changed.Add(fun _ ->
             let previous = Services.program.getHotKey key
             let code = editor.Shortcut
-            match Commands.holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code with
+            match Commands.anyHolderOf key code with
             // Pressed for this one, the key is meant for it: the other gives it up.
             | Some other ->
                 other.release()
@@ -62,6 +62,8 @@ type HotKeyView() =
     let restoreDefaults() =
         for shortcut in Services.program.windowShortcuts() do
             Services.program.setWindowShortcut { shortcut with code=0 } |> ignore
+        for shortcut in Services.program.groupShortcuts() do
+            Services.program.setGroupShortcut { shortcut with code=0 } |> ignore
         let commandKeys = Commands.all |> List.choose(fun command -> command.shortcut) |> List.distinct
         // Clear first so swapped shortcuts (next <-> previous) do not collide with each other.
         for key in commandKeys do Services.program.setHotKey key 0 |> ignore
@@ -79,8 +81,8 @@ type HotKeyView() =
         else
             editor.Name <- command.id
             SettingsUi.row card (tr command.text.caption) (tr command.text.description) editor
-    /// The palette and the window search, the way in to everything else, on a card of their own.
-    let entryKeys = ["commandPalette";"searchTabs"]
+    /// The palette, the window search and the group search, the way in to everything else, on a card of their own.
+    let entryKeys = ["commandPalette";"searchTabs";"switchGroups"]
     let rows card category (skip:string list) =
         for (key,editor),(_,command) in List.zip editors actions do
             if command.category=category && not (List.contains key skip) then row card command editor
@@ -202,6 +204,7 @@ type HotKeyView() =
         let updateRestore() =
             restore.Offered <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
                                || not (List.isEmpty (Services.program.windowShortcuts()))
+                               || not (List.isEmpty (Services.program.groupShortcuts()))
         for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
         restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
         updateRestore()

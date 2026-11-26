@@ -476,6 +476,7 @@ let main() =
     let draggedTogether() = [4711,"",["NOTEPAD.EXE","Notes - Notepad",IntPtr.Zero,true;"EXPLORER.EXE","Downloads",openWindow.Handle,false]]
     let handMade = ref (draggedTogether())
     let windowKeys : WindowShortcut list ref = ref []
+    let groupKeys : GroupShortcut list ref = ref []
     let ungrouped = Collections.Generic.List<int>()
     let regrouped = Collections.Generic.List<string>()
     Services.register<IProgram>({new IProgram with
@@ -522,7 +523,12 @@ let main() =
         member _.windowShortcuts() = windowKeys.Value
         member _.setWindowShortcut shortcut =
             windowKeys.Value <- WindowShortcuts.set windowKeys.Value shortcut
-            true})
+            true
+        member _.groupShortcuts() = groupKeys.Value
+        member _.setGroupShortcut shortcut =
+            groupKeys.Value <- GroupShortcuts.set groupKeys.Value shortcut
+            true
+        member _.shortcutHolder _ = None})
     let command (control:Control) (keys:Keys) =
         let mutable msg = Message()
         let processKey = control.GetType().GetMethod("ProcessCmdKey",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
@@ -544,12 +550,12 @@ let main() =
         do
             let entry = view.control.Controls.Find("start-here",true).[0]
             let tops =
-                [ for id in ["command-palette";"search-tabs"] do
+                [ for id in ["command-palette";"search-tabs";"switch-groups"] do
                     let found = view.control.Controls.Find(id,true) |> Array.filter(fun control -> control :? SettingsShortcutInput)
                     assertTrue (found.Length=1 && entry.Contains found.[0]) (sprintf "%s is not on the page's first card, once" id)
                     yield entry.PointToClient(found.[0].PointToScreen(Point.Empty)).Y ]
-            assertTrue (tops.[0] < tops.[1]) "The window search comes before the palette on the first card"
-            assertTrue (not (entry.Contains next)) "The first card holds more than the window search and the palette"
+            assertTrue (tops.[0] < tops.[1] && tops.[1] < tops.[2]) "The start-here shortcuts are not in palette, windows, groups order"
+            assertTrue (not (entry.Contains next)) "The first card holds more than the palette, window search and group search"
         // The tab menu's and the settings' commands are given keys in the palette, not listed here.
         assertTrue (view.control.Controls.Find("rename-tab",true).Length=0 && view.control.Controls.Find("toggle-dim-inactive-groups",true).Length=0)
                    "The Shortcuts page lists commands the palette is for"
@@ -650,6 +656,34 @@ let main() =
         command next Keys.Escape |> ignore
         assertTrue (not next.IsRecording && next.Shortcut=3623) "Esc cancels recording"
         assertTrue (not (ShortcutRecording.isActive())) "Cancelling a recording did not give the keys back"
+        // Another app's registered chord bypasses ProcessCmdKey. The recording hook must explain
+        // it, preserve the old shortcut, and leave the box listening for a different key.
+        next.StartRecording()
+        let captureField = typeof<SettingsShortcutInput>.GetFields(BindingFlags.Instance ||| BindingFlags.NonPublic) |> Array.find(fun field -> field.FieldType=typeof<ShortcutConflictCapture option>)
+        let capture = (captureField.GetValue(next) :?> ShortcutConflictCapture option).Value
+        use competitor = new Control()
+        let reserve keys =
+            let chord = Bemo.Win32.HotKeyShortcut(HotKeyControlCode=int16(SettingsShortcut.encode keys))
+            WinUserApi.RegisterHotKey(competitor.Handle,73,chord.RegisterHotKeyModifierFlags,chord.RegisterHotKeyVirtualKeyCode)
+        let blockedKeys =
+            [Keys.G;Keys.F9;Keys.F10;Keys.F11;Keys.F14]
+            |> List.map(fun key -> Keys.Control ||| Keys.Alt ||| Keys.Shift ||| key)
+            |> List.find reserve
+        try
+            assertTrue (capture.Handle(WindowMessages.WM_SYSKEYDOWN,blockedKeys)) "A competing registered hotkey escaped the recorder"
+            Application.DoEvents()
+            assertTrue (next.IsRecording && next.Shortcut=3623 && next.LastPressed=SettingsShortcut.encode blockedKeys
+                        && next.Message=Some(tr Strings.Shortcuts.inUseByAnotherApp)) "An occupied hotkey did not explain the refusal while preserving the old key"
+            assertTrue (capture.Handle(WindowMessages.WM_SYSKEYUP,blockedKeys)) "The blocked hotkey's release escaped"
+        finally WinUserApi.UnregisterHotKey(competitor.Handle,73) |> ignore
+        assertTrue (not (capture.Handle(WindowMessages.WM_SYSKEYDOWN,blockedKeys))) "A free key was swallowed by the conflict hook"
+        assertTrue (reserve blockedKeys) "The conflict probe leaked its temporary registration"
+        WinUserApi.UnregisterHotKey(competitor.Handle,73) |> ignore
+        command next blockedKeys |> ignore
+        assertTrue (not next.IsRecording && next.Message.IsNone) "A successful recording retained the previous conflict notice"
+        next.Shortcut <- 3623
+        hotKeys.["nextTab"] <- 3623
+        assertTrue (not (capture.Handle(WindowMessages.WM_SYSKEYDOWN,blockedKeys))) "A stopped recording still captured keys"
         next.StartRecording()
         command next (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
         let expected = SettingsShortcut.encode (Keys.Control ||| Keys.OemCloseBrackets)
@@ -729,14 +763,18 @@ let main() =
         search.Shortcut <- 1568
         // A key given in the palette to a command the page does not list goes back to none as well.
         hotKeys.["rename-tab"] <- SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F7)
-        // So does a key given to a window in the window search.
+        // So does a key given to a window in the window search, or to a group in Switch groups.
         windowKeys.Value <- [{ path= @"C:\Apps\Notes.exe"; title="Notes"; code=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F8) }]
+        groupKeys.Value <- [{ ruleGroupId=""; groupToken=42; paths=[@"C:\Apps\Notes.exe"]; titles=["Notes"]; label="Notes"; code=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F9) }]
         assertTrue (restoreButton.AccessibleDescription=tr Strings.Shortcuts.restoreDefaultsHelp) "The reset button does not say what it resets"
         restoreButton.PerformClick()
         assertTrue windowKeys.Value.IsEmpty "Restore default shortcuts left a key given to a window"
+        assertTrue groupKeys.Value.IsEmpty "Restore default shortcuts left a key given to a group"
         assertTrue (hotKeys.["nextTab"]=3623 && hotKeys.["prevTab"]=3621 && next.Shortcut=3623 && previous.Shortcut=3621) "Restore default shortcuts"
         assertTrue (hotKeys.["rename-tab"]=0) "Restore default shortcuts left a key given in the palette"
         assertTrue (hotKeys.["searchTabs"]=1620 && search.Shortcut=1620) "Restore default must set tab search to Ctrl+Alt+T"
+        let switchGroups = view.control.Controls.Find("switch-groups",true).[0] :?> SettingsShortcutInput
+        assertTrue (hotKeys.["switchGroups"]=1607 && switchGroups.Shortcut=1607) "Restore default must set group search to Ctrl+Alt+G"
         let newTab = view.control.Controls.Find("new-tab",true).[0] :?> SettingsShortcutInput
         assertTrue (hotKeys.["newTab"]=1614 && newTab.Shortcut=1614) "Restore default must set new tab to Ctrl+Alt+N"
         hotKeys.["prevTab"] <- 3621

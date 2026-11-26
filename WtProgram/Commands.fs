@@ -73,10 +73,6 @@ type Command = {
     chooses:bool
     run:IntPtr -> CommandOutcome }
 
-/// What has a shortcut key already: its name, its settings key for a command or a key of the
-/// lists, and how to take the key from it, and give it back when the key cannot be taken.
-type ShortcutHolder = { name:string; key:string; release:unit -> unit; restore:unit -> unit }
-
 /// What a setting's row in the palette does, which its own shortcut does too: its values listed
 /// to pick from, a value typed, a colour picked, or its page opened.
 module SettingRows =
@@ -420,6 +416,7 @@ module Commands =
         fromCatalog "last-used-tab" TabCommands hasOtherTabs (onGroup(fun g -> g.switchToLastActive false))
         // Opened over any window, so their keys are held everywhere.
         { fromCatalog "search-tabs" TabCommands always (fun _ -> Services.program.toggleSearch None) with scope=Everywhere }
+        { fromCatalog "switch-groups" TabCommands always (fun _ -> Services.program.toggleSearch (Some GroupScope)) with scope=Everywhere }
         { fromCatalog "command-palette" TabCommands always (fun _ -> Services.program.toggleSearch (Some ActionScope)) with scope=Everywhere }
         fromCatalog "new-tab" TabCommands hasGroup (fun hwnd -> Services.program.newTab hwnd)
         // As the tab menu's Close: the window of the tab in front, and only a tab's.
@@ -726,3 +723,9 @@ module Commands =
             listKeys |> List.tryFind(fun k -> k<>key && getHotKey k=code) |> Option.bind(fun other ->
                 listKeyName other |> Option.map(fun name ->
                     { name=name; key=other; release=(fun () -> setListKey other 0); restore=(fun () -> setListKey other code) }))
+    /// Any holder of `code` besides `key`, including shortcuts bound to windows or groups.
+    let anyHolderOf key code =
+        match holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code with
+        | Some holder -> Some holder
+        | None when code=0 -> None
+        | None -> Services.program.shortcutHolder code

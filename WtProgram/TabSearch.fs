@@ -279,6 +279,8 @@ type PalettePage = {
     /// Said when the page has nothing to list, nothing typed, such as before any workspace is saved.
     noEntries:string
     glyph:TreeListGlyph
+    /// Windows whose app icons show before the row's name, side by side; empty to use `glyph`.
+    icons:TabSearchEntry -> IntPtr list
     entries:TabSearchEntry list
     choose:TabSearchEntry -> CommandOutcome
     /// For a row that can be given a shortcut with Alt+Enter.
@@ -292,7 +294,10 @@ type PalettePage = {
     aside:string -> TabSearchEntry -> PaletteAside
     /// Whether the palette goes out of sight while a row's command runs, so the window it acts
     /// on is in front: not for a setting turned on or off, which the palette stays up to show.
-    concealed:TabSearchEntry -> bool }
+    concealed:TabSearchEntry -> bool
+    /// Hides the popup and releases foreground before running `choose`, for pages that directly
+    /// activate another window or group.
+    hideOnChoose:bool }
 
 /// What a page's row shows besides its name: at the right, its detail, such as a value or a
 /// page, with a down arrow when the value is picked from a list, or a switch, for a setting that
@@ -362,8 +367,20 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let pageItems =
         pages |> List.map(fun page ->
             page.scope,
-            page.entries |> List.map(fun entry -> TreeListItem(entry.title,Values=[|"";""|],Glyph=page.glyph,Dimmed=page.dimmed entry),entry) |> Array.ofList)
+            page.entries |> List.map(fun entry ->
+                let item = TreeListItem(entry.title,Values=[|"";""|],Glyph=page.glyph,Dimmed=page.dimmed entry)
+                let iconWindows = page.icons entry
+                if not iconWindows.IsEmpty then
+                    match iconWindows |> List.choose(fun hwnd -> ImgHelper.knownWindowIcon (OS().windowFromHwnd hwnd)) with
+                    | first::rest ->
+                        item.Icon <- first
+                        item.MoreIcons <- rest
+                    | [] -> item.Glyph <- WindowGlyph
+                item,entry) |> Array.ofList)
         |> Map.ofList
+    do
+        let iconWindows = pages |> List.collect(fun page -> page.entries |> List.collect page.icons)
+        if not iconWindows.IsEmpty then ImgHelper.refreshWindowIcons iconWindows
     let preferred =
         settings |> Option.map(fun api -> api.getValue("tabSearchScope") :?> string)
         |> Option.defaultValue SettingsCatalog.tabSearchScopeDefault
@@ -715,7 +732,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 Array.ofList (live @ dimmed)
         let shown =
             match promotedRow with
-            | Some(query,hwnd) when query=input.Text && choices.IsEmpty && (scope=AllTabs || scope=GroupTabs) ->
+            | Some(query,hwnd) when query=input.Text && choices.IsEmpty ->
                 let first,others = shown |> Array.partition(fun (_,entry) -> entry.hwnd=hwnd)
                 Array.append first others
             | _ -> shown
@@ -806,16 +823,20 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             previewed <- false
             previewOptions |> List.tryPick(fun option -> option.undo) |> Option.iter(fun undo -> undo())
         previewOptions <- []
-    let finish (chosen:IntPtr option) =
+    let finishWith (chosen:IntPtr option) (afterHide:(unit -> unit) option) =
         // Switching away deactivates the box, which asks to close again: once is enough.
         if not closed then
             restorePreview()
             closed <- true
             endAssign()
-            match chosen,pickMany,marked with
-            | Some _,Some choose,Some selected -> items |> Array.choose(fun (_,entry) -> if selected.Contains entry.hwnd then Some entry.hwnd else None) |> List.ofArray |> choose
-            | Some hwnd,Some choose,None -> choose [hwnd]
-            | _ -> chosen |> Option.iter(fun hwnd ->
+            match afterHide,chosen,pickMany,marked with
+            | Some run,_,_,_ ->
+                // A queued group activation must start after the popup releases foreground.
+                form.Hide()
+                run()
+            | None,Some _,Some choose,Some selected -> items |> Array.choose(fun (_,entry) -> if selected.Contains entry.hwnd then Some entry.hwnd else None) |> List.ofArray |> choose
+            | None,Some hwnd,Some choose,None -> choose [hwnd]
+            | None,_,_,_ -> chosen |> Option.iter(fun hwnd ->
                 // A queued group activation must start after the popup releases foreground.
                 form.Hide()
                 pick hwnd)
@@ -828,6 +849,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 let dispose() =
                     form.Dispose()
                     ImgHelper.disposeItems (Array.map fst items)
+                    for KeyValue(_,rows) in pageItems do ImgHelper.disposeItems (Array.map fst rows)
                     ImgHelper.disposeItems choiceItems
                 if form.IsHandleCreated then form.BeginInvoke(Action dispose) |> ignore else dispose()
             // Out of sight but still in front while its command ran: put away only once the command
@@ -844,6 +866,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                         close())
                 timer.Start()
             else close()
+    let finish (chosen:IntPtr option) = finishWith chosen None
     /// The choices a command left take the rows' place, under its name, until one is chosen or
     /// Esc goes back.
     let choiceRows (options:CommandChoice list) =
@@ -1091,6 +1114,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 | [],Some page when page.assignOnEnter entry ->
                     list.SelectedItem <- target
                     assignChosen()
+                | [],Some page when page.hideOnChoose -> finishWith None (Some(fun () -> page.choose entry |> ignore))
                 | [],Some page -> outcome entry.title (page.concealed entry) (fun () -> page.choose entry)
                 | [],None -> finish (Some entry.hwnd))
     /// Alt+Enter: the chosen row's shortcut is recorded in a box over the row, as on the
@@ -1345,6 +1369,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// The search typed on the scope's rows, under any command's choices: the one to offer again.
     member _.BaseQuery = match List.tryLast choices with Some(_,_,_,query) -> query | None -> input.Text
     member _.Scope = scope
+    member _.HasScope target = List.contains target scopes
     /// Goes to a scope, as Tab does when it comes round to it.
     member _.SetScope target = setScope target
     /// Goes round the scopes, as Tab does.

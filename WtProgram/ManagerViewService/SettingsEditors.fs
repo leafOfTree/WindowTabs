@@ -378,6 +378,7 @@ type SettingsShortcutInput() as this =
     let mutable heldAtStart = Keys.None
     /// The last combination pressed while recording, taken or not, to name beside a refusal.
     let mutable lastPressed = 0
+    let mutable conflictCapture : ShortcutConflictCapture option = None
     let messageTimer = new Timer(Interval=2500)
     let clearMessage() =
         messageTimer.Stop()
@@ -390,13 +391,23 @@ type SettingsShortcutInput() as this =
             recording <- value
             takenThisTime <- false
             pauseTimer.Stop()
-            if value then ShortcutRecording.start() else ShortcutRecording.stop()
+            if value then
+                ShortcutRecording.start()
+                if not this.AnyKey then
+                    conflictCapture <- Some(new ShortcutConflictCapture(this,fun keys ->
+                        lastPressed <- SettingsShortcut.encode keys
+                        showMessage true (tr Strings.Shortcuts.inUseByAnotherApp)))
+            else
+                conflictCapture |> Option.iter(fun capture -> (capture :> IDisposable).Dispose())
+                conflictCapture <- None
+                ShortcutRecording.stop()
     let stopRecording() = if recording then setRecording false; focusCue <- false; this.Invalidate()
     /// The × shows while the pointer is on the box, or it has the keyboard focus, so it takes no
     /// room the rest of the time.
     let canClear() = shortcut<>0 && not recording && message.IsNone && (hovering || this.Focused)
     let commit next =
         // The keys come back before the new one is taken, so a key held elsewhere is still refused.
+        clearMessage()
         setRecording false
         focusCue <- false
         if next<>shortcut then
