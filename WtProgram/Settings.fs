@@ -192,7 +192,12 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         disabledShortcutPaths = Set2(settingsJson.getStringArray("disabledShortcutPaths").def(List2()))
                         enableMouseGestures = settingsJson.getBool("enableMouseGestures").def(SettingsCatalog.toggleDefault "enableMouseGestures" hasExistingSettings)
                         showGestureHint = settingsJson.getBool("showGestureHint").def(SettingsCatalog.toggleDefault "showGestureHint" hasExistingSettings)
+                        showGestureTrail = settingsJson.getBool("showGestureTrail").def(SettingsCatalog.toggleDefault "showGestureTrail" hasExistingSettings)
                         mouseGestures = MouseGestures.readTable settingsJson.["mouseGestures"]
+                        enableEdgeScroll = settingsJson.getBool("enableEdgeScroll").def(SettingsCatalog.toggleDefault "enableEdgeScroll" hasExistingSettings)
+                        enableHotCorners = settingsJson.getBool("enableHotCorners").def(SettingsCatalog.toggleDefault "enableHotCorners" hasExistingSettings)
+                        hotCornerDelay = settingsJson.getInt32("hotCornerDelay").def(SettingsCatalog.hotCornerDelayDefault) |> between SettingsCatalog.hotCornerDelayRange
+                        mouseTriggers = MouseTriggers.read settingsJson.["mouseTriggers"]
                         numberLeaderKeys = settingsJson.getString("numberLeaderKeys").def(SettingsCatalog.textDefault "numberLeaderKeys") |> NumberLeaderKeys.normalize
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def(SettingsCatalog.choiceDefault "numberHotKeyModifier") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
                         sessionRestore = settingsJson.getString("sessionRestore").def(SettingsCatalog.choiceDefault "sessionRestore") |> SettingsCatalog.normalizeChoice "sessionRestore"
@@ -305,7 +310,12 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setStringArray("disabledShortcutPaths", settings.disabledShortcutPaths.items)
             settingsJson.setBool("enableMouseGestures", settings.enableMouseGestures)
             settingsJson.setBool("showGestureHint", settings.showGestureHint)
+            settingsJson.setBool("showGestureTrail", settings.showGestureTrail)
             settingsJson.["mouseGestures"] <- MouseGestures.writeTable settings.mouseGestures
+            settingsJson.setBool("enableEdgeScroll", settings.enableEdgeScroll)
+            settingsJson.setBool("enableHotCorners", settings.enableHotCorners)
+            settingsJson.setInt32("hotCornerDelay", settings.hotCornerDelay)
+            settingsJson.["mouseTriggers"] <- MouseTriggers.write settings.mouseTriggers
             settingsJson.setString("numberLeaderKeys",settings.numberLeaderKeys)
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
             settingsJson.setString("sessionRestore", settings.sessionRestore)
@@ -378,6 +388,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             let value = if key="alignment" || key="language" || key="autoHideMode" || key="titleBarDrop" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" || key="sessionRestore" || key="tabAddButton" || key="tabCloseButton" || key="tabTextWeight" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             let value = if key="tabColumnWidth" then box(between SettingsCatalog.columnWidthRange (unbox<int> value)) else value
             let value = if key="tabOpacity" then box(between SettingsCatalog.opacityRange (unbox<int> value)) else value
+            let value = if key="hotCornerDelay" then box(between SettingsCatalog.hotCornerDelayRange (unbox<int> value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo

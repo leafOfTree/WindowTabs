@@ -1305,6 +1305,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                        match Commands.holderOf program.getHotKey program.setHotKey (fun key code -> settings.setHotKey key code) "" code with
                                        | Some holder -> Some holder
                                        | None ->
+                                           match this.customCommands() |> List.tryFind(fun other -> other.code=code) with
+                                           | Some other ->
+                                               Some { name=CustomCommands.displayName other.name other.target; key=CustomCommands.key other
+                                                      release=(fun () -> this.saveCustomCommand { other with code=0 } |> ignore)
+                                                      restore=(fun () -> this.saveCustomCommand other |> ignore) }
+                                           | None ->
                                            // Another window's key moves to this one, as a command's does.
                                            let lands = landing entry.hwnd |> List.map fst
                                            saved() |> List.tryFind(fun other -> other.code=code && not (List.contains other lands))
@@ -1439,6 +1445,50 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
                 hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) (this.runCommand command) |> ignore)
         for shortcut in this.windowShortcuts() do this.registerWindowShortcut shortcut |> ignore
+        for command in this.customCommands() do this.registerCustomCommand command |> ignore
+
+    member private this.customCommands() : CustomCommand list = CustomCommands.read (Services.settings.root.["customCommands"])
+
+    member private this.runCustomCommand(command:CustomCommand) =
+        match CustomCommands.tryExecute command.target command.args command.hidden with
+        | Result.Ok() -> ()
+        | Result.Error message -> Notice.error (CustomCommands.displayName command.name command.target) message
+
+    member private this.registerCustomCommand(command:CustomCommand) =
+        let key = CustomCommands.key command
+        if command.code=0 then
+            hotKeyManager.unregister key
+            true
+        else
+            let chord = HotKeyShortcut(HotKeyControlCode=int16 command.code)
+            hotKeyManager.register key (chord.RegisterHotKeyModifierFlags,chord.RegisterHotKeyVirtualKeyCode) (fun () -> this.runCustomCommand command)
+
+    member private this.saveCustomCommand(command:CustomCommand) =
+        let existing = this.customCommands()
+        let previous = existing |> List.tryFind(fun other -> other.id=command.id)
+        let displaced =
+            if command.code=0 then []
+            else existing |> List.filter(fun other -> other.id<>command.id && other.code=command.code)
+        for other in displaced do hotKeyManager.unregister (CustomCommands.key other)
+        previous |> Option.iter(fun old -> if old.code<>command.code then hotKeyManager.unregister (CustomCommands.key old))
+        if this.registerCustomCommand command then
+            let root = Services.settings.root
+            root.["customCommands"] <- CustomCommands.write (CustomCommands.upsert existing command)
+            Services.settings.root <- root
+            settingsManager.announce "customCommands"
+            true
+        else
+            previous |> Option.iter(fun old -> this.registerCustomCommand old |> ignore)
+            for other in displaced do this.registerCustomCommand other |> ignore
+            false
+
+    member private this.deleteCustomCommand(id:string) =
+        let existing = this.customCommands()
+        existing |> List.tryFind(fun other -> other.id=id) |> Option.iter(fun old -> hotKeyManager.unregister (CustomCommands.key old))
+        let root = Services.settings.root
+        root.["customCommands"] <- CustomCommands.write (CustomCommands.remove existing id)
+        Services.settings.root <- root
+        settingsManager.announce "customCommands"
 
     member private this.windowShortcuts() : WindowShortcut list = WindowShortcuts.read (Services.settings.root.["windowShortcuts"])
 
@@ -1741,6 +1791,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             let old = this.windowShortcuts() |> List.filter(fun other -> WindowShortcuts.same other shortcut || (shortcut.code<>0 && other.code=shortcut.code))
             this.replaceWindowShortcuts (old |> List.map(fun other -> other,this.boundWindow other))
                                         (if shortcut.code=0 then [] else [shortcut,None])
+        member x.customCommands() = this.customCommands()
+        member x.saveCustomCommand command = this.saveCustomCommand command
+        member x.deleteCustomCommand id = this.deleteCustomCommand id
 
         // As a tab dragged out onto the desktop: marked as dropped, it starts a group by hand when
         // the next scan finds it on its own.

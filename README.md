@@ -100,10 +100,17 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
   and **Restore workspace** have no shortcuts by default; assign them with
   **Alt + Enter** in the command palette.
 - **Mouse gestures:** turn them on under **Settings → Gestures**, then hold the right
-  button and drag, such as up then right for the next tab. A gesture runs a WindowTabs command
-  or sends a shortcut to the window, and an app can have its own: browsers and File Explorer
-  start with back, forward and the like. A right click without dragging still opens the app's
-  menu.
+  button and drag, such as up then right for the next tab. A gesture runs a WindowTabs command,
+  sends a shortcut (including `Win` combinations and media keys), or runs a custom program or
+  command; an app can have its own, and browsers and File Explorer start with back, forward and
+  the like. While drawing, a live trail and pointer hint show your stroke. A right click without
+  dragging still opens the app's menu. Optional **Screen edge scroll** and **Screen corners**
+  triggers live on the same page (off by default).
+- **Custom programs and commands:** under **Settings → Shortcuts**, add apps, scripts or URIs
+  to launch directly from a global shortcut, the command palette or a gesture — useful for
+  common apps as well as linking external tools such as Windows Snipping Tool (`Win + Shift + S`
+  or `ms-screenclip:`), PowerToys Text Extractor (`Win + Shift + T`), or offline OCR tools like
+  Umi-OCR (`Umi-OCR.exe --screenshot`).
 - **Taskbar:** optionally combine each group into one taskbar button, which shows every
   app in the group.
 - **Languages:** English, 中文, 日本語, العربية, 한국어.

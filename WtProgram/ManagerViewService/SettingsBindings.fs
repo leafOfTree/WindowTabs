@@ -57,6 +57,14 @@ module SettingsBindings =
         SettingsUi.settingRow table id choice
         choice
 
+    let numberRow table id =
+        let low,high = SettingsCatalog.range id
+        let editor = new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Value=decimal (Services.settings.getValue id :?> int))
+        editor.ValueChanged.Add(fun _ -> Services.settings.setValue(id,box (int editor.Value)))
+        follow editor id (fun value -> match value with :? int as v when int editor.Value<>v -> editor.Value <- decimal v | _ -> ())
+        SettingsUi.settingRow table id editor
+        editor
+
     let themeTiles() =
         let table = new TableLayoutPanel(ColumnCount=3,RowCount=1,Height=Dpi.scale 92,
                                         MinimumSize=Size(0,Dpi.scale 92),MaximumSize=Size(Dpi.scale 450,Dpi.scale 92),

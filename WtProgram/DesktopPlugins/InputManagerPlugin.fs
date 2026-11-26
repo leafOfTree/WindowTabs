@@ -190,6 +190,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let mutable leaderKeys = SettingsCatalog.textDefault "numberLeaderKeys"
     let mutable mouseHook = IntPtr.Zero
     let mutable gestures : MouseGestureInput option = None
+    let mutable triggers : MouseTriggerInput option = None
     let mutable cachedPath = (IntPtr.Zero, "")
     let pathFor hwnd =
         if fst cachedPath <> hwnd then
@@ -245,6 +246,13 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                 input.handle(msg,hookStruct.pt.X,hookStruct.pt.Y,hookStruct.dwExtraInfo)
             | _ -> false
         if gesture then 1 else
+        let edgeScrolled =
+            match triggers with
+            | Some input when nCode>=0 && msg=WindowMessages.WM_MOUSEWHEEL && input.handlesWheel ->
+                let hookStruct = unbox<MSLLHOOKSTRUCT>(Marshal.PtrToStructure(lParam, typeof<MSLLHOOKSTRUCT>))
+                input.handleWheel(hookStruct.pt.X,hookStruct.pt.Y,int hookStruct.mouseData)
+            | _ -> false
+        if edgeScrolled then 1 else
         if nCode>=0 && button then this.cancelLeader()
         if nCode>=0 && msgSet.contains(msg) then
             this.foregroundGroup.iter <| fun group ->
@@ -272,9 +280,28 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
         | None -> false
 
     member this.registerKeyboardLLHook() =
+        let rawSwallowed = Collections.Generic.HashSet<int>()
         kbHook <- OS.registerKeyboardLLHook <| fun(key, data) ->
             // A full-screen game keeps its keys, Ctrl+1 to 9 among them.
-            if data.dwExtraInfo = AltMenuMask.marker || FullScreenPause.isPaused() then None
+            if data.dwExtraInfo = AltMenuMask.marker then None
+            elif ShortcutRecording.hasRawCapture() then
+                let msg = int key
+                let down = msg=WindowMessages.WM_KEYDOWN || msg=WindowMessages.WM_SYSKEYDOWN
+                let up = msg=WindowMessages.WM_KEYUP || msg=WindowMessages.WM_SYSKEYUP
+                if up && rawSwallowed.Remove data.vkCode then Some 1
+                elif down then
+                    let alt = (data.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN) <> 0
+                    let ctrl = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL)
+                    let shift = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT)
+                    let win = Win32Helper.IsKeyPressed(int System.Windows.Forms.Keys.LWin) || Win32Helper.IsKeyPressed(int System.Windows.Forms.Keys.RWin)
+                    if ShortcutRecording.tryCaptureRaw(data.vkCode,ctrl,alt,shift,win) then
+                        rawSwallowed.Add data.vkCode |> ignore
+                        // Mask Win/Alt so releasing them does not open the Start menu or menu bar.
+                        if win || alt then AltMenuMask.send()
+                        Some 1
+                    else None
+                else None
+            elif FullScreenPause.isPaused() then None
             else
             // The group runs asynchronously; Ctrl may be released before it handles
             // this key. Preserve the modifier state belonging to this input event.
@@ -329,6 +356,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                 if fst gesturePath.Value <> hwnd then gesturePath.Value <- (hwnd,(try OS.windowFromHwnd(hwnd).pid.processPath with _ -> ""))
                 snd gesturePath.Value
             gestures <- Some(new MouseGestureInput(pathUnder))
+            triggers <- Some(new MouseTriggerInput())
             this.registerMouseLLHook()
             this.registerKeyboardLLHook()
             owned.Own(NumberLeaderRequest.toggle.Publish.Subscribe(fun() -> this.toggleLeader())) |> ignore
@@ -347,3 +375,4 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
             if mouseHook<>IntPtr.Zero then WinUserApi.UnhookWindowsHookEx(mouseHook) |> ignore
             if not (isNull kbHook) then kbHook.Dispose()
             gestures |> Option.iter(fun input -> (input :> IDisposable).Dispose())
+            triggers |> Option.iter(fun input -> (input :> IDisposable).Dispose())

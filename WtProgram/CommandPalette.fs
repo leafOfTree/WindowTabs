@@ -11,7 +11,7 @@ module CommandPalette =
     let private row index title texts extra group =
         { hwnd=IntPtr(index+1); title=title; program=""; keywords=words texts extra; keys=[]; group=group; recency=index; desktop="" }
     /// What has a key besides `key`, which gives it up as the Shortcuts page's boxes do.
-    let holderOf key code = Commands.holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code
+    let holderOf key code = Commands.holderOfServices key code
     /// Setting a command's shortcut from its row, as the Shortcuts page does.
     let assignment (command:Command) =
         command.shortcut |> Option.map(fun key ->
@@ -26,9 +26,11 @@ module CommandPalette =
     /// The hidden command that opens a setting's row, which its shortcut is kept for.
     let private (|SettingCommand|_|) (item:SettingDefinition) = Commands.find (SettingRows.commandId item)
     let private settingKey item = match item with SettingCommand command -> shortcutText command | _ -> ""
-    /// One row of the actions page: a command, or a setting the commands do not already stand for.
+    /// One row of the actions page: a command, a user-defined program/command, or a setting the
+    /// commands do not already stand for.
     type private Action =
         | ACommand of Command
+        | ACustom of CustomCommand
         /// A setting that is on or off, with its key and the command that turns it.
         | ASwitch of SettingDefinition * string * Command
         /// A setting with a few values, with its key and values: chosen in place from a list.
@@ -43,6 +45,10 @@ module CommandPalette =
     /// as a switch, turned in place; the settings catalog's shortcut entries are commands already.
     let private actions() =
         let commands = Commands.all |> List.filter(fun command -> command.listed) |> List.map ACommand
+        let customs =
+            match Services.tryGet<IProgram>() with
+            | Some program -> program.customCommands() |> List.map ACustom
+            | None -> []
         let pages = [GeneralSettings;AppearanceSettings;HotKeySettings;MouseGestureSettings;ProgramSettings;LayoutSettings;DiagnosticsSettings]
         let settings =
             pages |> List.collect(fun page ->
@@ -57,11 +63,12 @@ module CommandPalette =
                     | Toggle(key,_,_) -> Commands.find ("toggle-"+item.id) |> Option.map(fun command -> ASwitch(item,key,command))
                     | Choice(key,values,_) -> Some(AChoice(item,key,values))
                     | _ -> Some(ASetting item)))
-        commands @ settings
+        commands @ customs @ settings
     /// How an action is remembered among the recent ones: a command's id, or a setting's.
     let private recentKey action =
         match action with
         | ACommand command -> command.id
+        | ACustom command -> "custom:"+command.id
         | ASwitch(_,_,command) -> command.id
         | AChoice(item,_,_) | ASetting item | ANumberKeys item -> "setting:"+item.id
     let private recentLimit = 8
@@ -83,8 +90,17 @@ module CommandPalette =
         let group action =
             match action with
             | ACommand command -> List.findIndex ((=) command.category) Commands.categories
+            | ACustom _ -> List.findIndex ((=) AppCommands) Commands.categories
             | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> Commands.categories.Length+(match item.page with GeneralSettings -> 0 | AppearanceSettings -> 1 | HotKeySettings -> 2 | MouseGestureSettings -> 3 | ProgramSettings -> 4 | LayoutSettings -> 5 | DiagnosticsSettings -> 6)
-        let text action = match action with ACommand command -> Commands.textFor command active | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> item.text
+        let customText (command:CustomCommand) =
+            let title = CustomCommands.displayName command.name command.target
+            let same (value:string) = { en=value; zh=value; ja=value; ar=value; ko=value }
+            { caption=same title; description=same command.target; keywords=same (command.target+" "+command.args) }
+        let text action =
+            match action with
+            | ACommand command -> Commands.textFor command active
+            | ACustom command -> customText command
+            | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> item.text
         // The value it shows at the right is found as its name is: a style, a size, a colour's code.
         let shownValue action =
             try
@@ -104,10 +120,14 @@ module CommandPalette =
         let keyText action =
             match action with
             | ACommand command | ASwitch(_,_,command) -> shortcutText command
+            | ACustom command -> SettingsShortcut.text command.code
             | ASetting { binding=Shortcut(key,_) } -> SettingsShortcut.text (listKey key)
             | AChoice(item,_,_) | ASetting item | ANumberKeys item -> settingKey item
         let extra action =
-            (match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> [SettingsCatalog.storageKey item])
+            (match action with
+             | ACommand command -> [command.id]
+             | ACustom command -> [command.target;command.args]
+             | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> [SettingsCatalog.storageKey item])
             @ [shownValue action]
         { scope=ActionScope; caption=tr Strings.TabSearch.actions; prompt=tr Strings.TabSearch.actionPrompt
           noMatches=tr Strings.TabSearch.noActions; noEntries=tr Strings.TabSearch.noActions; glyph=NoGlyph
@@ -143,6 +163,11 @@ module CommandPalette =
               // A command with a state is a switch: turned here, the palette staying up to show it.
               | ACommand command when (command.state active).IsSome -> command.run active |> ignore; Stay
               | ACommand command -> command.run active
+              | ACustom command ->
+                  match CustomCommands.tryExecute command.target command.args command.hidden with
+                  | Result.Ok() -> ()
+                  | Result.Error message -> Notice.error (CustomCommands.displayName command.name command.target) message
+                  Done
               | ANumberKeys item -> fresh (SettingRows.run item)
               | ASwitch(_,_,command) -> command.run active |> ignore; asides.Remove chosen.hwnd |> ignore; Stay
               | AChoice(item,_,_) -> fresh (SettingRows.run item)
@@ -172,6 +197,15 @@ module CommandPalette =
                                        let taken = given.set code
                                        if taken then asides.Clear()
                                        taken })
+              | ACustom command ->
+                  let latest() = Services.program.customCommands() |> List.tryFind(fun c -> c.id=command.id) |> Option.defaultValue command
+                  Some { current=(latest()).code
+                         usedBy=Commands.holderOfServices (CustomCommands.key command)
+                         set=fun code ->
+                             let taken = Services.program.saveCustomCommand { latest() with code=code }
+                             if taken then asides.Clear()
+                             taken
+                         inList=false }
               // A key of the lists: kept in the settings, never for the whole desktop.
               | ASetting { binding=Shortcut(key,_) } ->
                   Some { current=listKey key
@@ -195,6 +229,9 @@ module CommandPalette =
                   let aside =
                       match action chosen with
                       | ACommand command -> { detail=""; switch=None; swatch=None; shortcut=shortcutText command; dropdown=false; small=false }
+                      | ACustom command ->
+                          let current = Services.program.customCommands() |> List.tryFind(fun c -> c.id=command.id) |> Option.defaultValue command
+                          { detail=tr Strings.MouseGestures.runKind; switch=None; swatch=None; shortcut=SettingsShortcut.text current.code; dropdown=false; small=true }
                       | ASwitch(_,key,command) -> { detail=""; switch=Some(Services.settings.getValue key :?> bool); swatch=None; shortcut=shortcutText command; dropdown=false; small=false }
                       | AChoice(item,key,values) -> { detail=choiceNow item key values; switch=None; swatch=None; shortcut=settingKey item; dropdown=true; small=false }
                       | ANumberKeys item -> { detail=numberKeyLabel(); switch=None; swatch=None; shortcut=settingKey item; dropdown=true; small=false }
@@ -222,6 +259,7 @@ module CommandPalette =
           concealed=fun chosen ->
               match action chosen with
               | ACommand command -> not command.chooses && (command.state active).IsNone
+              | ACustom _ -> true
               | ASetting item ->
                   match item.binding with
                   | _ when item.id=presetId -> false

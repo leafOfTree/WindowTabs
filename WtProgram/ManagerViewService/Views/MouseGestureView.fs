@@ -309,7 +309,7 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:G
     let pad = new GesturePad(Name="gesture-pad",Margin=Padding(0,0,0,0))
     let caption = new Label(AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,UseMnemonic=false,Tag="muted",Margin=Padding(0,Dpi.scale 4,0,0))
     /// Sending a shortcut first, as it is what is picked unless changed.
-    let kind = SettingsUi.choice [|tr Strings.MouseGestures.sendKeys;tr Strings.MouseGestures.runCommand|]
+    let kind = SettingsUi.choice [|tr Strings.MouseGestures.sendKeys;tr Strings.MouseGestures.runCommand;tr Strings.MouseGestures.runProgram|]
     /// As the palette lists them, the ones used last first, so they are where the palette taught
     /// them to be, related ones side by side.
     let commands = Commands.forGestures() |> Commands.inPaletteOrder
@@ -320,8 +320,19 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:G
     let nameBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.name)
     let nameInput = new SettingsTextInput(nameBox,Width=Dpi.scale 200)
     let keysRow = new TableLayoutPanel(ColumnCount=2,RowCount=2,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=Padding.Empty)
-    /// The command list or the keys row, in one place as tall as the taller, so the buttons stay
-    /// put as the kind changes.
+    // Run an external program, script or URI.
+    let targetBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.programTarget)
+    let targetInput = new SettingsTextInput(targetBox,Width=Dpi.scale 180)
+    let browseBtn = SettingsUi.button (tr Strings.MouseGestures.browse)
+    let argsBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.programArgs)
+    let argsInput = new SettingsTextInput(argsBox,Width=Dpi.scale 140)
+    let runNameBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.name)
+    let runNameInput = new SettingsTextInput(runNameBox,Width=Dpi.scale 180)
+    let hiddenToggle = new SettingsToggle(AccessibleName=tr Strings.MouseGestures.runHidden,Margin=Padding(0,Dpi.scale 6,Dpi.scale 8,0))
+    let hiddenLabel = new Label(Text=tr Strings.MouseGestures.runHidden,AutoSize=true,UseMnemonic=false,Cursor=Cursors.Hand,Margin=Padding(0,Dpi.scale 8,0,0))
+    let runRow = new TableLayoutPanel(ColumnCount=2,RowCount=3,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=Padding.Empty)
+    /// The command list, keys row, or run row, in one place as tall as the tallest, so the buttons
+    /// stay put as the kind changes.
     let actionArea = new Panel(Margin=Padding(0,Dpi.scale 8,0,0))
     let problem = new Label(AutoSize=false,UseMnemonic=false,Margin=Padding(0,Dpi.scale 8,0,0))
     let add = SettingsUi.button (tr (if editing.IsSome then Strings.Common.save else Strings.MouseGestures.add))
@@ -359,14 +370,16 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:G
             caption.Text <- words
         problem.Text <- ""
     let showKind() =
-        let sending = kind.SelectedIndex=0
-        command.Visible <- not sending
-        keysRow.Visible <- sending
-    /// The table lays the area out by what it shows, so its size is set by both: the taller,
+        let idx = kind.SelectedIndex
+        keysRow.Visible <- (idx=0)
+        command.Visible <- (idx=1)
+        runRow.Visible <- (idx=2)
+    /// The table lays the area out by what it shows, so its size is set by all three: the tallest,
     /// measured again whenever the fonts are.
     let fitAction() =
         let row = keysRow.GetPreferredSize(Size.Empty)
-        actionArea.Size <- Size(max command.Width row.Width,max command.Height row.Height)
+        let run = runRow.GetPreferredSize(Size.Empty)
+        actionArea.Size <- Size(max command.Width (max row.Width run.Width),max command.Height (max row.Height run.Height))
     do
         this.Text <- tr (if editing.IsSome then Strings.MouseGestures.editGesture else Strings.MouseGestures.addGesture)
         this.Font <- SettingsUi.bodyFont()
@@ -418,10 +431,57 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:G
         keysRow.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         nameInput.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
         nameBox.Text <- ""
+        // Compact two-row program layout: (Target + Browse | Args) above (Name | Run hidden switch).
+        hiddenLabel.Click.Add(fun _ -> hiddenToggle.Checked <- not hiddenToggle.Checked)
+        let targetBar = new TableLayoutPanel(ColumnCount=2,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=Padding(0,0,Dpi.scale 10,0),Anchor=(AnchorStyles.Left ||| AnchorStyles.Right))
+        targetBar.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        targetBar.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        targetInput.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
+        targetInput.Margin <- Padding(0,0,Dpi.scale 6,0)
+        browseBtn.Margin <- Padding.Empty
+        browseBtn.MinimumSize <- Size(Dpi.scale 72,targetInput.Height)
+        targetBar.Controls.Add(targetInput,0,0)
+        targetBar.Controls.Add(browseBtn,1,0)
+        argsInput.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
+        argsInput.Margin <- Padding.Empty
+        let hiddenFlow = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,Margin=Padding(0,Dpi.scale 6,0,0),Anchor=AnchorStyles.Left)
+        hiddenFlow.Controls.Add(hiddenToggle)
+        hiddenFlow.Controls.Add(hiddenLabel)
+        let nameFlow = new TableLayoutPanel(ColumnCount=2,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=Padding(0,Dpi.scale 6,Dpi.scale 10,0),Anchor=(AnchorStyles.Left ||| AnchorStyles.Right))
+        nameFlow.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        nameFlow.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        let nameLbl = new Label(Text=tr Strings.MouseGestures.name,AutoSize=true,UseMnemonic=false,Tag="muted",Anchor=AnchorStyles.Left,Margin=Padding(0,0,Dpi.scale 8,0))
+        runNameInput.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
+        runNameInput.Margin <- Padding.Empty
+        nameFlow.Controls.Add(nameLbl,0,0)
+        nameFlow.Controls.Add(runNameInput,1,0)
+        let targetLbl = label (tr Strings.MouseGestures.programTarget) true
+        targetLbl.Margin <- Padding(0,0,0,Dpi.scale 4)
+        let argsLbl = label (tr Strings.MouseGestures.programArgs) true
+        argsLbl.Margin <- Padding(0,0,0,Dpi.scale 4)
+        runRow.MinimumSize <- Size(width,0)
+        runRow.MaximumSize <- Size(width,0)
+        runRow.ColumnStyles.Add(ColumnStyle(SizeType.Percent,62.0f)) |> ignore
+        runRow.ColumnStyles.Add(ColumnStyle(SizeType.Percent,38.0f)) |> ignore
+        runRow.Controls.Add(targetLbl,0,0)
+        runRow.Controls.Add(argsLbl,1,0)
+        runRow.Controls.Add(targetBar,0,1)
+        runRow.Controls.Add(argsInput,1,1)
+        runRow.Controls.Add(nameFlow,0,2)
+        runRow.Controls.Add(hiddenFlow,1,2)
         command.Location <- Point.Empty
         keysRow.Location <- Point.Empty
+        runRow.Location <- Point.Empty
         actionArea.Controls.Add(command)
         actionArea.Controls.Add(keysRow)
+        actionArea.Controls.Add(runRow)
+        browseBtn.Click.Add(fun _ ->
+            use picker = new OpenFileDialog(Title=tr Strings.MouseGestures.chooseProgram,Filter=Localization.plain Strings.MouseGestures.executableFiles,CheckFileExists=true)
+            if picker.ShowDialog(this)=DialogResult.OK then
+                targetBox.Text <- picker.FileName
+                if String.IsNullOrWhiteSpace runNameBox.Text then
+                    runNameBox.Text <- IO.Path.GetFileNameWithoutExtension picker.FileName)
+        targetBox.TextChanged.Add(fun _ -> problem.Text <- "")
         let buttons = new FlowLayoutPanel(FlowDirection=FlowDirection.RightToLeft,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Dock=DockStyle.Fill,Margin=Padding(0,Dpi.scale 14,0,0))
         add.Name <- "add-gesture-confirm"
         cancel.Margin <- Padding(0,0,Dpi.scale 8,0)
@@ -462,6 +522,12 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:G
                     else
                         result <- Some { gesture=gesture; action=GestureCommand commands.[command.SelectedIndex-1].id }
                         this.DialogResult <- DialogResult.OK
+                elif kind.SelectedIndex=2 then
+                    let target = targetBox.Text.Trim()
+                    if String.IsNullOrWhiteSpace target then fail Strings.MouseGestures.needTarget
+                    else
+                        result <- Some { gesture=gesture; action=GestureRun(target,argsBox.Text.Trim(),hiddenToggle.Checked,runNameBox.Text.Trim()) }
+                        this.DialogResult <- DialogResult.OK
                 elif keys.Shortcut=0 then fail Strings.MouseGestures.needKeys
                 else
                     result <- Some { gesture=gesture; action=GestureKeys(keys.Sequence,nameBox.Text.Trim()) }
@@ -477,6 +543,12 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:G
                 kind.SelectedIndex <- 0
                 keys.Sequence <- codes
                 nameBox.Text <- name
+            | GestureRun(target,args,hidden,name) ->
+                kind.SelectedIndex <- 2
+                targetBox.Text <- target
+                argsBox.Text <- args
+                hiddenToggle.Checked <- hidden
+                runNameBox.Text <- name
             showKind())
         fitAction()
         this.HandleCreated.Add(fun _ -> SettingsUi.apply this; colorLink(); fitAction())
@@ -515,6 +587,7 @@ type MouseGestureEditor() as this =
     let addApp = SettingsUi.button ("+ "+tr Strings.MouseGestures.addApp)
     let addGesture = SettingsUi.button ("+ "+tr Strings.MouseGestures.addGesture)
     let hintToggle = SettingsBindings.settingToggle "showGestureHint"
+    let trailToggle = SettingsBindings.settingToggle "showGestureTrail"
     let resetEverywhere = new SettingsResetButton(tr Strings.MouseGestures.resetEverywhere,Name="reset-gestures")
     let resetApp = new SettingsResetButton(tr Strings.MouseGestures.resetApp,Name="reset-app-gestures")
     let menu = new GroupingApplicationMenu()
@@ -576,8 +649,8 @@ type MouseGestureEditor() as this =
     /// after the row's name.
     let mutable overrideMarks : Rectangle array = [||]
     let rowsShown() = max 1 (List.length (bindings()))
-    let legendTop() = rowsTop()+rowsShown()*rowHeight()+m 8
-    let noticeRect() = Rectangle(tableLeft(),legendTop()+m 48,this.Width-tableLeft(),m 30)
+    let tableActionTop() = rowsTop()+rowsShown()*rowHeight()+m 8
+    let noticeRect() = Rectangle(tableLeft(),tableActionTop()+addGesture.Height+m 8,this.Width-tableLeft(),m 30)
     let blankRect = ref Rectangle.Empty
     /// Where the Action and Does columns start in a row: close together while the widest row needs
     /// the room, spread out by the width it leaves over, so the rows do not crowd to the left.
@@ -592,7 +665,7 @@ type MouseGestureEditor() as this =
             let rows = (current.everywhere |> List.map(fun binding -> binding,false)) @ (current.apps |> List.collect(fun app -> app.bindings |> List.map(fun binding -> binding,true)))
             widestRow <-
                 rows |> List.fold (fun widest (binding,inApp) ->
-                    let key = match binding.action with GestureKeys(codes,_) -> GestureUi.measure (SettingsShortcut.sequenceText codes) mono+m 20 | GestureCommand _ -> 0
+                    let key = match binding.action with GestureKeys(codes,_) -> GestureUi.measure (SettingsShortcut.sequenceText codes) mono+m 20 | GestureCommand _ | GestureRun _ -> 0
                     let mark = if inApp && (MouseGestures.overrides current binding).IsSome then m 24 else 0
                     max widest (key+GestureUi.measure (Commands.gestureAction binding) body+mark)) 0
         let widest = widestRow
@@ -600,12 +673,12 @@ type MouseGestureEditor() as this =
         m 62+min (m 50) (spare/3),m 140+min (m 120) (spare*2/3)
     let contentBottom() =
         let list = (itemRect (List.length (entries()))).Top+m 8+addApp.Height
-        let rows = legendTop()+m 44+(match scope with Some path when notices.ContainsKey path -> m 40 | _ -> 0)
+        let rows = tableActionTop()+addGesture.Height+(match scope with Some path when notices.ContainsKey path -> m 40 | _ -> 0)
         max list rows
     /// The height the page has room for, so the footer sits at the bottom of a page taller than the
     /// table; on a shorter one it follows the table and the page scrolls.
     let mutable fill = 0
-    let footerBlock() = m 12+max hintToggle.Height addGesture.Height+m 4
+    let footerBlock() = m 12+hintToggle.Height+m 10+m 44+m 6
     let footerTop() = max (contentBottom()+m 16) (fill-footerBlock())
     let icon (path:string option) =
         match path with
@@ -633,9 +706,12 @@ type MouseGestureEditor() as this =
         resetApp.Visible <- scope.IsSome
         reset.Location <- Point(this.Width-reset.Width-m 2,(rowsTop()-reset.Height)/2)
         reset.Offered <- bindings()<>defaults()
+        addGesture.Location <- Point(this.Width-addGesture.Width,tableActionTop())
         let footer = footerTop()
+        let body = SettingsUi.bodyFont()
+        let hintCaptionWidth = GestureUi.measure (tr Strings.Settings.gestureHint.caption) body
         hintToggle.Location <- Point(0,footer+m 12)
-        addGesture.Location <- Point(this.Width-addGesture.Width,footer+m 12+(hintToggle.Height-addGesture.Height)/2)
+        trailToggle.Location <- Point(hintToggle.Right+m 6+hintCaptionWidth+m 24,footer+m 12)
         let height = footer+footerBlock()
         if this.Height<>height then this.Height <- height
         this.Invalidate()
@@ -657,9 +733,11 @@ type MouseGestureEditor() as this =
         this.Margin <- Padding(0,m 8,0,m 8)
         hintToggle.Name <- "gesture-hint"
         hintToggle.AccessibleName <- tr Strings.Settings.gestureHint.caption
+        trailToggle.Name <- "gesture-trail"
+        trailToggle.AccessibleName <- tr Strings.Settings.gestureTrail.caption
         addApp.Name <- "add-gesture-app"
         addGesture.Name <- "add-gesture"
-        for control in [addApp :> Control; addGesture :> Control; hintToggle :> Control; resetEverywhere :> Control; resetApp :> Control] do
+        for control in [addApp :> Control; addGesture :> Control; hintToggle :> Control; trailToggle :> Control; resetEverywhere :> Control; resetApp :> Control] do
             this.Controls.Add(control)
         menu.Owner <- this
         this.HandleCreated.Add(fun _ -> menu.Scan())
@@ -689,7 +767,7 @@ type MouseGestureEditor() as this =
             select listed)
         SettingsBindings.follow this "mouseGestures" (fun _ -> refresh())
         let applyActive() =
-            for control in [addApp :> Control; addGesture :> Control; hintToggle :> Control; resetEverywhere :> Control; resetApp :> Control] do
+            for control in [addApp :> Control; addGesture :> Control; hintToggle :> Control; trailToggle :> Control; resetEverywhere :> Control; resetApp :> Control] do
                 control.Enabled <- active
             this.TabStop <- active
             hoverItem <- -1
@@ -786,17 +864,18 @@ type MouseGestureEditor() as this =
             let start,loop = if index<plays.Length then plays.[index] else Double.PositiveInfinity,false
             let drawn,press = GestureUi.progress now start loop
             GestureGlyph.draw g route GestureGlyph.cell (float32(Dpi.currentFactor())) drawn press accent (GestureUi.cellFill p)
-            let kind = match binding.action with GestureCommand _ -> Strings.MouseGestures.commandKind | GestureKeys _ -> Strings.MouseGestures.keysKind
+            let kind = match binding.action with GestureCommand _ -> Strings.MouseGestures.commandKind | GestureKeys _ -> Strings.MouseGestures.keysKind | GestureRun _ -> Strings.MouseGestures.runKind
             let kindText = tr kind
             let tag = Rectangle(row.X+actionLeft,row.Y+(row.Height-m 20)/2,GestureUi.measure kindText small+m 12,m 20)
             // In full colour, as a label rather than a greyed control: a command in the accent,
-            // WindowTabs' own; a shortcut in the text colour, as the app's.
+            // WindowTabs' own; a shortcut in the text colour, as the app's; a program in warning tint.
             let tagFill,tagText =
                 if SystemInformation.HighContrast then SystemColors.Control,SystemColors.ControlText
                 else
                     match binding.action with
                     | GestureCommand _ -> Color.FromArgb(36,accent),p.accentText
                     | GestureKeys _ -> Color.FromArgb(24,p.text),p.text
+                    | GestureRun _ -> Color.FromArgb(36,GestureUi.warning()),GestureUi.warning()
             GestureUi.pill g tag tagFill
             GestureUi.text g kindText small (Rectangle(tag.X+m 6,tag.Y,tag.Width-m 6,tag.Height)) tagText
             let overridden = if scope.IsSome then MouseGestures.overrides (table()) binding else None
@@ -805,7 +884,7 @@ type MouseGestureEditor() as this =
             let mutable x = row.X+doesLeft
             let name = Commands.gestureAction binding
             match binding.action with
-            | GestureCommand _ -> ()
+            | GestureCommand _ | GestureRun _ -> ()
             | GestureKeys(codes,_) ->
                 let keyText = SettingsShortcut.sequenceText codes
                 let mono = GestureUi.monoFont()
@@ -837,17 +916,9 @@ type MouseGestureEditor() as this =
             // Switched off: the rows show through, dimmed, and the reason is said under them.
             use veil = new SolidBrush(Color.FromArgb(150,background))
             g.FillRectangle(veil,Rectangle(left,rowsTop(),this.Width-left,rowsShown()*rowHeight()))
-        let legend = legendTop()
+        let actionTop = tableActionTop()
         if off then
-            GestureUi.text g (tr (match scope with None -> Strings.MouseGestures.everywhereOff | Some _ -> Strings.MouseGestures.offIn (GestureUi.scopeName scope))) small (Rectangle(left+m 8,legend,this.Width-left-m 8,m 20)) p.muted
-        else
-            let r = float32(Dpi.scaleF 3.4)
-            let cx,cy = float32(left+m 14),float32(legend+m 10)
-            use ringPen = new Pen(accent,float32(Dpi.scaleF 1.4))
-            g.DrawEllipse(ringPen,cx-r,cy-r,2.0f*r,2.0f*r)
-            GestureUi.text g (tr Strings.MouseGestures.legend) small (Rectangle(left+m 24,legend,this.Width-left-m 24,m 20)) p.muted
-            // Said here, so nobody has to find out that a press held still is the app's again.
-            GestureUi.text g (tr Strings.MouseGestures.holdToDrag) small (Rectangle(left+m 24,legend+m 22,this.Width-left-m 24,m 20)) p.muted
+            GestureUi.text g (tr (match scope with None -> Strings.MouseGestures.everywhereOff | Some _ -> Strings.MouseGestures.offIn (GestureUi.scopeName scope))) small (Rectangle(left+m 8,actionTop,max 0 (addGesture.Left-left-m 16),addGesture.Height)) p.muted
         blankRect.Value <- Rectangle.Empty
         match scope with
         | Some path when notices.ContainsKey path ->
@@ -864,9 +935,19 @@ type MouseGestureEditor() as this =
         | _ -> ()
         let footer = footerTop()
         g.DrawLine(rule,0,footer,this.Width,footer)
-        // The hint switch's caption, drawn here so it greys with the rest.
+        // The hint and trail switches side by side on the first footer row.
         let hintLeft = hintToggle.Right+m 6
-        GestureUi.text g (tr Strings.Settings.gestureHint.caption) body (Rectangle(hintLeft,hintToggle.Top,max 0 (addGesture.Left-hintLeft-m 8),hintToggle.Height)) p.muted
+        GestureUi.text g (tr Strings.Settings.gestureHint.caption) body (Rectangle(hintLeft,hintToggle.Top,max 0 (trailToggle.Left-hintLeft-m 8),hintToggle.Height)) p.muted
+        let trailLeft = trailToggle.Right+m 6
+        GestureUi.text g (tr Strings.Settings.gestureTrail.caption) body (Rectangle(trailLeft,trailToggle.Top,max 0 (this.Width-trailLeft),trailToggle.Height)) p.muted
+        // The right-click drawing legend spans the full width below the switches.
+        let legend = hintToggle.Bottom+m 10
+        let r = float32(Dpi.scaleF 3.4)
+        let cx,cy = float32(m 6),float32(legend+m 10)
+        use ringPen = new Pen(accent,float32(Dpi.scaleF 1.4))
+        g.DrawEllipse(ringPen,cx-r,cy-r,2.0f*r,2.0f*r)
+        GestureUi.text g (tr Strings.MouseGestures.legend) small (Rectangle(m 16,legend,max 0 (this.Width-m 16),m 20)) p.muted
+        GestureUi.text g (tr Strings.MouseGestures.holdToDrag) small (Rectangle(m 16,legend+m 22,max 0 (this.Width-m 16),m 20)) p.muted
         if not active then
             use veil = new SolidBrush(Color.FromArgb(160,background))
             g.FillRectangle(veil,this.ClientRectangle)
@@ -1008,18 +1089,291 @@ type MouseGestureEditor() as this =
     /// Where the row's override mark was last painted; empty where it overrides nothing.
     member _.OverrideMark(row:int) = if row<overrideMarks.Length then overrideMarks.[row] else Rectangle.Empty
 
+/// Picks an action (SendKeys, WindowTabs command, or Run program/command) or clears it, used by
+/// screen edge scroll and screen corner triggers.
+type GestureActionDialog(title:string, ?initial:GestureAction) as this =
+    inherit Form()
+    let mutable result : GestureAction option = None
+    let mutable cleared = false
+    let layout = new TableLayoutPanel(ColumnCount=1,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Padding=Padding(Dpi.scale 20,Dpi.scale 14,Dpi.scale 20,Dpi.scale 16))
+    let label text = new Label(Text=text,AutoSize=true,UseMnemonic=false,Tag="muted",Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 4))
+    let width = Dpi.scale 420
+    let kind = SettingsUi.choice [|tr Strings.MouseGestures.sendKeys;tr Strings.MouseGestures.runCommand;tr Strings.MouseGestures.runProgram|]
+    let commands = Commands.forGestures() |> Commands.inPaletteOrder
+    let command = SettingsUi.choice (Array.append [|tr Strings.MouseGestures.chooseCommand|] (commands |> List.map(fun c -> tr c.text.caption) |> Array.ofList))
+    let keys = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),AnyKey=true,Sequential=true)
+    let nameBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.name)
+    let nameInput = new SettingsTextInput(nameBox,Width=Dpi.scale 180)
+    let keysRow = new TableLayoutPanel(ColumnCount=2,RowCount=2,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=Padding.Empty)
+    let targetBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.programTarget)
+    let targetInput = new SettingsTextInput(targetBox,Width=Dpi.scale 180)
+    let browseBtn = SettingsUi.button (tr Strings.MouseGestures.browse)
+    let argsBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.programArgs)
+    let argsInput = new SettingsTextInput(argsBox,Width=Dpi.scale 140)
+    let runNameBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.name)
+    let runNameInput = new SettingsTextInput(runNameBox,Width=Dpi.scale 180)
+    let hiddenToggle = new SettingsToggle(AccessibleName=tr Strings.MouseGestures.runHidden,Margin=Padding(0,Dpi.scale 6,Dpi.scale 8,0))
+    let hiddenLabel = new Label(Text=tr Strings.MouseGestures.runHidden,AutoSize=true,UseMnemonic=false,Cursor=Cursors.Hand,Margin=Padding(0,Dpi.scale 8,0,0))
+    let runRow = new TableLayoutPanel(ColumnCount=2,RowCount=3,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=Padding.Empty)
+    let actionArea = new Panel(Margin=Padding(0,Dpi.scale 8,0,0))
+    let problem = new Label(AutoSize=false,UseMnemonic=false,Margin=Padding(0,Dpi.scale 8,0,0))
+    let save = SettingsUi.button (tr Strings.Common.save)
+    let clear = SettingsUi.button (tr Strings.MouseGestures.clearAction)
+    let cancel = SettingsUi.button (tr Strings.Common.cancel)
+    let showKind() =
+        let idx = kind.SelectedIndex
+        keysRow.Visible <- (idx=0)
+        command.Visible <- (idx=1)
+        runRow.Visible <- (idx=2)
+    let fitAction() =
+        let row = keysRow.GetPreferredSize(Size.Empty)
+        let run = runRow.GetPreferredSize(Size.Empty)
+        actionArea.Size <- Size(max command.Width (max row.Width run.Width),max command.Height (max row.Height run.Height))
+    do
+        this.Text <- title
+        this.Font <- SettingsUi.bodyFont()
+        this.FormBorderStyle <- FormBorderStyle.FixedDialog
+        this.MaximizeBox <- false
+        this.MinimizeBox <- false
+        this.ShowIcon <- false
+        this.ShowInTaskbar <- false
+        this.StartPosition <- FormStartPosition.CenterParent
+        this.AutoSize <- true
+        this.AutoSizeMode <- AutoSizeMode.GrowAndShrink
+        kind.SelectedIndex <- 0
+        kind.Margin <- Padding.Empty
+        kind.Width <- width
+        command.Width <- width
+        command.SearchCue <- Some(tr Strings.MouseGestures.findCommand)
+        command.MaxRows <- Some 10
+        command.PromptFirst <- true
+        command.SelectedIndex <- 0
+        keysRow.Controls.Add(label (tr Strings.MouseGestures.keysKind),0,0)
+        keysRow.Controls.Add(label (tr Strings.MouseGestures.name),1,0)
+        keysRow.Controls.Add(keys,0,1)
+        keysRow.Controls.Add(nameInput,1,1)
+        keys.Margin <- Padding(0,0,Dpi.scale 12,0)
+        nameInput.Margin <- Padding.Empty
+        keysRow.MinimumSize <- Size(width,0)
+        keysRow.MaximumSize <- Size(width,0)
+        keysRow.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        keysRow.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        nameInput.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
+        hiddenLabel.Click.Add(fun _ -> hiddenToggle.Checked <- not hiddenToggle.Checked)
+        let targetBar = new TableLayoutPanel(ColumnCount=2,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=Padding(0,0,Dpi.scale 10,0),Anchor=(AnchorStyles.Left ||| AnchorStyles.Right))
+        targetBar.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        targetBar.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        targetInput.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
+        targetInput.Margin <- Padding(0,0,Dpi.scale 6,0)
+        browseBtn.Margin <- Padding.Empty
+        browseBtn.MinimumSize <- Size(Dpi.scale 72,targetInput.Height)
+        targetBar.Controls.Add(targetInput,0,0)
+        targetBar.Controls.Add(browseBtn,1,0)
+        argsInput.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
+        argsInput.Margin <- Padding.Empty
+        let hiddenFlow = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,Margin=Padding(0,Dpi.scale 6,0,0),Anchor=AnchorStyles.Left)
+        hiddenFlow.Controls.Add(hiddenToggle)
+        hiddenFlow.Controls.Add(hiddenLabel)
+        let nameFlow = new TableLayoutPanel(ColumnCount=2,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=Padding(0,Dpi.scale 6,Dpi.scale 10,0),Anchor=(AnchorStyles.Left ||| AnchorStyles.Right))
+        nameFlow.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        nameFlow.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        let nameLbl = new Label(Text=tr Strings.MouseGestures.name,AutoSize=true,UseMnemonic=false,Tag="muted",Anchor=AnchorStyles.Left,Margin=Padding(0,0,Dpi.scale 8,0))
+        runNameInput.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
+        runNameInput.Margin <- Padding.Empty
+        nameFlow.Controls.Add(nameLbl,0,0)
+        nameFlow.Controls.Add(runNameInput,1,0)
+        let targetLbl = label (tr Strings.MouseGestures.programTarget)
+        targetLbl.Margin <- Padding(0,0,0,Dpi.scale 4)
+        let argsLbl = label (tr Strings.MouseGestures.programArgs)
+        argsLbl.Margin <- Padding(0,0,0,Dpi.scale 4)
+        runRow.MinimumSize <- Size(width,0)
+        runRow.MaximumSize <- Size(width,0)
+        runRow.ColumnStyles.Add(ColumnStyle(SizeType.Percent,62.0f)) |> ignore
+        runRow.ColumnStyles.Add(ColumnStyle(SizeType.Percent,38.0f)) |> ignore
+        runRow.Controls.Add(targetLbl,0,0)
+        runRow.Controls.Add(argsLbl,1,0)
+        runRow.Controls.Add(targetBar,0,1)
+        runRow.Controls.Add(argsInput,1,1)
+        runRow.Controls.Add(nameFlow,0,2)
+        runRow.Controls.Add(hiddenFlow,1,2)
+        command.Location <- Point.Empty
+        keysRow.Location <- Point.Empty
+        runRow.Location <- Point.Empty
+        actionArea.Controls.Add(command)
+        actionArea.Controls.Add(keysRow)
+        actionArea.Controls.Add(runRow)
+        problem.Size <- Size(width,TextRenderer.MeasureText("X",this.Font).Height+Dpi.scale 4)
+        problem.AutoEllipsis <- true
+        let actionLbl = label (tr Strings.MouseGestures.action)
+        actionLbl.Margin <- Padding(0,0,0,Dpi.scale 4)
+        for control in [actionLbl :> Control; kind :> Control; actionArea :> Control; problem :> Control] do
+            layout.Controls.Add(control)
+        let buttons = new FlowLayoutPanel(FlowDirection=FlowDirection.RightToLeft,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Dock=DockStyle.Fill,Margin=Padding(0,Dpi.scale 12,0,0))
+        save.Kind <- SettingsButtonKind.Primary
+        save.Margin <- Padding.Empty
+        cancel.Margin <- Padding(0,0,Dpi.scale 8,0)
+        clear.Margin <- Padding(0,0,Dpi.scale 8,0)
+        clear.Kind <- SettingsButtonKind.Subtle
+        buttons.Controls.Add(save)
+        buttons.Controls.Add(cancel)
+        if initial.IsSome then buttons.Controls.Add(clear)
+        layout.Controls.Add(buttons)
+        this.Controls.Add(layout)
+        this.CancelButton <- cancel
+        cancel.DialogResult <- DialogResult.Cancel
+        browseBtn.Click.Add(fun _ ->
+            use picker = new OpenFileDialog(Title=tr Strings.MouseGestures.chooseProgram,Filter=Localization.plain Strings.MouseGestures.executableFiles,CheckFileExists=true)
+            if picker.ShowDialog(this)=DialogResult.OK then
+                targetBox.Text <- picker.FileName
+                if String.IsNullOrWhiteSpace runNameBox.Text then
+                    runNameBox.Text <- IO.Path.GetFileNameWithoutExtension picker.FileName)
+        kind.SelectedIndexChanged.Add(fun _ -> showKind(); problem.Text <- "")
+        command.SelectedIndexChanged.Add(fun _ -> problem.Text <- "")
+        keys.Changed.Add(fun _ -> problem.Text <- "")
+        targetBox.TextChanged.Add(fun _ -> problem.Text <- "")
+        clear.Click.Add(fun _ -> cleared <- true; result <- None; this.DialogResult <- DialogResult.OK)
+        save.Click.Add(fun _ ->
+            let fail (text:LocalizedText) = problem.ForeColor <- GestureUi.error(); problem.Text <- tr text
+            if kind.SelectedIndex=1 then
+                if command.SelectedIndex<=0 then fail Strings.MouseGestures.needCommand
+                else result <- Some(GestureCommand commands.[command.SelectedIndex-1].id); this.DialogResult <- DialogResult.OK
+            elif kind.SelectedIndex=2 then
+                let target = targetBox.Text.Trim()
+                if String.IsNullOrWhiteSpace target then fail Strings.MouseGestures.needTarget
+                else result <- Some(GestureRun(target,argsBox.Text.Trim(),hiddenToggle.Checked,runNameBox.Text.Trim())); this.DialogResult <- DialogResult.OK
+            elif keys.Shortcut=0 then fail Strings.MouseGestures.needKeys
+            else result <- Some(GestureKeys(keys.Sequence,nameBox.Text.Trim())); this.DialogResult <- DialogResult.OK)
+        initial |> Option.iter(fun action ->
+            match action with
+            | GestureCommand id ->
+                kind.SelectedIndex <- 1
+                commands |> List.tryFindIndex(fun each -> each.id=id) |> Option.iter(fun index -> command.SelectedIndex <- index+1)
+            | GestureKeys(codes,name) ->
+                kind.SelectedIndex <- 0
+                keys.Sequence <- codes
+                nameBox.Text <- name
+            | GestureRun(target,args,hidden,name) ->
+                kind.SelectedIndex <- 2
+                targetBox.Text <- target
+                argsBox.Text <- args
+                hiddenToggle.Checked <- hidden
+                runNameBox.Text <- name)
+        showKind()
+        fitAction()
+        this.HandleCreated.Add(fun _ -> SettingsUi.apply this; fitAction())
+        ThemeBinding.watch this (fun () -> SettingsUi.apply this; fitAction())
+    member _.Result = result
+    member _.Cleared = cleared
+
 type MouseGestureView() =
     let panel,table = SettingsUi.page()
     let editor = new MouseGestureEditor()
+    let readTriggers() = Services.settings.getValue("mouseTriggers") :?> MouseTriggerTable
+    let saveTriggers (next:MouseTriggerTable) = Services.settings.setValue("mouseTriggers",box next)
+    let actionLabel (action:GestureAction option) =
+        match action with
+        | Some act -> Commands.gestureActionText act
+        | None -> tr Strings.MouseGestures.clearAction
+    let pickAction title current apply =
+        use dialog =
+            match current with
+            | Some act -> new GestureActionDialog(title,act)
+            | None -> new GestureActionDialog(title)
+        if dialog.ShowDialog(panel.FindForm())=DialogResult.OK then
+            if dialog.Cleared then apply None
+            else dialog.Result |> Option.iter(fun act -> apply (Some act))
     do
         let card = new SettingsCard(Name="mouse-gestures-card")
         SettingsUi.add table card
         SettingsBindings.toggleRow card "mouse-gestures"
         SettingsUi.add card editor
-        // The editor takes what the page has left below the rows above it.
+        // Screen edge scroll section, collapsed while off.
+        let edgeCard = new SettingsCard(Name="edge-scroll-card",Margin=Padding(0,Dpi.scale 12,0,0))
+        SettingsUi.add table edgeCard
+        let edgeToggle = SettingsBindings.settingToggle "enableEdgeScroll"
+        SettingsUi.settingRow edgeCard "edge-scroll" edgeToggle
+        let edgeRows = ResizeArray<SettingsRow>()
+        let edgeButtons = ResizeArray<ScreenEdge * bool * SettingsActionButton>()
+        let edgeDefs = [
+            EdgeTop,Strings.MouseGestures.edgeTop
+            EdgeBottom,Strings.MouseGestures.edgeBottom
+            EdgeLeft,Strings.MouseGestures.edgeLeft
+            EdgeRight,Strings.MouseGestures.edgeRight ]
+        for edge,name in edgeDefs do
+            let upBtn = SettingsUi.button ""
+            let downBtn = SettingsUi.button ""
+            upBtn.Kind <- SettingsButtonKind.Subtle
+            downBtn.Kind <- SettingsButtonKind.Subtle
+            upBtn.MaximumSize <- Size(Dpi.scale 210,0)
+            downBtn.MaximumSize <- Size(Dpi.scale 210,0)
+            upBtn.Margin <- Padding(0,0,Dpi.scale 6,0)
+            downBtn.Margin <- Padding.Empty
+            upBtn.Click.Add(fun _ ->
+                let b = MouseTriggers.edgeBinding (readTriggers()) edge
+                pickAction (tr name+" · "+tr Strings.MouseGestures.scrollUp) b.up (fun next ->
+                    saveTriggers (MouseTriggers.setEdge (readTriggers()) edge { b with up=next })))
+            downBtn.Click.Add(fun _ ->
+                let b = MouseTriggers.edgeBinding (readTriggers()) edge
+                pickAction (tr name+" · "+tr Strings.MouseGestures.scrollDown) b.down (fun next ->
+                    saveTriggers (MouseTriggers.setEdge (readTriggers()) edge { b with down=next })))
+            let pair = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,Margin=Padding.Empty)
+            pair.Controls.Add(upBtn)
+            pair.Controls.Add(downBtn)
+            let row = SettingsUi.rowControl edgeCard (tr name) "" pair
+            SettingsUi.indentDependentRow row
+            edgeRows.Add row
+            edgeButtons.Add(edge,true,upBtn)
+            edgeButtons.Add(edge,false,downBtn)
+        // Screen corners section, collapsed while off.
+        let cornerCard = new SettingsCard(Name="hot-corners-card",Margin=Padding(0,Dpi.scale 12,0,0))
+        SettingsUi.add table cornerCard
+        let cornerToggle = SettingsBindings.settingToggle "enableHotCorners"
+        SettingsUi.settingRow cornerCard "hot-corners" cornerToggle
+        let delayEditor = SettingsBindings.numberRow cornerCard "hotCornerDelay"
+        let delayRow = delayEditor.Parent :?> SettingsRow
+        SettingsUi.indentDependentRow delayRow
+        let cornerRows = ResizeArray<SettingsRow>([delayRow])
+        let cornerButtons = ResizeArray<ScreenCorner * SettingsActionButton>()
+        let cornerDefs = [
+            CornerTopLeft,Strings.MouseGestures.cornerTopLeft
+            CornerTopRight,Strings.MouseGestures.cornerTopRight
+            CornerBottomLeft,Strings.MouseGestures.cornerBottomLeft
+            CornerBottomRight,Strings.MouseGestures.cornerBottomRight ]
+        for corner,name in cornerDefs do
+            let btn = SettingsUi.button ""
+            btn.Kind <- SettingsButtonKind.Subtle
+            btn.MaximumSize <- Size(Dpi.scale 320,0)
+            btn.Margin <- Padding.Empty
+            btn.Click.Add(fun _ ->
+                let current = MouseTriggers.cornerAction (readTriggers()) corner
+                pickAction (tr name) current (fun next ->
+                    saveTriggers (MouseTriggers.setCorner (readTriggers()) corner next)))
+            let row = SettingsUi.rowControl cornerCard (tr name) "" btn
+            SettingsUi.indentDependentRow row
+            cornerRows.Add row
+            cornerButtons.Add(corner,btn)
+        let syncLabels() =
+            let current = readTriggers()
+            for edge,isUp,btn in edgeButtons do
+                let b = MouseTriggers.edgeBinding current edge
+                let prefix = tr (if isUp then Strings.MouseGestures.scrollUp else Strings.MouseGestures.scrollDown)
+                let label = actionLabel (if isUp then b.up else b.down)
+                btn.Text <- prefix+": "+label
+            for corner,btn in cornerButtons do
+                btn.Text <- actionLabel (MouseTriggers.cornerAction current corner)
+        let syncVisibility() =
+            for row in edgeRows do row.Collapsed <- not edgeToggle.Checked
+            for row in cornerRows do row.Collapsed <- not cornerToggle.Checked
+        edgeToggle.CheckedChanged.Add(fun _ -> syncVisibility())
+        cornerToggle.CheckedChanged.Add(fun _ -> syncVisibility())
+        let triggerSub = Services.settings.notifyValue "mouseTriggers" (fun _ -> if not panel.IsDisposed then syncLabels())
+        panel.Disposed.Add(fun _ -> triggerSub.Dispose())
+        syncLabels()
+        syncVisibility()
+        // The editor fills remaining room when extra sections are collapsed; never shrinks below its own content.
         let fit _ =
             let page = panel :?> SettingsPage
-            editor.Fill <- page.room-(table.Height-editor.Height)
+            editor.Fill <- max 0 (page.room-(table.Height-editor.Height))
         panel.SizeChanged.Add(fit)
         table.SizeChanged.Add(fit)
     member _.Editor = editor

@@ -385,13 +385,54 @@ type SettingsShortcutInput() as this =
     let showMessage error text = message <- Some(text,error); messageTimer.Stop(); messageTimer.Start(); messageChanged.Trigger(Some text); this.Invalidate()
     /// Recording or not, with the app's own global shortcuts standing aside meanwhile, so the keys
     /// pressed reach the box rather than run what they are bound to.
+    let mutable rawToken = 0
+    let isWinPressed() = Win32Helper.IsKeyPressed(int Keys.LWin) || Win32Helper.IsKeyPressed(int Keys.RWin)
+    let mutable recordRawCode : (int -> unit) = ignore
     let setRecording value =
         if value<>recording then
             recording <- value
             takenThisTime <- false
             pauseTimer.Stop()
-            if value then ShortcutRecording.start() else ShortcutRecording.stop()
+            if value then
+                ShortcutRecording.start()
+                if this.AnyKey then
+                    rawToken <- ShortcutRecording.registerRawCapture (fun (vk,ctrl,alt,shift,win) ->
+                        let key = enum<Keys>(vk &&& 0xFF)
+                        if not recording || not this.Focused then false
+                        elif SettingsShortcut.isModifier key then this.Invalidate(); false
+                        // Only take Win chords and media/PrintScreen keys at hook level; ordinary keys go through ProcessCmdKey.
+                        elif win || (vk>=0xA6 && vk<=0xB7) || key=Keys.PrintScreen then
+                            recordRawCode (SettingsShortcut.encodeVk vk ctrl alt shift win)
+                            true
+                        else false)
+            else
+                if rawToken<>0 then
+                    ShortcutRecording.releaseRawCapture rawToken
+                    rawToken <- 0
+                ShortcutRecording.stop()
     let stopRecording() = if recording then setRecording false; focusCue <- false; this.Invalidate()
+    let takeAnyCode code =
+        lastPressed <- code
+        if sequential then
+            // The first keys of a recording start the sequence again; the next are added.
+            let current = if shortcut=0 then [] else shortcut::following
+            let keys = if takenThisTime then current @ [lastPressed] else [lastPressed]
+            takenThisTime <- true
+            this.Sequence <- keys
+            changed.Trigger(EventArgs.Empty)
+            pauseTimer.Stop()
+            if keys.Length>=3 then stopRecording() else pauseTimer.Start()
+        else
+            setRecording false
+            focusCue <- false
+            if code<>shortcut then
+                this.Shortcut <- code
+                changed.Trigger(EventArgs.Empty)
+            else
+                if code<>0 then showMessage false (tr Strings.Shortcuts.alreadySet)
+                unchanged.Trigger(EventArgs.Empty)
+            this.Invalidate()
+    do recordRawCode <- takeAnyCode
     /// The × shows while the pointer is on the box, or it has the keyboard focus, so it takes no
     /// room the rest of the time.
     let canClear() = shortcut<>0 && not recording && message.IsNone && (hovering || this.Focused)
@@ -519,16 +560,7 @@ type SettingsShortcutInput() as this =
             else base.ProcessCmdKey(&msg,keyData)
         elif this.AnyKey && key=Keys.Tab && keyData=key then stopRecording(); base.ProcessCmdKey(&msg,keyData)
         elif this.AnyKey && not (SettingsShortcut.isModifier key) then
-            lastPressed <- SettingsShortcut.encode keyData
-            if sequential then
-                // The first keys of a recording start the sequence again; the next are added.
-                let keys = if takenThisTime then codes() @ [lastPressed] else [lastPressed]
-                takenThisTime <- true
-                this.Sequence <- keys
-                changed.Trigger(EventArgs.Empty)
-                pauseTimer.Stop()
-                if keys.Length>=3 then stopRecording() else pauseTimer.Start()
-            else commit lastPressed
+            takeAnyCode (SettingsShortcut.encodeWithWin keyData (isWinPressed()))
             true
         elif key=Keys.Escape && keyData=key then stopRecording(); true
         elif (key=Keys.Back || key=Keys.Delete) && keyData=key then commit 0; true
@@ -602,7 +634,7 @@ type SettingsShortcutInput() as this =
         match (if this.ShowsMessage then message else None) with
         | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)
         | None when recording ->
-            let held = SettingsShortcut.heldParts (Control.ModifierKeys &&& ~~~heldAtStart)
+            let held = SettingsShortcut.heldPartsWithWin (Control.ModifierKeys &&& ~~~heldAtStart) (this.AnyKey && isWinPressed())
             // Keys already taken in a sequence stay, with room for the next after them.
             if takenThisTime then
                 let x = comma (sequence())

@@ -133,6 +133,9 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.editGroups hwnd = dispatcher.Post(fun () -> inner.editGroups hwnd)
         member _.windowShortcuts() = dispatcher.Send(fun () -> inner.windowShortcuts())
         member _.setWindowShortcut shortcut = dispatcher.Send(fun () -> inner.setWindowShortcut shortcut)
+        member _.customCommands() = dispatcher.Send(fun () -> inner.customCommands())
+        member _.saveCustomCommand command = dispatcher.Send(fun () -> inner.saveCustomCommand command)
+        member _.deleteCustomCommand id = dispatcher.Send(fun () -> inner.deleteCustomCommand id)
 
 type DispatchedFilterService(inner:IFilterService, dispatcher:IDispatcher) =
     interface IFilterService with

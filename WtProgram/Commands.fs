@@ -287,6 +287,59 @@ module Commands =
     let private tabColour index =
         Theme.tabColor (Theme.darkBar (ThemeService.currentAppearance().tabNormalBgColor)) (PaletteColor index)
     let private onTab (action:IGroup -> IntPtr -> unit) hwnd = groupOf hwnd |> Option.iter(fun group -> action group hwnd)
+    let private isShellWindow (hwnd:IntPtr) =
+        try List.contains (OS().windowFromHwnd(hwnd).className) ["Shell_TrayWnd";"Shell_SecondaryTrayWnd";"Progman";"WorkerW"] with _ -> true
+    let private canManageWindow (hwnd:IntPtr) = hwnd<>IntPtr.Zero && WinUserApi.IsWindow hwnd && not (isShellWindow hwnd)
+    let private canResizeWindow (hwnd:IntPtr) =
+        canManageWindow hwnd &&
+        ((WinUserApi.GetWindowLong(hwnd,WindowLongFieldOffset.GWL_STYLE).ToInt64() &&& int64 WindowsStyles.WS_THICKFRAME)<>0L)
+    let private canMaximizeWindow (hwnd:IntPtr) =
+        canManageWindow hwnd &&
+        (OS().windowFromHwnd(hwnd).isMaximized ||
+         ((WinUserApi.GetWindowLong(hwnd,WindowLongFieldOffset.GWL_STYLE).ToInt64() &&& int64 WindowsStyles.WS_MAXIMIZEBOX)<>0L))
+    /// Places a window so its visible frame (excluding invisible DWM resize borders) matches `target`.
+    let private placeVisible (hwnd:IntPtr) (target:Drawing.Rectangle) =
+        let window = OS().windowFromHwnd hwnd
+        if window.isMaximized || window.isMinimized then
+            WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_RESTORE) |> ignore
+        let bounds,visible = window.bounds,window.visibleBounds
+        let padL = max 0 (visible.x-bounds.x)
+        let padT = max 0 (visible.y-bounds.y)
+        let padR = max 0 (bounds.right-visible.right)
+        let padB = max 0 (bounds.bottom-visible.bottom)
+        WinUserApi.SetWindowPos(hwnd,IntPtr.Zero,target.X-padL,target.Y-padT,target.Width+padL+padR,target.Height+padT+padB,
+            SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
+    let private snapWindowHalf (rightHalf:bool) (hwnd:IntPtr) =
+        if canResizeWindow hwnd then
+            let area = System.Windows.Forms.Screen.FromHandle(hwnd).WorkingArea
+            let leftWidth = area.Width / 2
+            let target =
+                if rightHalf then Drawing.Rectangle(area.Left+leftWidth,area.Top,area.Width-leftWidth,area.Height)
+                else Drawing.Rectangle(area.Left,area.Top,leftWidth,area.Height)
+            placeVisible hwnd target
+    let private moveWindowNextMonitor (hwnd:IntPtr) =
+        let screens = System.Windows.Forms.Screen.AllScreens
+        if canManageWindow hwnd && screens.Length>1 then
+            let window = OS().windowFromHwnd hwnd
+            let current = System.Windows.Forms.Screen.FromHandle(hwnd)
+            let index = screens |> Array.tryFindIndex(fun s -> s.DeviceName=current.DeviceName) |> Option.defaultValue 0
+            let next = screens.[(index+1) % screens.Length]
+            let wasMaximized = window.isMaximized
+            if wasMaximized || window.isMinimized then
+                WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_RESTORE) |> ignore
+            let visible = window.visibleBounds
+            // After SW_RESTORE, a window maximized on another monitor returns to its restore monitor:
+            // compute the relative offset against the screen `visible` actually sits on now.
+            let src = (System.Windows.Forms.Screen.FromRectangle(Drawing.Rectangle(visible.x,visible.y,max 1 visible.width,max 1 visible.height))).WorkingArea
+            let dst = next.WorkingArea
+            let w = min visible.width dst.Width
+            let h = min visible.height dst.Height
+            let x = max dst.Left (min (dst.Right-w) (dst.Left+(visible.x-src.Left)))
+            let y = max dst.Top (min (dst.Bottom-h) (dst.Top+(visible.y-src.Top)))
+            placeVisible hwnd (Drawing.Rectangle(x,y,w,h))
+            if wasMaximized then
+                WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_SHOWMAXIMIZED) |> ignore
+    let private hasMultipleMonitors hwnd = canManageWindow hwnd && System.Windows.Forms.Screen.AllScreens.Length>1
     let private processPath (hwnd:IntPtr) = try OS().windowFromHwnd(hwnd).pid.processPath with _ -> ""
     let private hasApp hwnd = hwnd<>IntPtr.Zero && processPath hwnd<>""
     /// A group still at work, not one on its way out.
@@ -576,6 +629,23 @@ module Commands =
                    if hasGroup hwnd then Some(shownChoices hwnd |> Option.exists(fun shown -> shown.alwaysOnTop))
                    elif WinUserApi.IsWindow hwnd then Some(OS().windowFromHwnd(hwnd).isTopMost)
                    else None }
+        { plain "minimize-window" Strings.Commands.minimizeWindow GroupCommands canManageWindow (fun hwnd ->
+              if canManageWindow hwnd then WinUserApi.PostMessage(hwnd,WindowMessages.WM_SYSCOMMAND,IntPtr(0xF020),IntPtr.Zero) |> ignore)
+          with scope=Everywhere }
+        { plain "maximize-window" Strings.Commands.toggleMaximizeWindow GroupCommands canMaximizeWindow (fun hwnd ->
+              if canMaximizeWindow hwnd then
+                  let cmd = if OS().windowFromHwnd(hwnd).isMaximized then 0xF120 else 0xF030
+                  WinUserApi.PostMessage(hwnd,WindowMessages.WM_SYSCOMMAND,IntPtr(cmd),IntPtr.Zero) |> ignore)
+          with scope=Everywhere }
+        { plain "snap-window-left" Strings.Commands.snapWindowLeft GroupCommands canResizeWindow (snapWindowHalf false)
+          with scope=Everywhere }
+        { plain "snap-window-right" Strings.Commands.snapWindowRight GroupCommands canResizeWindow (snapWindowHalf true)
+          with scope=Everywhere }
+        { plain "move-window-next-monitor" Strings.Commands.moveWindowNextMonitor GroupCommands hasMultipleMonitors moveWindowNextMonitor
+          with scope=Everywhere }
+        { plain "close-window" Strings.Commands.closeWindow GroupCommands canManageWindow (fun hwnd ->
+              if canManageWindow hwnd then OS().windowFromHwnd(hwnd).close())
+          with scope=Everywhere }
         windowBehavior "group-keep-window-sizes" Strings.Commands.keepWindowSizes ToggleKeepWindowSizes
             (fun shown -> shown.keepWindowSizes)
         windowBehavior "group-inactive-off-screen" Strings.Commands.inactiveOffScreen ToggleInactiveOffScreen
@@ -664,14 +734,20 @@ module Commands =
                 (match item.binding with Choice _ | Number _ | Colour -> true | Text(key,_) -> key="numberLeaderKeys" | _ -> false)
             { plain (SettingRows.commandId item) item.text SettingsCommands always ignore
                 with listed=false; chooses=asks; run=fun _ -> SettingRows.run item }
+        plain "open-system-screenshot" Strings.Commands.systemScreenshot AppCommands always (fun _ ->
+            try Diagnostics.Process.Start(Diagnostics.ProcessStartInfo("ms-screenclip:",UseShellExecute=true)) |> ignore
+            with error -> Notice.error (tr Strings.Commands.systemScreenshot.caption) error.Message)
         plain "refresh-windows" Strings.Commands.refreshWindows AppCommands always (fun _ -> Services.program.refresh())
         plain "exit" Strings.Commands.exit AppCommands always (fun _ -> Services.program.shutdown()) ]
     let find id = all |> List.tryFind(fun command -> command.id=id)
-    /// What a mouse gesture does, in words: the command's name, or the key's.
-    let gestureAction (binding:GestureBinding) =
-        match binding.action with
+    /// What a gesture action does, in words: the command's name, the keys', or the program's.
+    let gestureActionText (action:GestureAction) =
+        match action with
         | GestureCommand id -> find id |> Option.map(fun command -> tr command.text.caption) |> Option.defaultValue id
         | GestureKeys(codes,name) -> MouseGesturePresets.keysName codes name
+        | GestureRun(target,_,_,name) -> CustomCommands.displayName name target
+    /// What a mouse gesture does, in words: the command's name, the keys', or the program's.
+    let gestureAction (binding:GestureBinding) = gestureActionText binding.action
     /// The commands a mouse gesture can run: those listed that run at once, as a key would.
     let forGestures() = all |> List.filter(fun command -> command.listed && not command.chooses)
     /// What a command is called for the window in front: pinning says which way it goes.
@@ -726,3 +802,26 @@ module Commands =
             listKeys |> List.tryFind(fun k -> k<>key && getHotKey k=code) |> Option.bind(fun other ->
                 listKeyName other |> Option.map(fun name ->
                     { name=name; key=other; release=(fun () -> setListKey other 0); restore=(fun () -> setListKey other code) }))
+    /// Checks every shortcut source in the running app: built-in commands, list keys, custom
+    /// commands (`custom:<id>`) and window shortcuts (`window:...`), so taking a key from any
+    /// holder works symmetrically in every direction.
+    let holderOfServices (excludeKey:string) (code:int) =
+        if code=0 then None
+        else
+            match holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey excludeKey code with
+            | Some found -> Some found
+            | None ->
+                match Services.program.customCommands() |> List.tryFind(fun other -> CustomCommands.key other<>excludeKey && other.code=code) with
+                | Some other ->
+                    Some { name=CustomCommands.displayName other.name other.target
+                           key=CustomCommands.key other
+                           release=(fun () -> Services.program.saveCustomCommand { other with code=0 } |> ignore)
+                           restore=(fun () -> Services.program.saveCustomCommand other |> ignore) }
+                | None ->
+                    Services.program.windowShortcuts() |> List.tryFind(fun other -> WindowShortcuts.key other<>excludeKey && other.code=code)
+                    |> Option.map(fun other ->
+                        let label = if String.IsNullOrWhiteSpace other.title then IO.Path.GetFileNameWithoutExtension other.path else other.title
+                        { name=label
+                          key=WindowShortcuts.key other
+                          release=(fun () -> Services.program.setWindowShortcut { other with code=0 } |> ignore)
+                          restore=(fun () -> Services.program.setWindowShortcut other |> ignore) })

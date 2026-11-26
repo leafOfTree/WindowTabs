@@ -275,6 +275,7 @@ namespace Bemo
         public const int HOTKEYF_CONTROL         = 0x02;
         public const int HOTKEYF_ALT             = 0x04;
         public const int HOTKEYF_EXT             = 0x08;
+        public const int HOTKEYF_WIN             = 0x10;
         public const int MOD_ALT                 = 0x0001;
         public const int MOD_CONTROL             = 0x0002;
         public const int MOD_SHIFT               = 0x0004;

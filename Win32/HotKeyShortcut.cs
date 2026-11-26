@@ -22,6 +22,11 @@ namespace Bemo.Win32
             get { return isShiftModifier; }
             set { isShiftModifier = value; }
         }
+        public bool IsWinModifier
+        {
+            get { return isWinModifier; }
+            set { isWinModifier = value; }
+        }
         public char VirtualKey
         {
             get { return virtualKey; }
@@ -36,6 +41,7 @@ namespace Bemo.Win32
                 mod |= IsAltModifier ? HotKeyConstants.HOTKEYF_ALT : 0;
                 mod |= IsShiftModifier ? HotKeyConstants.HOTKEYF_SHIFT : 0;
                 mod |= isExtendedVk ? HotKeyConstants.HOTKEYF_EXT : 0;
+                mod |= IsWinModifier ? HotKeyConstants.HOTKEYF_WIN : 0;
                 return WinDefApi.MAKEWORD((int)VirtualKey, mod);
             }
             set
@@ -45,6 +51,7 @@ namespace Bemo.Win32
                 IsAltModifier = (mod & HotKeyConstants.HOTKEYF_ALT) != 0;
                 IsShiftModifier = (mod & HotKeyConstants.HOTKEYF_SHIFT) != 0;
                 isExtendedVk = (mod & HotKeyConstants.HOTKEYF_EXT) != 0;
+                IsWinModifier = (mod & HotKeyConstants.HOTKEYF_WIN) != 0;
                 VirtualKey = (char)WinDefApi.LOBYTE(value);
             }
         }
@@ -56,6 +63,7 @@ namespace Bemo.Win32
                 mod |= IsCtrlModifier ? HotKeyConstants.MOD_CONTROL : 0;
                 mod |= IsAltModifier ? HotKeyConstants.MOD_ALT : 0;
                 mod |= IsShiftModifier ? HotKeyConstants.MOD_SHIFT : 0;
+                mod |= IsWinModifier ? HotKeyConstants.MOD_WIN : 0;
                 return mod;
             }
             set
@@ -63,6 +71,7 @@ namespace Bemo.Win32
                 IsCtrlModifier = (value & HotKeyConstants.MOD_CONTROL) != 0;
                 IsAltModifier = (value & HotKeyConstants.MOD_ALT) != 0;
                 IsShiftModifier = (value & HotKeyConstants.MOD_SHIFT) != 0;
+                IsWinModifier = (value & HotKeyConstants.MOD_WIN) != 0;
             }
         }
         public int RegisterHotKeyVirtualKeyCode
@@ -79,6 +88,7 @@ namespace Bemo.Win32
         bool isCtrlModifier;
         bool isAltModifier;
         bool isShiftModifier;
+        bool isWinModifier;
         bool isExtendedVk;
         char virtualKey;
     }

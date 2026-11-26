@@ -26,48 +26,10 @@ module GestureTargets =
         exStyle &&& int64 WindowsExtendedStyles.WS_EX_TOOLWINDOW=0L &&
         exStyle &&& int64 WindowsExtendedStyles.WS_EX_NOACTIVATE=0L
 
-/// Holding the right button and drawing a stroke. The low-level mouse hook hands each event here
-/// first, on the main thread, and nothing slow happens in it: what a gesture does runs after.
-/// A press is kept from the app until it is plainly a gesture or plainly not. Released where it
-/// went down, the click is sent again for the app's menu; held still for a moment, the press is
-/// sent again and the app gets the rest, as a right-drag in File Explorer needs.
-type MouseGestureInput(pathFor:IntPtr -> string) =
-    /// On the presses and keys sent again, so the hooks let them through.
-    static let marker = IntPtr(0x57544E)
-    let points = ResizeArray<int * int>()
-    let mutable state = Idle
-    /// The releases still to keep from the app of the buttons that gave a gesture up: their
-    /// presses were.
-    let heldUp = Collections.Generic.HashSet<int>()
-    let mutable scale = 1.0
-    let mutable enabled = Services.settings.getValue("enableMouseGestures") :?> bool
-    let mutable showHint = Services.settings.getValue("showGestureHint") :?> bool
-    let mutable table = MouseGestureRules.table()
-    let holdTimer = new Timer(Interval=300)
-    let hintTimer = new Timer(Interval=16)
-    /// How long the note that a press held still went back to the app stays, unless let go first.
-    let passedTimer = new Timer(Interval=800)
-    let mutable hint : GestureHint option = None
-    /// The stroke and pointer the hint was last shown for: with the pointer at rest, the reading
-    /// and the hint's place are as they were, so there is nothing to measure or paint again.
-    let mutable hinted = (-1,Point.Empty)
-    let currentProcess = Diagnostics.Process.GetCurrentProcess().Id
-    let subscriptions = [
-        Services.settings.notifyValue "enableMouseGestures" (fun value -> enabled <- unbox value)
-        Services.settings.notifyValue "showGestureHint" (fun value -> showHint <- unbox value)
-        Services.settings.notifyValue "mouseGestures" (fun value -> table <- unbox value) ]
-    let post action = (InvokerService.invoker :> IDispatcher).Post action
-    let mouse flags =
-        let mutable input = INPUT()
-        input.``type`` <- 0
-        let mutable union = MOUSEKEYBDHARDWAREINPUT()
-        let mutable data = MOUSEINPUT()
-        data.dwFlags <- flags
-        data.dwExtraInfo <- marker
-        union.mi <- data
-        input.mkhi <- union
-        input
-    let send (inputs:INPUT[]) = WinUserApi.SendInput(inputs.Length,inputs,Marshal.SizeOf(typeof<INPUT>)) |> ignore
+/// Shared execution of a GestureAction (WindowTabs command, SendKeys sequence, or external program),
+/// used by right-click mouse gestures, screen edge scroll, and hot corners.
+module GestureActionRunner =
+    let private send (inputs:INPUT[]) = WinUserApi.SendInput(inputs.Length,inputs,Marshal.SizeOf(typeof<INPUT>)) |> ignore
     /// Keys in the hotkey control's encoding, each pressed and let go with its modifiers, one
     /// after another.
     let sendKeys (codes:int list) =
@@ -85,17 +47,95 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
             input
         let press code =
             let flags = (code >>> 8) &&& 0xFF
-            let modifiers = [ if flags &&& 2<>0 then yield 0x11
-                              if flags &&& 4<>0 then yield 0x12
-                              if flags &&& 1<>0 then yield 0x10 ]
+            let modifiers = [ if flags &&& 2<>0 then yield 0x11,false
+                              if flags &&& 4<>0 then yield 0x12,false
+                              if flags &&& 1<>0 then yield 0x10,false
+                              if flags &&& 16<>0 then yield 0x5B,true ]
             let vk = code &&& 0xFF
             [| if vk<>0 then
-                for modifier in modifiers do yield key modifier false false
+                for modifier,ext in modifiers do yield key modifier false ext
                 yield key vk false (flags &&& 8<>0)
                 yield key vk true (flags &&& 8<>0)
-                for modifier in List.rev modifiers do yield key modifier true false |]
+                for modifier,ext in List.rev modifiers do yield key modifier true ext |]
         let inputs = codes |> Seq.collect press |> Array.ofSeq
         if inputs.Length>0 then send inputs
+    /// Brings `hwnd` to the front when it is a live window and not already foreground.
+    let private activate (hwnd:IntPtr) =
+        if hwnd=IntPtr.Zero || not (WinUserApi.IsWindow hwnd) then false
+        else
+            let front = WinUserApi.GetAncestor(WinUserApi.GetForegroundWindow(),GetAncestorConstants.GA_ROOT)
+            if front<>hwnd then
+                (try OS().windowFromHwnd(hwnd).setForeground(true) with _ -> ())
+                true
+            else false
+    /// Runs `action` against `hwnd` (or the foreground window when `hwnd` is zero).
+    let run (action:GestureAction) (hwnd:IntPtr) =
+        let target = if hwnd<>IntPtr.Zero && WinUserApi.IsWindow hwnd then hwnd else WinUserApi.GetAncestor(WinUserApi.GetForegroundWindow(),GetAncestorConstants.GA_ROOT)
+        match action with
+        | GestureCommand id ->
+            Commands.find id |> Option.iter(fun command ->
+                if hwnd<>IntPtr.Zero then activate hwnd |> ignore
+                if command.enabled target then command.run target |> ignore)
+        | GestureKeys(codes,_) ->
+            // Keys go to the window in front, which it may take a moment to be.
+            if hwnd<>IntPtr.Zero && activate hwnd then
+                let wait = new Timer(Interval=40)
+                wait.Tick.Add(fun _ -> wait.Stop(); wait.Dispose(); sendKeys codes)
+                wait.Start()
+            else sendKeys codes
+        | GestureRun(program,args,hidden,name) ->
+            match CustomCommands.tryExecute program args hidden with
+            | Result.Ok() -> ()
+            | Result.Error message -> Notice.error (CustomCommands.displayName name program) message
+
+/// Holding the right button and drawing a stroke. The low-level mouse hook hands each event here
+/// first, on the main thread, and nothing slow happens in it: what a gesture does runs after.
+/// A press is kept from the app until it is plainly a gesture or plainly not. Released where it
+/// went down, the click is sent again for the app's menu; held still for a moment, the press is
+/// sent again and the app gets the rest, as a right-drag in File Explorer needs.
+type MouseGestureInput(pathFor:IntPtr -> string) =
+    /// On the presses and keys sent again, so the hooks let them through.
+    static let marker = IntPtr(0x57544E)
+    let points = ResizeArray<int * int>()
+    let mutable state = Idle
+    /// The releases still to keep from the app of the buttons that gave a gesture up: their
+    /// presses were.
+    let heldUp = Collections.Generic.HashSet<int>()
+    let mutable scale = 1.0
+    let mutable enabled = Services.settings.getValue("enableMouseGestures") :?> bool
+    let mutable showHint = Services.settings.getValue("showGestureHint") :?> bool
+    let mutable showTrail = Services.settings.getValue("showGestureTrail") :?> bool
+    let mutable table = MouseGestureRules.table()
+    let holdTimer = new Timer(Interval=300)
+    let hintTimer = new Timer(Interval=16)
+    /// How long the note that a press held still went back to the app stays, unless let go first.
+    let passedTimer = new Timer(Interval=800)
+    let mutable hint : GestureHint option = None
+    let mutable trail : GestureTrail option = None
+    /// The stroke and pointer the hint was last shown for: with the pointer at rest, the reading
+    /// and the hint's place are as they were, so there is nothing to measure or paint again.
+    let mutable hinted = (-1,Point.Empty)
+    let mutable trailed = -1
+    let currentProcess = Diagnostics.Process.GetCurrentProcess().Id
+    let subscriptions = [
+        Services.settings.notifyValue "enableMouseGestures" (fun value -> enabled <- unbox value)
+        Services.settings.notifyValue "showGestureHint" (fun value -> showHint <- unbox value)
+        Services.settings.notifyValue "showGestureTrail" (fun value ->
+            showTrail <- unbox value
+            if not showTrail then trail |> Option.iter(fun window -> window.hide()))
+        Services.settings.notifyValue "mouseGestures" (fun value -> table <- unbox value) ]
+    let post action = (InvokerService.invoker :> IDispatcher).Post action
+    let mouse flags =
+        let mutable input = INPUT()
+        input.``type`` <- 0
+        let mutable union = MOUSEKEYBDHARDWAREINPUT()
+        let mutable data = MOUSEINPUT()
+        data.dwFlags <- flags
+        data.dwExtraInfo <- marker
+        union.mi <- data
+        input.mkhi <- union
+        input
+    let send (inputs:INPUT[]) = WinUserApi.SendInput(inputs.Length,inputs,Marshal.SizeOf(typeof<INPUT>)) |> ignore
     /// The window a press lands on, and its app, where gestures are on for it: of this app's own
     /// windows only those with a title bar, as Settings, not the tab strips, menus and popups; not
     /// the taskbar or the desktop, whose menus belong to Windows.
@@ -112,34 +152,19 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
                 if shell || path="" || not (MouseGestures.takesPresses table path) then None else Some(hwnd,path)
     let reading() = MouseGestures.read scale (List.ofSeq points)
     let hintWindow() = match hint with Some window -> window | None -> (let window = new GestureHint() in hint <- Some window; window)
+    let trailWindow() = match trail with Some window -> window | None -> (let window = new GestureTrail() in trail <- Some window; window)
     let hideHint() =
         hintTimer.Stop()
         passedTimer.Stop()
         hinted <- (-1,Point.Empty)
+        trailed <- -1
         hint |> Option.iter(fun window -> window.hide())
-    /// The window the stroke was drawn over goes to the front first: its press was kept from it.
-    let activate (hwnd:IntPtr) =
-        let front = WinUserApi.GetAncestor(WinUserApi.GetForegroundWindow(),GetAncestorConstants.GA_ROOT)
-        if front<>hwnd then
-            (try OS().windowFromHwnd(hwnd).setForeground(true) with _ -> ())
-            true
-        else false
+        trail |> Option.iter(fun window -> window.hide())
     let run gesture (hwnd:IntPtr) path =
         match MouseGestures.resolve table path gesture with
         | Some binding when WinUserApi.IsWindow hwnd ->
             DebugLog.writef "Mouse gesture %s: %s" gesture (Commands.gestureAction binding)
-            match binding.action with
-            | GestureCommand id ->
-                Commands.find id |> Option.iter(fun command ->
-                    activate hwnd |> ignore
-                    if command.enabled hwnd then command.run hwnd |> ignore)
-            | GestureKeys(codes,_) ->
-                // Keys go to the window in front, which it may take a moment to be.
-                if activate hwnd then
-                    let wait = new Timer(Interval=40)
-                    wait.Tick.Add(fun _ -> wait.Stop(); wait.Dispose(); sendKeys codes)
-                    wait.Start()
-                else sendKeys codes
+            GestureActionRunner.run binding.action hwnd
         | _ -> ()
     do
         holdTimer.Tick.Add(fun _ ->
@@ -160,23 +185,27 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
             | _ -> hint |> Option.iter(fun window -> window.hide()))
         hintTimer.Tick.Add(fun _ ->
             match state with
-            | Drawing(_,path) when showHint ->
-                let now = points.Count,Cursor.Position
-                if now<>hinted then
-                    hinted <- now
-                    let window = hintWindow()
-                    match reading() with
-                    | NoGesture | Unrecognized -> window.hide()
-                    | Gesture gesture ->
-                        // After one stroke, where a second one would lead, so the gestures can be
-                        // found by drawing rather than looked up.
-                        let next = MouseGestures.continuations table path gesture |> List.map(fun binding -> binding.gesture,Commands.gestureAction binding)
-                        // A stroke that does nothing shows nothing: no note saying so. Only where a
-                        // further stroke would do something, the stroke and those, with no caption.
-                        match MouseGestures.resolve table path gesture with
-                        | Some binding -> window.show(Some gesture,Commands.gestureAction binding,false,next,snd now)
-                        | None when not next.IsEmpty -> window.show(Some gesture,"",true,next,snd now)
-                        | None -> window.hide()
+            | Drawing(_,path) when showHint || showTrail ->
+                if showTrail && points.Count<>trailed && points.Count>=2 then
+                    trailed <- points.Count
+                    (trailWindow()).show(List.ofSeq points)
+                if showHint then
+                    let now = points.Count,Cursor.Position
+                    if now<>hinted then
+                        hinted <- now
+                        let window = hintWindow()
+                        match reading() with
+                        | NoGesture | Unrecognized -> window.hide()
+                        | Gesture gesture ->
+                            // After one stroke, where a second one would lead, so the gestures can be
+                            // found by drawing rather than looked up.
+                            let next = MouseGestures.continuations table path gesture |> List.map(fun binding -> binding.gesture,Commands.gestureAction binding)
+                            // A stroke that does nothing shows nothing: no note saying so. Only where a
+                            // further stroke would do something, the stroke and those, with no caption.
+                            match MouseGestures.resolve table path gesture with
+                            | Some binding -> window.show(Some gesture,Commands.gestureAction binding,false,next,snd now)
+                            | None when not next.IsEmpty -> window.show(Some gesture,"",true,next,snd now)
+                            | None -> window.hide()
             | _ -> hideHint())
 
     /// Whether the hook takes the event from the app.
@@ -210,7 +239,7 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
                 if Math.Sqrt(dx*dx+dy*dy)>=10.0*scale then
                     holdTimer.Stop()
                     state <- Drawing(hwnd,path)
-                    if showHint then hintTimer.Start()
+                    if showHint || showTrail then hintTimer.Start()
                 false
             | Drawing _ ->
                 if points.Count<4096 then points.Add((x,y))
@@ -277,3 +306,4 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
             hintTimer.Dispose()
             passedTimer.Dispose()
             hint |> Option.iter(fun window -> window.Dispose())
+            trail |> Option.iter(fun window -> (window :> IDisposable).Dispose())

@@ -1,5 +1,96 @@
 namespace Bemo
+open System
+open System.Drawing
 open System.Windows.Forms
+
+/// Dialog for creating or editing a user-defined program or command with an optional shortcut.
+type CustomCommandDialog(?editing:CustomCommand) as this =
+    inherit Form()
+    let mutable result : CustomCommand option = None
+    let layout = new TableLayoutPanel(ColumnCount=1,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Padding=Padding(Dpi.scale 20,Dpi.scale 14,Dpi.scale 20,Dpi.scale 16))
+    let label text = new Label(Text=text,AutoSize=true,UseMnemonic=false,Tag="muted",Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 4))
+    let width = Dpi.scale 420
+    let targetBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.programTarget)
+    let targetInput = new SettingsTextInput(targetBox,Width=width-Dpi.scale 92)
+    let browse = SettingsUi.button (tr Strings.MouseGestures.browse)
+    let argsBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.programArgs)
+    let argsInput = new SettingsTextInput(argsBox,Width=width)
+    let nameBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.name)
+    let nameInput = new SettingsTextInput(nameBox,Width=width)
+    let hiddenToggle = new SettingsToggle(AccessibleName=tr Strings.MouseGestures.runHidden,Margin=Padding(0,0,Dpi.scale 8,0))
+    let hiddenLabel = new Label(Text=tr Strings.MouseGestures.runHidden,AutoSize=true,UseMnemonic=false,Cursor=Cursors.Hand,Margin=Padding(0,Dpi.scale 2,0,0))
+    let hiddenRow = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,Margin=Padding(0,Dpi.scale 10,0,0))
+    let problem = new Label(AutoSize=false,UseMnemonic=false,Margin=Padding(0,Dpi.scale 8,0,0))
+    let save = SettingsUi.button (tr (if editing.IsSome then Strings.Common.save else Strings.MouseGestures.add))
+    let cancel = SettingsUi.button (tr Strings.Common.cancel)
+    do
+        this.Text <- tr (if editing.IsSome then Strings.MouseGestures.editCustomCommand else Strings.MouseGestures.addCustomCommand)
+        this.Font <- SettingsUi.bodyFont()
+        this.FormBorderStyle <- FormBorderStyle.FixedDialog
+        this.MaximizeBox <- false
+        this.MinimizeBox <- false
+        this.ShowIcon <- false
+        this.ShowInTaskbar <- false
+        this.StartPosition <- FormStartPosition.CenterParent
+        this.AutoSize <- true
+        this.AutoSizeMode <- AutoSizeMode.GrowAndShrink
+        hiddenLabel.Click.Add(fun _ -> hiddenToggle.Checked <- not hiddenToggle.Checked)
+        hiddenRow.Controls.Add(hiddenToggle)
+        hiddenRow.Controls.Add(hiddenLabel)
+        let targetRow = new TableLayoutPanel(ColumnCount=2,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=Padding.Empty)
+        targetRow.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        targetRow.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        targetRow.MinimumSize <- Size(width,0)
+        targetRow.MaximumSize <- Size(width,0)
+        targetInput.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
+        targetInput.Margin <- Padding(0,0,Dpi.scale 8,0)
+        browse.Margin <- Padding.Empty
+        browse.MinimumSize <- Size(Dpi.scale 84,targetInput.Height)
+        targetRow.Controls.Add(targetInput,0,0)
+        targetRow.Controls.Add(browse,1,0)
+        problem.Size <- Size(width,TextRenderer.MeasureText("X",this.Font).Height+Dpi.scale 4)
+        problem.AutoEllipsis <- true
+        for control in [label (tr Strings.MouseGestures.programTarget) :> Control; targetRow :> Control
+                        label (tr Strings.MouseGestures.programArgs) :> Control; argsInput :> Control
+                        label (tr Strings.MouseGestures.name) :> Control; nameInput :> Control
+                        hiddenRow :> Control; problem :> Control] do
+            layout.Controls.Add(control)
+        let buttons = new FlowLayoutPanel(FlowDirection=FlowDirection.RightToLeft,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Dock=DockStyle.Fill,Margin=Padding(0,Dpi.scale 12,0,0))
+        cancel.Margin <- Padding(0,0,Dpi.scale 8,0)
+        save.Margin <- Padding.Empty
+        save.Kind <- SettingsButtonKind.Primary
+        buttons.Controls.Add(save)
+        buttons.Controls.Add(cancel)
+        layout.Controls.Add(buttons)
+        this.Controls.Add(layout)
+        this.AcceptButton <- save
+        this.CancelButton <- cancel
+        cancel.DialogResult <- DialogResult.Cancel
+        editing |> Option.iter(fun c ->
+            targetBox.Text <- c.target
+            argsBox.Text <- c.args
+            nameBox.Text <- c.name
+            hiddenToggle.Checked <- c.hidden)
+        targetBox.TextChanged.Add(fun _ -> problem.Text <- "")
+        browse.Click.Add(fun _ ->
+            use picker = new OpenFileDialog(Title=tr Strings.MouseGestures.chooseProgram,Filter=Localization.plain Strings.MouseGestures.executableFiles,CheckFileExists=true)
+            if picker.ShowDialog(this)=DialogResult.OK then
+                targetBox.Text <- picker.FileName
+                if String.IsNullOrWhiteSpace nameBox.Text then
+                    nameBox.Text <- IO.Path.GetFileNameWithoutExtension picker.FileName)
+        save.Click.Add(fun _ ->
+            let target = targetBox.Text.Trim()
+            if String.IsNullOrWhiteSpace target then
+                problem.ForeColor <- if SystemInformation.HighContrast then SystemColors.WindowText elif ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
+                problem.Text <- tr Strings.MouseGestures.needTarget
+            else
+                let id = editing |> Option.map(fun c -> c.id) |> Option.defaultWith(fun () -> Guid.NewGuid().ToString("N"))
+                let code = editing |> Option.map(fun c -> c.code) |> Option.defaultValue 0
+                result <- Some { id=id; name=nameBox.Text.Trim(); target=target; args=argsBox.Text.Trim(); hidden=hiddenToggle.Checked; code=code }
+                this.DialogResult <- DialogResult.OK)
+        this.HandleCreated.Add(fun _ -> SettingsUi.apply this)
+        ThemeBinding.watch this (fun () -> SettingsUi.apply this)
+    member _.Result = result
 
 type HotKeyView() =
     let panel,table = SettingsUi.page()
@@ -40,7 +131,7 @@ type HotKeyView() =
         editor.Changed.Add(fun _ ->
             let previous = Services.program.getHotKey key
             let code = editor.Shortcut
-            match Commands.holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code with
+            match Commands.holderOfServices key code with
             // Pressed for this one, the key is meant for it: the other gives it up.
             | Some other ->
                 other.release()
@@ -62,6 +153,8 @@ type HotKeyView() =
     let restoreDefaults() =
         for shortcut in Services.program.windowShortcuts() do
             Services.program.setWindowShortcut { shortcut with code=0 } |> ignore
+        for command in Services.program.customCommands() do
+            if command.code<>0 then Services.program.saveCustomCommand { command with code=0 } |> ignore
         let commandKeys = Commands.all |> List.choose(fun command -> command.shortcut) |> List.distinct
         // Clear first so swapped shortcuts (next <-> previous) do not collide with each other.
         for key in commandKeys do Services.program.setHotKey key 0 |> ignore
@@ -202,15 +295,99 @@ type HotKeyView() =
         let updateRestore() =
             restore.Offered <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
                                || not (List.isEmpty (Services.program.windowShortcuts()))
+                               || (Services.program.customCommands() |> List.exists(fun c -> c.code<>0))
         for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
-        restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
-        updateRestore()
         let pointer = SettingsUi.sectionCard table (tr Strings.Shortcuts.mouse)
         SettingsBindings.toggleRow pointer "activate-on-hover"
         SettingsBindings.toggleRow pointer "tab-hover-preview"
         SettingsBindings.toggleRow pointer "shift-scroll"
         SettingsBindings.toggleRow pointer "ctrl-scroll"
         SettingsBindings.toggleRow pointer "middle-click-close"
+        // Custom programs & commands that launch from a shortcut, the palette or a gesture.
+        let addCustom = SettingsUi.button ("+ "+tr Strings.MouseGestures.addCustomCommand)
+        addCustom.Name <- "add-custom-command"
+        SettingsUi.sectionHeading table (tr Strings.MouseGestures.customCommandsHeading) [addCustom]
+        let customCard = new SettingsCard(Name="custom-commands")
+        SettingsUi.add table customCard
+        SettingsUi.note customCard (tr Strings.MouseGestures.customCommandsNote)
+        let customRows = ResizeArray<Control>()
+        let mutable savingCustomKey = false
+        let saveCustomInline cmd =
+            savingCustomKey <- true
+            try Services.program.saveCustomCommand cmd
+            finally savingCustomKey <- false
+        let rec rebuildCustom() =
+            customCard.SuspendLayout()
+            for key in [for KeyValue(k,_) in shown do if k.StartsWith("custom:",StringComparison.Ordinal) then yield k] do
+                shown.Remove key |> ignore
+            for control in customRows do
+                customCard.Controls.Remove control
+                control.Dispose()
+            customRows.Clear()
+            let commands = Services.program.customCommands()
+            if commands.IsEmpty then
+                let empty = new Label(Text=tr Strings.MouseGestures.customCommandsEmpty,AutoSize=true,UseMnemonic=false,Tag="muted",Margin=Padding(0,Dpi.scale 6,0,Dpi.scale 4))
+                SettingsUi.add customCard empty
+                customRows.Add(empty :> Control)
+            else
+                for command in commands do
+                    let ownKey = CustomCommands.key command
+                    let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=command.code)
+                    shown.[ownKey] <- editor
+                    noteBelow editor
+                    editor.Changed.Add(fun _ ->
+                        let latest = Services.program.customCommands() |> List.tryFind(fun c -> c.id=command.id) |> Option.defaultValue command
+                        let previous = latest.code
+                        let code = editor.Shortcut
+                        match Commands.holderOfServices ownKey code with
+                        | Some other ->
+                            savingCustomKey <- true
+                            try other.release() finally savingCustomKey <- false
+                            if saveCustomInline { latest with code=code } then
+                                match shown.TryGetValue other.key with
+                                | true,box -> box.Shortcut <- 0
+                                | _ -> ()
+                                editor.Notice(tr (Strings.Shortcuts.takenFrom other.name))
+                                updateRestore()
+                            else
+                                savingCustomKey <- true
+                                try other.restore() finally savingCustomKey <- false
+                                editor.Reject(previous,tr Strings.Shortcuts.inUse)
+                        | None when not (saveCustomInline { latest with code=code }) ->
+                            editor.Reject(previous,tr Strings.Shortcuts.inUse)
+                        | None -> updateRestore())
+                    let editBtn = SettingsUi.button (tr Strings.Common.edit)
+                    editBtn.Kind <- SettingsButtonKind.Subtle
+                    editBtn.Margin <- Padding(Dpi.scale 6,0,0,0)
+                    editBtn.Click.Add(fun _ ->
+                        let latest = Services.program.customCommands() |> List.tryFind(fun c -> c.id=command.id) |> Option.defaultValue command
+                        use dialog = new CustomCommandDialog(latest)
+                        if dialog.ShowDialog(panel.FindForm())=DialogResult.OK then
+                            dialog.Result |> Option.iter(fun updated -> Services.program.saveCustomCommand updated |> ignore))
+                    let delBtn = SettingsUi.button (tr Strings.AppRules.deleteRule)
+                    delBtn.Kind <- SettingsButtonKind.Danger
+                    delBtn.Margin <- Padding(Dpi.scale 6,0,0,0)
+                    delBtn.Click.Add(fun _ -> Services.program.deleteCustomCommand command.id)
+                    let controls = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,Margin=Padding.Empty)
+                    editor.Margin <- Padding.Empty
+                    controls.Controls.Add(editor)
+                    controls.Controls.Add(editBtn)
+                    controls.Controls.Add(delBtn)
+                    let desc = if String.IsNullOrWhiteSpace command.args then command.target else command.target+" "+command.args
+                    let row = SettingsUi.rowControl customCard (CustomCommands.displayName command.name command.target) desc controls
+                    customRows.Add(row :> Control)
+            customCard.ResumeLayout(true)
+            SettingsUi.apply customCard
+            updateRestore()
+        addCustom.Click.Add(fun _ ->
+            use dialog = new CustomCommandDialog()
+            if dialog.ShowDialog(panel.FindForm())=DialogResult.OK then
+                dialog.Result |> Option.iter(fun created -> Services.program.saveCustomCommand created |> ignore))
+        let customSub = Services.settings.notifyValue "customCommands" (fun _ -> if not savingCustomKey && not customCard.IsDisposed then rebuildCustom())
+        customCard.Disposed.Add(fun _ -> customSub.Dispose())
+        restore.Click.Add(fun _ -> restoreDefaults(); rebuildCustom(); updateRestore())
+        rebuildCustom()
+        updateRestore()
     interface ISettingsView with
         member _.key = SettingsViewType.HotKeySettings
         member _.title = tr Strings.Pages.shortcuts
