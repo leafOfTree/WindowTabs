@@ -884,11 +884,26 @@ let main() =
                     let nearMiddle = span()/2+Dpi.scale 5
                     let grab = rowX()+Dpi.scale 10
                     send WindowMessages.WM_RBUTTONDOWN (Pt(grab,Dpi.scale 14))
-                    send WindowMessages.WM_MOUSEMOVE (Pt(grab+(nearMiddle-rowX()),Dpi.scale 14))
-                    send WindowMessages.WM_RBUTTONUP (Pt(grab+(nearMiddle-rowX()),Dpi.scale 14))
+                    let releasePoint = Pt(grab+(nearMiddle-rowX()),Dpi.scale 14)
+                    send WindowMessages.WM_MOUSEMOVE releasePoint
+                    send WindowMessages.WM_RBUTTONUP releasePoint
                     check (abs(rowX()-nearMiddle)<=1) (sprintf "A row let go near the middle was moved: at %d, not %d" (rowX()) nearMiddle)
                     strip.setAlignment(TabUp,TabLeft)
                     check (strip.position.IsNone && rowX()=0) "An alignment chosen did not put the dragged row back"
+                    // One continuous right-drag can visit all three edges of the owner.
+                    let frameSize = Dpi.scaleSize(Sz(800,600))
+                    strip.setPlacement(placement start size false,frame=Rect(start,frameSize))
+                    let dragTo x y = send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale x,Dpi.scale y))
+                    send WindowMessages.WM_RBUTTONDOWN (at 20)
+                    dragTo 2 250
+                    check (strip.dock=TabDockLeft) "Dragging to the left edge did not dock the bar"
+                    dragTo 798 250
+                    check (strip.dock=TabDockRight) "Dragging across the window did not change sides"
+                    dragTo 400 2
+                    check (strip.dock=TabDockTop) "Dragging to the top did not restore horizontal tabs"
+                    send WindowMessages.WM_RBUTTONUP (Pt(Dpi.scale 400,Dpi.scale 2))
+                    check (menuClicks()=opened+1) "Releasing after changing edges opened a menu"
+                    strip.setAlignment(TabUp,TabLeft)
                     // A column is dragged down the side of its window: it asks its owner to place
                     // it at the pointer's share of the room it has, and keeps that share once let
                     // go, exactly where it was.

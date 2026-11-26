@@ -299,7 +299,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let placement,span = this.shownPlacement(frame,group.isMaximized.value)
             // A column dragged along the side needs its room to know where it is let go.
             span |> Option.iter(fun span -> this.ts.columnSpan <- span)
-            this.ts.setPlacement(placement, ?owner=(group.zorder.value.tryHead |> Option.map Tab), ownerRight=frame.right)
+            this.ts.setPlacement(placement, ?owner=(group.zorder.value.tryHead |> Option.map Tab), frame=frame)
             this.ts.visible <- not shownElsewhere
         // An empty pane keeps clear of tabs shown inside the title bars, wherever they now are.
         group.refreshSplitChrome()
