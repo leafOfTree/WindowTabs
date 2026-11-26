@@ -2,12 +2,13 @@ namespace Bemo
 open System
 open Bemo.Json
 
-/// What a gesture does: a WindowTabs command by id, or keys sent to the window it was drawn over,
-/// one after another in the hotkey control's encoding, under a name of the user's (empty for the
-/// keys' own names).
+/// What a gesture does: a WindowTabs command by id, keys sent to the window it was drawn over,
+/// one after another in the hotkey control's encoding, or an external program/command to run,
+/// under a name of the user's (empty for the keys' or target's own name).
 type GestureAction =
     | GestureCommand of string
     | GestureKeys of codes:int list * name:string
+    | GestureRun of target:string * args:string * hidden:bool * name:string
 
 /// A gesture, written as the directions it is drawn in ("U", "D", "L", "R"; one or two), and what
 /// it does.
@@ -145,13 +146,18 @@ module MouseGestures =
         | Some bindings when (appFor table path).IsNone && not (table.dismissed |> List.exists(AppIdentity.same path)) -> Some(addApp table path bindings)
         | _ -> None
 
-    let private readBinding (item:JToken) =
+    let readAction (item:JToken) =
         try
-            let gesture = item.Value<string>("gesture")
-            if isNull gesture || not (List.contains gesture all) then None
-            else
-                match item.Value<string>("command") with
-                | null ->
+            match item.Value<string>("command") with
+            | command when not (String.IsNullOrEmpty command) -> Some(GestureCommand command)
+            | _ ->
+                match item.Value<string>("run") with
+                | target when not (String.IsNullOrWhiteSpace target) ->
+                    let args = match item.Value<string>("args") with null -> "" | value -> value
+                    let hidden = match item.["hidden"] with null -> false | _ -> item.Value<bool>("hidden")
+                    let name = match item.Value<string>("name") with null -> "" | value -> value
+                    Some(GestureRun(target,args,hidden,name))
+                | _ ->
                     let name = item.Value<string>("name")
                     // One key as a number, as before there could be more; several as a list.
                     let codes =
@@ -160,19 +166,34 @@ module MouseGestures =
                         | null -> []
                         | code -> [code.ToObject<int>()]
                     if codes.IsEmpty || List.contains 0 codes then None
-                    else Some { gesture=gesture; action=GestureKeys(codes,(if isNull name then "" else name)) }
-                | command -> Some { gesture=gesture; action=GestureCommand command }
+                    else Some(GestureKeys(codes,(if isNull name then "" else name)))
+        with _ -> None
+    let writeActionProps (action:GestureAction) =
+        match action with
+        | GestureCommand command -> [JProperty("command",command)]
+        | GestureKeys(codes,name) ->
+            let keys = match codes with [code] -> box code | _ -> box (JArray(codes |> List.map(fun code -> box (JValue(int64 code))) |> Array.ofList))
+            [JProperty("keys",keys);JProperty("name",name)]
+        | GestureRun(target,args,hidden,name) ->
+            [JProperty("run",target);JProperty("args",args);JProperty("hidden",hidden);JProperty("name",name)]
+    let writeAction (action:GestureAction) =
+        let obj = JObject()
+        for prop in writeActionProps action do obj.Add(prop)
+        obj
+    let private readBinding (item:JToken) =
+        try
+            let gesture = item.Value<string>("gesture")
+            if isNull gesture || not (List.contains gesture all) then None
+            else readAction item |> Option.map(fun action -> { gesture=gesture; action=action })
         with _ -> None
     let private readBindings (token:JToken) =
         match token with
         | :? JArray as items -> items |> Seq.choose readBinding |> Seq.distinctBy(fun binding -> binding.gesture) |> List.ofSeq
         | _ -> []
     let private writeBinding (binding:GestureBinding) =
-        match binding.action with
-        | GestureCommand command -> JObject(JProperty("gesture",binding.gesture),JProperty("command",command))
-        | GestureKeys(codes,name) ->
-            let keys = match codes with [code] -> box code | _ -> box (JArray(codes |> List.map(fun code -> box (JValue(int64 code))) |> Array.ofList))
-            JObject(JProperty("gesture",binding.gesture),JProperty("keys",keys),JProperty("name",name))
+        let obj = JObject(JProperty("gesture",binding.gesture))
+        for prop in writeActionProps binding.action do obj.Add(prop)
+        obj
     /// The table as kept in the settings file; missing, the gestures every app starts with.
     let readTable (token:JToken) =
         match token with

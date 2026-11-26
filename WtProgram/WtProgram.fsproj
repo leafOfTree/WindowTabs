@@ -65,7 +65,9 @@
     <Compile Include="Shared\AppIdentity.fs" />
     <Compile Include="Shared\WindowTitle.fs" />
     <Compile Include="Shared\WindowShortcuts.fs" />
+    <Compile Include="Shared\CustomCommands.fs" />
     <Compile Include="Shared\MouseGestures.fs" />
+    <Compile Include="Shared\MouseTriggers.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
     <Compile Include="Shared\Localization.fs" />
     <Compile Include="Shared\Strings.fs" />
@@ -101,6 +103,7 @@
     <Compile Include="TabStripSprite.fs" />
     <Compile Include="TabTitleTip.fs" />
     <Compile Include="GestureHint.fs" />
+    <Compile Include="GestureTrail.fs" />
     <Compile Include="TabStrip.fs" />
     <Compile Include="AppearanceJson.fs" />
     <Compile Include="SettingsFileStore.fs" />
@@ -146,6 +149,7 @@
     <Compile Include="ManagerViewService\ManagerViewService.fs" />
     <Compile Include="FilterService.fs" />
     <Compile Include="DesktopPlugins\MouseGestureInput.fs" />
+    <Compile Include="DesktopPlugins\MouseTriggerInput.fs" />
     <Compile Include="DesktopPlugins\InputManagerPlugin.fs" />
     <Compile Include="DesktopPlugins\NotifyIconPlugin.fs" />
     <Compile Include="DesktopPlugins\ExceptionHandlerPlugin.fs" />

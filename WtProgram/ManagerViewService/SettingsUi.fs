@@ -270,7 +270,8 @@ module SettingsUi =
         labels.ResumeLayout(true)
         row
 
-    let row table caption description editor = rowWithHelp table caption description None editor |> ignore
+    let rowControl table caption description editor = rowWithHelp table caption description None editor
+    let row table caption description editor = rowControl table caption description editor |> ignore
 
     /// A catalog setting's row with a description and (i) text of its own, such as a file path.
     let settingRowWithHelp table id (description:string) (help:string option) (editor:Control) =

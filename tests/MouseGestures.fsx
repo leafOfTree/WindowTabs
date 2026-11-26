@@ -186,9 +186,72 @@ let render (control:Control) name =
     control.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
     image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",name+".png"),ImageFormat.Png)
 
+let triggersAndKeys() =
+    // Win modifier & media key encoding round-trip (backwards-compatible with HOTKEYF_*).
+    let winShiftS = SettingsShortcut.encodeVk (int Keys.S) false false true true
+    check (SettingsShortcut.hasWin winShiftS && SettingsShortcut.text winShiftS="Shift+Win+S")
+          (sprintf "Win+Shift+S encoded as %x (%s)" winShiftS (SettingsShortcut.text winShiftS))
+    let hk = Bemo.Win32.HotKeyShortcut(HotKeyControlCode=int16 winShiftS)
+    check (hk.IsWinModifier && hk.IsShiftModifier && (hk.RegisterHotKeyModifierFlags &&& HotKeyConstants.MOD_WIN)<>0)
+          "HotKeyShortcut lost Win modifier flag"
+    let volUp = SettingsShortcut.encodeVk (int Keys.VolumeUp) false false false false
+    check (SettingsShortcut.text volUp="Vol+") (sprintf "VolumeUp was named %s" (SettingsShortcut.text volUp))
+    // CustomCommands CRUD & JSON round-trip.
+    let cmd1 = { id="c1"; name="OCR"; target="Umi-OCR.exe"; args="--screenshot"; hidden=true; code=0x064F }
+    let cmd2 = { id="c2"; name=""; target = @"C:\Tools\calc.exe"; args=""; hidden=false; code=0x064F }
+    let list1 = CustomCommands.upsert [] cmd1
+    let list2 = CustomCommands.upsert list1 cmd2
+    check (list2.Length=2 && list2.[0].code=0 && list2.[1].code=0x064F) "Conflicting custom command shortcut was not cleared"
+    check (CustomCommands.displayName "" @"C:\Tools\calc.exe"="calc" && CustomCommands.displayName "OCR" "Umi-OCR.exe"="OCR") "CustomCommand display name mismatch"
+    check (CustomCommands.read (CustomCommands.write list2)=list2) "CustomCommands did not survive JSON round-trip"
+    // GestureRun JSON round-trip.
+    let runBinding = { gesture="DL"; action=GestureRun("Umi-OCR.exe","--screenshot",true,"OCR") }
+    let runTable = { MouseGestures.empty with everywhere=MouseGestures.bind MouseGestures.empty.everywhere runBinding }
+    check (MouseGestures.readTable (MouseGestures.writeTable runTable)=runTable) "GestureRun did not survive JSON round-trip"
+    check (Commands.gestureAction runBinding="OCR") "GestureRun was not named properly"
+    // MouseTriggers JSON round-trip.
+    let trig =
+        MouseTriggers.empty
+        |> fun t -> MouseTriggers.setEdge t EdgeLeft { up=Some(GestureKeys([volUp],"")); down=Some(GestureCommand "previous-tab") }
+        |> fun t -> MouseTriggers.setCorner t CornerTopLeft (Some(GestureCommand "search-tabs"))
+    check (MouseTriggers.read (MouseTriggers.write trig)=trig) "MouseTriggers did not survive JSON round-trip"
+    // Multi-monitor outer edges & corners ignore shared internal borders.
+    let leftScreen = Rectangle(-1920,0,1920,1080)
+    let mainScreen = Rectangle(0,0,1920,1080)
+    let dual = [leftScreen;mainScreen]
+    check (MouseTriggers.edgeAt dual 4 -1920 500=Some EdgeLeft) "Outer left edge on negative-coord monitor not detected"
+    check (MouseTriggers.edgeAt dual 4 1919 500=Some EdgeRight) "Outer right edge on main monitor not detected"
+    check (MouseTriggers.edgeAt dual 4 0 500=None) "Shared internal left edge on main monitor misfired"
+    check (MouseTriggers.edgeAt dual 4 -1 500=None) "Shared internal right edge on left monitor misfired"
+    check (MouseTriggers.cornerAt dual 6 -1920 0=Some CornerTopLeft) "Outer top-left corner not detected"
+    check (MouseTriggers.cornerAt dual 6 1919 1079=Some CornerBottomRight) "Outer bottom-right corner not detected"
+    check (MouseTriggers.cornerAt dual 6 0 0=None) "Internal shared top-left corner on main monitor misfired"
+    check (MouseTriggers.cornerAt dual 6 -1 0=None) "Internal shared top-right corner on left monitor misfired"
+    // HotCornerTracker dwell delay & leave hysteresis.
+    let tracker = HotCornerTracker()
+    let t0 = DateTime(2026,1,1,0,0,0,DateTimeKind.Utc)
+    check ((tracker.update dual 6 32 200 -1920 0 t0).IsNone) "Hot corner fired immediately before dwell delay"
+    check ((tracker.update dual 6 32 200 -1919 1 (t0.AddMilliseconds 150.0)).IsNone) "Hot corner fired early"
+    check (tracker.update dual 6 32 200 -1919 1 (t0.AddMilliseconds 220.0)=Some CornerTopLeft) "Hot corner did not fire after dwell delay"
+    check ((tracker.update dual 6 32 200 -1919 1 (t0.AddMilliseconds 500.0)).IsNone) "Hot corner fired twice without leaving"
+    check ((tracker.update dual 6 32 200 -1910 10 (t0.AddMilliseconds 600.0)).IsNone) "Hot corner reset inside leave radius"
+    check ((tracker.update dual 6 32 200 -1800 100 (t0.AddMilliseconds 700.0)).IsNone) "Leaving corner fired unexpectedly"
+    check ((tracker.update dual 6 32 200 -1920 0 (t0.AddMilliseconds 800.0)).IsNone) "Re-entering corner fired before delay"
+    check (tracker.update dual 6 32 200 -1920 0 (t0.AddMilliseconds 1050.0)=Some CornerTopLeft) "Hot corner did not re-fire after leaving and dwelling again"
+    // Raw capture token ownership: releasing a stale token must not clear a newer active handler.
+    let mutable seen = 0
+    let t1 = ShortcutRecording.registerRawCapture (fun _ -> seen <- 1; true)
+    let t2 = ShortcutRecording.registerRawCapture (fun _ -> seen <- 2; true)
+    ShortcutRecording.releaseRawCapture t1
+    check (ShortcutRecording.hasRawCapture() && ShortcutRecording.tryCaptureRaw(0x53,false,false,true,true) && seen=2)
+          "Releasing an older raw capture token cleared a newer active handler"
+    ShortcutRecording.releaseRawCapture t2
+    check (not (ShortcutRecording.hasRawCapture())) "Releasing the active raw capture token left it registered"
+
 let main() =
     recognizer()
     table()
+    triggersAndKeys()
     let isolated = Path.Combine(__SOURCE_DIRECTORY__,"Debug","gesture-test-"+Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory(isolated) |> ignore
     let original = Environment.CurrentDirectory
@@ -206,6 +269,23 @@ let main() =
             member _.getIsTabbingEnabledForProcess _ = true })
         check (not (api.getValue("enableMouseGestures") :?> bool)) "Mouse gestures were on before being asked for"
         check (api.getValue("showGestureHint") :?> bool) "The hint by the pointer was off to begin with"
+        check (api.getValue("showGestureTrail") :?> bool) "The gesture trail was off to begin with"
+        check (not (api.getValue("enableEdgeScroll") :?> bool)) "Edge scroll was on before being asked for"
+        check (not (api.getValue("enableHotCorners") :?> bool)) "Hot corners were on before being asked for"
+        check ((api.getValue("hotCornerDelay") :?> int)=200) "Hot corner delay did not default to 200 ms"
+        api.setValue("hotCornerDelay",box 9999)
+        check ((api.getValue("hotCornerDelay") :?> int)=snd SettingsCatalog.hotCornerDelayRange) "Hot corner delay was not clamped to upper bound on setValue"
+        api.setValue("hotCornerDelay",box -25)
+        check ((api.getValue("hotCornerDelay") :?> int)=fst SettingsCatalog.hotCornerDelayRange) "Hot corner delay was not clamped to lower bound on setValue"
+        api.setValue("hotCornerDelay",box 200)
+        // GestureTrail renders and hides without taking focus or leaking.
+        do
+            use trail = new GestureTrail()
+            let origin = Screen.PrimaryScreen.WorkingArea.Location
+            trail.show([origin.X+40,origin.Y+40; origin.X+140,origin.Y+40; origin.X+140,origin.Y+140])
+            check trail.isVisible "GestureTrail did not show"
+            trail.hide()
+            check (not trail.isVisible) "GestureTrail did not hide"
         check (MouseGestureRules.table()=MouseGestures.empty) "A new settings file did not start with the default gestures"
         // The app's switch, as the palette turns it, lists the app with its preset.
         MouseGestureRules.setEnabled @"C:\Program Files\Mozilla Firefox\firefox.exe" false
@@ -247,7 +327,7 @@ let main() =
             form.Show()
             pump 200
             let editor = view.Editor
-            check (form.Controls.Find("mouse-gestures",true).Length=1 && form.Controls.Find("gesture-hint",true).Length=1) "The page lacks the switches the search goes to"
+            check (form.Controls.Find("mouse-gestures",true).Length=1 && form.Controls.Find("gesture-hint",true).Length=1 && form.Controls.Find("gesture-trail",true).Length=1 && form.Controls.Find("edge-scroll",true).Length=1 && form.Controls.Find("hot-corners",true).Length=1) "The page lacks the switches the search goes to"
             check (editor.Height>Dpi.scale 300) (sprintf "The gesture editor is too short to show its table: %d" editor.Height)
             // Off, the page below the switch is greyed and takes no input; on, it is usable.
             check (not editor.AddGestureButton.Enabled && not editor.AddAppButton.Enabled) "The gestures could be edited while they were off"
@@ -299,9 +379,12 @@ let main() =
             // Still and whole at once: nothing plays until the pointer is on a row.
             pump 100
             render form ("mouse-gestures-firefox-"+name)
-            // The hint switch and Add gesture sit at the bottom of a page with room to spare.
-            let footerGap = page.ClientSize.Height-page.PointToClient(editor.AddGestureButton.PointToScreen(Point(0,editor.AddGestureButton.Height))).Y
-            check (footerGap>=0 && footerGap<=Dpi.scale 48) (sprintf "Add gesture sits %d px above the bottom of the page" footerGap)
+            // Add gesture now sits right under the gesture rows, above the footer toggles.
+            let hintToggle = form.Controls.Find("gesture-hint",true).[0]
+            let trailToggle = form.Controls.Find("gesture-trail",true).[0]
+            let addBottom = editor.AddGestureButton.Bottom
+            check (addBottom<hintToggle.Top && hintToggle.Top=trailToggle.Top && hintToggle.Right<trailToggle.Left)
+                  (sprintf "Add gesture (%d) did not sit above side-by-side footer toggles (%A, %A)" addBottom hintToggle.Bounds trailToggle.Bounds)
             // Hovering the override mark points its tip at the mark, from below it.
             let rows = (MouseGestures.appFor (MouseGestureRules.table()) "firefox.exe").Value.bindings
             let marked = rows |> List.findIndex(fun binding -> binding.gesture="DR")
@@ -393,6 +476,11 @@ let main() =
             dialog.Kind.SelectedIndex <- 1
             pump 50
             check (placed()=first) (sprintf "Picking a command moved the dialog from %A to %A" first (placed()))
+            dialog.Kind.SelectedIndex <- 2
+            pump 50
+            check (placed()=first) (sprintf "Picking Run program moved the dialog from %A to %A" first (placed()))
+            dialog.Kind.SelectedIndex <- 1
+            pump 50
             render dialog ("mouse-gestures-dialog-command-"+name)
             dialog.Choose "RL"
             dialog.Kind.SelectedIndex <- 0

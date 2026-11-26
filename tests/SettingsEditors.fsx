@@ -522,7 +522,10 @@ let main() =
         member _.windowShortcuts() = windowKeys.Value
         member _.setWindowShortcut shortcut =
             windowKeys.Value <- WindowShortcuts.set windowKeys.Value shortcut
-            true})
+            true
+        member _.customCommands() = []
+        member _.saveCustomCommand _ = true
+        member _.deleteCustomCommand _ = ()})
     let command (control:Control) (keys:Keys) =
         let mutable msg = Message()
         let processKey = control.GetType().GetMethod("ProcessCmdKey",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)

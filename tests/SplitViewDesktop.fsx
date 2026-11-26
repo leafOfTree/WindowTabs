@@ -128,7 +128,10 @@ let main() =
         member _.detachTab _ = ()
         member _.editGroups _ = ()
         member _.windowShortcuts() = []
-        member _.setWindowShortcut _ = true})
+        member _.setWindowShortcut _ = true
+        member _.customCommands() = []
+        member _.saveCustomCommand _ = true
+        member _.deleteCustomCommand _ = ()})
     Services.register<IFilterService>({new IFilterService with
         member _.isAppWindow _ = false
         member _.isAppWindowStyle _ = false

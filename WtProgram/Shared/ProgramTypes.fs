@@ -68,7 +68,16 @@ type SettingsRec = {
     enableMouseGestures: bool
     /// A small note by the pointer while drawing says what the stroke will do.
     showGestureHint: bool
+    /// Draws the stroke line on screen while drawing a gesture.
+    showGestureTrail: bool
     mouseGestures: MouseGestureTable
+    /// Scroll along outer screen edges to trigger an action.
+    enableEdgeScroll: bool
+    /// Rest pointer in outer screen corners to trigger an action.
+    enableHotCorners: bool
+    /// Dwell delay in milliseconds before a hot corner fires.
+    hotCornerDelay: int
+    mouseTriggers: MouseTriggerTable
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     /// Which tab titles are bold: "Never", "Active" or "All".
@@ -232,6 +241,12 @@ type IProgram =
     /// Gives a window its key, or with a code of 0 takes it away; false when another program
     /// holds the key.
     abstract member setWindowShortcut : WindowShortcut -> bool
+    /// User-defined programs and commands that can be launched from shortcuts or the palette.
+    abstract member customCommands : unit -> CustomCommand list
+    /// Adds or updates a custom command and its global shortcut; false when another program holds the key.
+    abstract member saveCustomCommand : CustomCommand -> bool
+    /// Removes a custom command and unregisters its shortcut.
+    abstract member deleteCustomCommand : string -> unit
 
 /// Whether a group set to combine its taskbar icons has its one button, and if not, why its
 /// windows keep their own: else the setting looked on while nothing was combined.

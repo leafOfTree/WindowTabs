@@ -13,6 +13,7 @@ module Strings =
         let ok = { en="OK"; zh="确定"; ja="OK"; ar="موافق"; ko="확인" }
         let cancel = { en="Cancel"; zh="取消"; ja="キャンセル"; ar="إلغاء"; ko="취소" }
         let save = { en="Save"; zh="保存"; ja="保存"; ar="حفظ"; ko="저장" }
+        let edit = { en="Edit"; zh="编辑"; ja="編集"; ar="تعديل"; ko="편집" }
         let refresh = { en="Refresh"; zh="刷新"; ja="更新"; ar="تحديث"; ko="새로 고침" }
         let name = { en="Name"; zh="名称"; ja="名称"; ar="الاسم"; ko="이름" }
         let title = { en="Title"; zh="标题"; ja="タイトル"; ar="العنوان"; ko="제목" }
@@ -234,6 +235,18 @@ module Strings =
         let gestureHint = { caption={ en="Show a hint while drawing"; zh="划动时显示提示"; ja="描いている間ヒントを表示"; ar="إظهار تلميح أثناء الرسم"; ko="그리는 동안 힌트 표시" }
                             description={ en="Says by the pointer what the stroke will do."; zh="在指针旁显示这一笔会做什么。"; ja="そのストロークで何をするかをポインターの横に表示します。"; ar="يعرض بجوار المؤشر ما سيفعله الخط."; ko="획으로 실행될 동작을 포인터 옆에 표시합니다." }
                             keywords={ en="tooltip mouse gesture feedback"; zh="提示 鼠标手势 反馈"; ja="ツールチップ マウスジェスチャー"; ar="تلميح إيماءة الماوس"; ko="도구 설명 힌트 마우스 제스처" } }
+        let gestureTrail = { caption={ en="Show trail while drawing"; zh="划动时显示轨迹"; ja="描いている間軌跡を表示"; ar="إظهار المسار أثناء الرسم"; ko="그리는 동안 궤적 표시" }
+                             description={ en="Draws the stroke line on screen while holding the right button."; zh="按住右键划动手势时在屏幕上绘制轨迹线。"; ja="右ボタンを押して描いている間、画面上に軌跡の線を表示します。"; ar="يرسم خط المسار على الشاشة أثناء الضغط على الزر الأيمن."; ko="오른쪽 버튼을 누르고 그리는 동안 화면에 궤적 선을 표시합니다." }
+                             keywords={ en="mouse gesture trail line path stroke"; zh="鼠标手势 轨迹 线条 路径 划动"; ja="マウスジェスチャー 軌跡 線 ストローク"; ar="إيماءة الماوس مسار خط"; ko="마우스 제스처 궤적 선 경로" } }
+        let edgeScroll = { caption={ en="Screen edge scroll"; zh="屏幕边缘滚动"; ja="画面端スクロール"; ar="التمرير عند حافة الشاشة"; ko="화면 가장자리 스크롤" }
+                           description={ en="Scroll the mouse wheel along an outer screen edge to run an action."; zh="将鼠标移到屏幕外侧边缘并滚动滚轮，触发指定动作。"; ja="画面の外側の端でホイールを回して動作を実行します。"; ar="مرّر عجلة الفأرة عند الحافة الخارجية للشاشة لتشغيل إجراء."; ko="화면 바깥쪽 가장자리에서 휠을 돌려 동작을 실행합니다." }
+                           keywords={ en="mouse gesture edge wheel border volume"; zh="鼠标手势 屏幕边缘 滚轮 音量"; ja="マウスジェスチャー 画面端 ホイール 音量"; ar="إيماءة الماوس حافة الشاشة تمرير"; ko="마우스 제스처 화면 가장자리 휠 볼륨" } }
+        let hotCorners = { caption={ en="Screen corners"; zh="屏幕四角触发"; ja="画面コーナーのトリガー"; ar="زوايا الشاشة"; ko="화면 모서리 트리거" }
+                           description={ en="Rest the pointer in an outer corner of the screen to run an action."; zh="将鼠标移到屏幕外侧四个角落并短暂停留，触发指定动作。"; ja="画面の外側の四隅にポインターを少し置くと動作を実行します。"; ar="أبقِ المؤشر في إحدى الزوايا الخارجية للشاشة لتشغيل إجراء."; ko="화면 바깥쪽 네 모서리에 포인터를 잠시 두면 동작을 실행합니다." }
+                           keywords={ en="mouse gesture hot corner trigger"; zh="鼠标手势 屏幕四角 触发角 角落"; ja="マウスジェスチャー ホットコーナー 四隅"; ar="إيماءة الماوس زوايا الشاشة"; ko="마우스 제스처 핫 코너 모서리" } }
+        let hotCornerDelay = { caption={ en="Corner trigger delay (ms)"; zh="四角触发延迟（毫秒）"; ja="コーナー反応遅延 (ミリ秒)"; ar="تأخير تفعيل الزاوية (مللي ثانية)"; ko="모서리 트리거 지연(ms)" }
+                               description={ en="How long the pointer stays in a corner before the action runs."; zh="鼠标停留在屏幕角落多久后触发动作，防止误触。"; ja="誤作動を防ぐため、角にポインターを置いてから実行するまでの時間。"; ar="مدة بقاء المؤشر في الزاوية قبل تنفيذ الإجراء."; ko="오작동을 막기 위해 모서리에 머문 뒤 동작을 실행할 시간입니다." }
+                               keywords={ en="hot corner delay dwell timeout ms"; zh="触发角 延迟 停留 毫秒"; ja="コーナー 遅延 待機 ミリ秒"; ar="زاوية تأخير مهلة"; ko="모서리 지연 시간 밀리초" } }
         let pauseInFullScreen = { caption={ en="Pause while a full-screen app runs"; zh="全屏应用运行时暂停"; ja="全画面アプリの実行中は一時停止"; ar="الإيقاف المؤقت أثناء تشغيل تطبيق بملء الشاشة"; ko="전체 화면 앱 실행 중 일시 중지" }
                                   description={ en="Shortcuts leave their keys to the app; notices wait until it closes or leaves full screen."; zh="快捷键暂不生效，通知等退出全屏后再显示。"; ja="ショートカットはアプリにキーを譲り、通知は全画面が終わってから表示します。"; ar="تترك الاختصارات مفاتيحها للتطبيق، وتنتظر الإشعارات حتى يخرج من ملء الشاشة."; ko="단축키는 앱에 키를 양보하고, 알림은 앱이 닫히거나 전체 화면을 벗어날 때까지 기다립니다." }
                                   keywords={ en="fullscreen do not disturb"; zh="全屏 勿扰"; ja="フルスクリーン 応答不可"; ar="ملء الشاشة عدم الإزعاج"; ko="전체 화면 방해 금지 게임" } }
@@ -901,6 +914,27 @@ module Strings =
         let refreshWindows = { caption={ en="Rescan windows"; zh="重新扫描窗口"; ja="ウィンドウを再スキャン"; ar="إعادة فحص النوافذ"; ko="창 다시 검색" }
                                description={ en="Groups any window that was missed."; zh="把漏掉的窗口加入分组。"; ja="見落とされたウィンドウをグループに入れます。"; ar="يضيف أي نافذة فاتها البرنامج إلى مجموعة."; ko="빠진 창을 그룹에 넣습니다." }
                                keywords={ en="rescan refresh reload"; zh="刷新 重新加载"; ja="更新 再読み込み"; ar="تحديث إعادة تحميل"; ko="새로 고침 다시 로드" } }
+        let minimizeWindow = { caption={ en="Minimize window"; zh="最小化窗口"; ja="ウィンドウを最小化"; ar="تصغير النافذة"; ko="창 최소화" }
+                               description={ en="Minimizes the window in front."; zh="最小化当前窗口。"; ja="前面のウィンドウを最小化します。"; ar="يصغّر النافذة الأمامية."; ko="현재 창을 최소화합니다." }
+                               keywords={ en="window hide minimize"; zh="窗口 最小化 隐藏"; ja="ウィンドウ 最小化"; ar="نافذة تصغير"; ko="창 최소화 숨기기" } }
+        let toggleMaximizeWindow = { caption={ en="Maximize or restore window"; zh="最大化或还原窗口"; ja="ウィンドウを最大化／元に戻す"; ar="تكبير النافذة أو استعادتها"; ko="창 최대화 또는 복원" }
+                                     description={ en="Maximizes the window in front, or restores it if already maximized."; zh="最大化当前窗口；如果已最大化则还原。"; ja="前面のウィンドウを最大化します。既に最大化されている場合は元に戻します。"; ar="يكبّر النافذة الأمامية أو يستعيدها إن كانت مكبّرة."; ko="현재 창을 최대화하거나 이미 최대화된 경우 원래 크기로 되돌립니다." }
+                                     keywords={ en="window maximize restore zoom"; zh="窗口 最大化 还原 恢复"; ja="ウィンドウ 最大化 元に戻す"; ar="نافذة تكبير استعادة"; ko="창 최대화 복원" } }
+        let snapWindowLeft = { caption={ en="Snap window to left half"; zh="贴靠窗口到左半屏幕"; ja="ウィンドウを左半分に配置"; ar="محاذاة النافذة إلى النصف الأيسر"; ko="창을 왼쪽 절반에 맞추기" }
+                               description={ en="Places the window in front on the left half of its screen."; zh="将当前窗口放到所在屏幕的左半边。"; ja="前面のウィンドウを画面の左半分に配置します。"; ar="يضع النافذة الأمامية في النصف الأيسر من شاشتها."; ko="현재 창을 화면의 왼쪽 절반에 배치합니다." }
+                               keywords={ en="window snap left half tile"; zh="窗口 左半屏 左半屏幕 贴靠 分屏"; ja="ウィンドウ 左半分 スナップ 配置"; ar="نافذة يسار نصف محاذاة"; ko="창 왼쪽 절반 스냅 배치" } }
+        let snapWindowRight = { caption={ en="Snap window to right half"; zh="贴靠窗口到右半屏幕"; ja="ウィンドウを右半分に配置"; ar="محاذاة النافذة إلى النصف الأيمن"; ko="창을 오른쪽 절반에 맞추기" }
+                                description={ en="Places the window in front on the right half of its screen."; zh="将当前窗口放到所在屏幕的右半边。"; ja="前面のウィンドウを画面の右半分に配置します。"; ar="يضع النافذة الأمامية في النصف الأيمن من شاشتها."; ko="현재 창을 화면의 오른쪽 절반에 배치합니다." }
+                                keywords={ en="window snap right half tile"; zh="窗口 右半屏 右半屏幕 贴靠 分屏"; ja="ウィンドウ 右半分 スナップ 配置"; ar="نافذة يمين نصف محاذاة"; ko="창 오른쪽 절반 스냅 배치" } }
+        let moveWindowNextMonitor = { caption={ en="Move window to next monitor"; zh="移动窗口到下一个显示器"; ja="ウィンドウを次のモニターへ移動"; ar="نقل النافذة إلى الشاشة التالية"; ko="창을 다음 모니터로 이동" }
+                                      description={ en="Moves the window in front to the next display."; zh="将当前窗口移到下一块屏幕。"; ja="前面のウィンドウを次のディスプレイへ移動します。"; ar="ينقل النافذة الأمامية إلى الشاشة التالية."; ko="현재 창을 다음 디스플레이로 옮깁니다." }
+                                      keywords={ en="window monitor display screen move next"; zh="窗口 显示器 屏幕 移动 副屏"; ja="ウィンドウ モニター 画面 ディスプレイ 移動"; ar="نافذة شاشة عرض نقل"; ko="창 모니터 화면 디스플레이 이동" } }
+        let closeWindow = { caption={ en="Close window"; zh="关闭窗口"; ja="ウィンドウを閉じる"; ar="إغلاق النافذة"; ko="창 닫기" }
+                            description={ en="Closes the window in front, whether it has tabs or not."; zh="关闭当前窗口（无论是否有标签）。"; ja="タブの有無にかかわらず前面のウィンドウを閉じます。"; ar="يغلق النافذة الأمامية سواء كانت بها علامات تبويب أم لا."; ko="탭이 있든 없든 현재 창을 닫습니다." }
+                            keywords={ en="window close exit"; zh="窗口 关闭"; ja="ウィンドウ 閉じる"; ar="نافذة إغلاق"; ko="창 닫기" } }
+        let systemScreenshot = { caption={ en="Take screenshot"; zh="系统截图"; ja="スクリーンショットを撮る"; ar="التقاط لقطة شاشة"; ko="스크린샷 찍기" }
+                                 description={ en="Opens Windows Snipping Tool (ms-screenclip:)."; zh="打开 Windows 自带截图工具（Win11 内置文字识别）。"; ja="Windows の画面切り取りツールを開きます。"; ar="يفتح أداة القص في Windows."; ko="Windows 캡처 도구(ms-screenclip:)를 엽니다." }
+                                 keywords={ en="screenshot snip capture ocr screenclip"; zh="截图 截屏 识字 OCR"; ja="スクリーンショット 切り取り OCR"; ar="لقطة شاشة قص"; ko="스크린샷 캡처 OCR" } }
 
     /// Written to the console a command line was given from.
     /// The group editor's popup.
@@ -1043,6 +1077,7 @@ module Strings =
         let does = { en="Does"; zh="执行"; ja="実行内容"; ar="ينفّذ"; ko="실행 내용" }
         let commandKind = { en="Command"; zh="命令"; ja="コマンド"; ar="أمر"; ko="명령" }
         let keysKind = { en="Shortcut"; zh="快捷键"; ja="ショートカット"; ar="اختصار"; ko="단축키" }
+        let runKind = { en="Program"; zh="程序"; ja="プログラム"; ar="برنامج"; ko="프로그램" }
         let overridesEverywhere arrows (action:string) =
             { en=sprintf "Overrides %s for all apps: %s" arrows action; zh=sprintf "覆盖了全局的 %s：%s" arrows action
               ja=sprintf "全体の %s を上書きします: %s" arrows action; ar=sprintf "يتجاوز %s لكل التطبيقات: %s" arrows action; ko=sprintf "모든 앱의 %s을(를) 재정의합니다: %s" arrows action }
@@ -1107,12 +1142,38 @@ module Strings =
               ja=sprintf "「%s」を置き換えます" action; ar=sprintf "تستبدل «%s»" action; ko=sprintf "“%s”을(를) 대체" action }
         let runCommand = { en="Run a WindowTabs command"; zh="执行 WindowTabs 命令"; ja="WindowTabs のコマンドを実行する"; ar="تشغيل أمر WindowTabs"; ko="WindowTabs 명령 실행" }
         let sendKeys = { en="Send a shortcut"; zh="发送快捷键"; ja="ショートカットを送る"; ar="إرسال اختصار"; ko="단축키 보내기" }
+        let runProgram = { en="Run a program or command"; zh="运行程序或命令"; ja="プログラムまたはコマンドを実行"; ar="تشغيل برنامج أو أمر"; ko="프로그램 또는 명령 실행" }
         let chooseCommand = { en="Choose a command…"; zh="选择命令…"; ja="コマンドを選択…"; ar="اختر أمرًا…"; ko="명령 선택…" }
+        let programTarget = { en="Program, script or URI"; zh="程序、脚本或命令"; ja="プログラム、スクリプト、または URI"; ar="البرنامج أو السكربت أو الرابط"; ko="프로그램, 스크립트 또는 URI" }
+        let programArgs = { en="Arguments (optional)"; zh="参数（可选）"; ja="引数 (省略可)"; ar="المعاملات (اختياري)"; ko="인수(선택 사항)" }
+        let runHidden = { en="Run hidden"; zh="后台静默运行"; ja="非表示で実行"; ar="تشغيل في الخلفية"; ko="숨겨서 실행" }
+        let browse = { en="Browse…"; zh="浏览…"; ja="参照…"; ar="استعراض…"; ko="찾아보기…" }
+        let chooseProgram = { en="Choose a program"; zh="选择程序"; ja="プログラムを選択"; ar="اختر برنامجًا"; ko="프로그램 선택" }
+        let executableFiles = { en="Programs (*.exe;*.bat;*.cmd;*.lnk)|*.exe;*.bat;*.cmd;*.lnk|All files (*.*)|*.*"; zh="程序 (*.exe;*.bat;*.cmd;*.lnk)|*.exe;*.bat;*.cmd;*.lnk|所有文件 (*.*)|*.*"; ja="プログラム (*.exe;*.bat;*.cmd;*.lnk)|*.exe;*.bat;*.cmd;*.lnk|すべてのファイル (*.*)|*.*"; ar="البرامج (*.exe;*.bat;*.cmd;*.lnk)|*.exe;*.bat;*.cmd;*.lnk|كل الملفات (*.*)|*.*"; ko="프로그램 (*.exe;*.bat;*.cmd;*.lnk)|*.exe;*.bat;*.cmd;*.lnk|모든 파일 (*.*)|*.*" }
         let name = { en="Name (optional)"; zh="名称（可选）"; ja="名前 (省略可)"; ar="الاسم (اختياري)"; ko="이름(선택 사항)" }
         let add = { en="Add"; zh="添加"; ja="追加"; ar="إضافة"; ko="추가" }
         let needGesture = { en="Pick a gesture above, or draw one in the box."; zh="先在上面选一个手势，或者在框里划一个。"; ja="上でジェスチャーを選ぶか、枠内に描いてください。"; ar="اختر إيماءة أعلاه، أو ارسم واحدة داخل المربع."; ko="위에서 제스처를 선택하거나 상자에 그리세요." }
         let needCommand = { en="Choose the command to run."; zh="选择要执行的命令。"; ja="実行するコマンドを選んでください。"; ar="اختر الأمر المطلوب تشغيله."; ko="실행할 명령을 선택하세요." }
         let needKeys = { en="Click the shortcut box and press the keys to send."; zh="点快捷键框，按下要发送的快捷键。"; ja="ショートカット欄をクリックして、送るキーを押してください。"; ar="انقر مربع الاختصار واضغط المفاتيح المطلوب إرسالها."; ko="단축키 상자를 클릭하고 보낼 키를 누르세요." }
+        let needTarget = { en="Enter a program path, script or command to run."; zh="请输入要运行的程序路径、脚本或命令。"; ja="実行するプログラムのパス、スクリプト、またはコマンドを入力してください。"; ar="أدخل مسار برنامج أو سكربت أو أمر لتشغيله."; ko="실행할 프로그램 경로, 스크립트 또는 명령을 입력하세요." }
+        // Edge scroll & screen corners.
+        let edgeTop = { en="Top edge"; zh="屏幕上边缘"; ja="画面の上端"; ar="الحافة العلوية"; ko="위쪽 가장자리" }
+        let edgeBottom = { en="Bottom edge"; zh="屏幕下边缘"; ja="画面の下端"; ar="الحافة السفلية"; ko="아래쪽 가장자리" }
+        let edgeLeft = { en="Left edge"; zh="屏幕左边缘"; ja="画面の左端"; ar="الحافة اليسرى"; ko="왼쪽 가장자리" }
+        let edgeRight = { en="Right edge"; zh="屏幕右边缘"; ja="画面の右端"; ar="الحافة اليمنى"; ko="오른쪽 가장자리" }
+        let scrollUp = { en="Scroll up"; zh="向上滚"; ja="上スクロール"; ar="تمرير لأعلى"; ko="위로 스크롤" }
+        let scrollDown = { en="Scroll down"; zh="向下滚"; ja="下スクロール"; ar="تمرير لأسفل"; ko="아래로 스크롤" }
+        let cornerTopLeft = { en="Top-left corner"; zh="左上角"; ja="左上隅"; ar="الزاوية العلوية اليسرى"; ko="왼쪽 위 모서리" }
+        let cornerTopRight = { en="Top-right corner"; zh="右上角"; ja="右上隅"; ar="الزاوية العلوية اليمنى"; ko="오른쪽 위 모서리" }
+        let cornerBottomLeft = { en="Bottom-left corner"; zh="左下角"; ja="左下隅"; ar="الزاوية السفلية اليسرى"; ko="왼쪽 아래 모서리" }
+        let cornerBottomRight = { en="Bottom-right corner"; zh="右下角"; ja="右下隅"; ar="الزاوية السفلية اليمنى"; ko="오른쪽 아래 모서리" }
+        let chooseAction = { en="Choose action"; zh="选择动作"; ja="動作を選択"; ar="اختر إجراءً"; ko="동작 선택" }
+        let clearAction = { en="None"; zh="无"; ja="なし"; ar="لا شيء"; ko="없음" }
+        let customCommandsHeading = { en="Custom programs and commands"; zh="自定义程序与命令"; ja="カスタムプログラムとコマンド"; ar="برامج وأوامر مخصصة"; ko="사용자 지정 프로그램 및 명령" }
+        let customCommandsNote = { en="Launch apps, scripts or system tools with a shortcut, the command palette or a gesture."; zh="通过快捷键、命令面板或鼠标手势直接启动常用程序、脚本或系统工具。"; ja="ショートカット、コマンドパレット、ジェスチャーからアプリやスクリプトを起動します。"; ar="شغّل التطبيقات أو السكربتات أو أدوات النظام عبر اختصار أو لوحة الأوامر أو إيماءة."; ko="단축키, 명령 팔레트 또는 제스처로 앱, 스크립트, 시스템 도구를 실행합니다." }
+        let addCustomCommand = { en="Add program or command"; zh="添加程序或命令"; ja="プログラムまたはコマンドを追加"; ar="إضافة برنامج أو أمر"; ko="프로그램 또는 명령 추가" }
+        let editCustomCommand = { en="Edit program or command"; zh="编辑程序或命令"; ja="プログラムまたはコマンドを編集"; ar="تعديل برنامج أو أمر"; ko="프로그램 또는 명령 편집" }
+        let customCommandsEmpty = { en="No custom programs or commands yet."; zh="还没有自定义程序或命令。"; ja="カスタムプログラムやコマンドはまだありません。"; ar="لا توجد برامج أو أوامر مخصصة بعد."; ko="아직 사용자 지정 프로그램이나 명령이 없습니다." }
 
     module AppRules =
         let addApplication ={ en="Add application"; zh="添加应用"; ja="アプリを追加"; ar="إضافة تطبيق"; ko="앱 추가" }

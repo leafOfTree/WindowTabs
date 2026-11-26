@@ -75,6 +75,8 @@ let main() =
         let autoGrouped = ConcurrentDictionary<string,bool>(StringComparer.OrdinalIgnoreCase)
         let mouse = Event<int * IntPtr>()
         let mutable candidates : (IntPtr * string * string) list = []
+        let windowKeys = ref ([] : WindowShortcut list)
+        let customCmds = ref ([] : CustomCommand list)
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
             member _.isFirstRun = false
@@ -118,8 +120,11 @@ let main() =
             member _.restoreWorkspaceNamed name = calls.Enqueue("restoreWorkspaceNamed "+name)
             member _.detachTab hwnd = calls.Enqueue(sprintf "detachTab %d" hwnd)
             member _.editGroups hwnd = calls.Enqueue(sprintf "editGroups %d" hwnd)
-            member _.windowShortcuts() = []
-            member _.setWindowShortcut _ = true})
+            member _.windowShortcuts() = windowKeys.Value
+            member _.setWindowShortcut s = windowKeys.Value <- WindowShortcuts.set windowKeys.Value s; true
+            member _.customCommands() = customCmds.Value
+            member _.saveCustomCommand c = customCmds.Value <- CustomCommands.upsert customCmds.Value c; true
+            member _.deleteCustomCommand id = customCmds.Value <- CustomCommands.remove customCmds.Value id})
         let tabbing = ConcurrentDictionary<string,bool>(StringComparer.OrdinalIgnoreCase)
         Services.register<IFilterService>({new IFilterService with
             member _.isAppWindow _ = false
@@ -205,7 +210,7 @@ let main() =
         // Dimmed while there is no workspace to choose.
         let needsWorkspace = set ["restore-workspace-named";"delete-workspace"]
         // Open a system dialog and wait on the user: listed, but not run unattended.
-        let interactive = set ["custom-tab-color";"change-group-icon";"new-group"]
+        let interactive = set ["custom-tab-color";"change-group-icon";"new-group";"open-system-screenshot"]
         for command in Commands.all do
             let withTab = command.enabled active
             let withNone = command.enabled IntPtr.Zero
@@ -216,6 +221,8 @@ let main() =
             // These wait on the tab's colour or the group's combined taskbar button.
             if needsSplit.Contains command.id then
                 note (not withTab) (sprintf "%s is offered before starting split view" command.id)
+            elif command.id="move-window-next-monitor" && Screen.AllScreens.Length<=1 then
+                note (not withTab) "move-window-next-monitor is offered on a single monitor"
             elif not (needsWorkspace.Contains command.id) && command.id<>"change-group-icon" && command.id<>"restore-group-icon" && command.id<>"remember-tab-color" && command.id<>"remember-group-color" then
                 note withTab (sprintf "%s is dimmed with a tab in front" command.id)
         for command in Commands.all do
@@ -736,6 +743,34 @@ let main() =
             runDone "group-app" delta
             pumpUntil "Grouping the app's windows" (fun () -> let order = lorderOf delta in others |> List.forall(fun hwnd -> List.contains hwnd order))
             note (not ((Commands.find "group-app").Value.enabled delta)) "Group this app is offered with every window of the app in the group")
+        // General window commands on a standalone scratch window: snap left/right, maximize/restore,
+        // minimize, move to next monitor, and close.
+        attempt "window commands" (fun () ->
+            use scratch = new Form(Text="Scratch Window",StartPosition=FormStartPosition.Manual,Bounds=Rectangle(120,120,500,400),ShowInTaskbar=false)
+            scratch.Show()
+            pump 50
+            let h = scratch.Handle
+            let area = Screen.FromHandle(h).WorkingArea
+            runDone "snap-window-left" h
+            pump 50
+            let leftRect = OS().windowFromHwnd(h).visibleBounds
+            note (abs(leftRect.x-area.Left)<=4 && abs(leftRect.width-area.Width/2)<=4) (sprintf "snap-window-left placed window at %A (area %A)" leftRect area)
+            runDone "snap-window-right" h
+            pump 50
+            let rightRect = OS().windowFromHwnd(h).visibleBounds
+            note (abs(rightRect.x-(area.Left+area.Width/2))<=4 && abs(rightRect.width-(area.Width-area.Width/2))<=4) (sprintf "snap-window-right placed window at %A (area %A)" rightRect area)
+            runDone "maximize-window" h
+            pumpUntil "Maximizing scratch" (fun () -> OS().windowFromHwnd(h).isMaximized)
+            runDone "maximize-window" h
+            pumpUntil "Restoring scratch" (fun () -> not (OS().windowFromHwnd(h).isMaximized))
+            runDone "move-window-next-monitor" h
+            runDone "minimize-window" h
+            pumpUntil "Minimizing scratch" (fun () -> OS().windowFromHwnd(h).isMinimized)
+            runDone "close-window" h
+            pumpUntil "Closing scratch" (fun () -> not (WinUserApi.IsWindow h))
+            // Opens Windows Snipping Tool externally: verify it is listed and enabled everywhere.
+            note ((Commands.find "open-system-screenshot").Value.enabled IntPtr.Zero) "Take screenshot should be enabled everywhere"
+            commandsRun.Add "open-system-screenshot" |> ignore)
         for command in Commands.all do
             note (commandsRun.Contains command.id || command.id.StartsWith "open-settings-" || command.id.StartsWith "toggle-" || command.id.StartsWith "setting-")
                  (sprintf "%s was never run by this walk: add it" command.id)
@@ -1158,6 +1193,26 @@ let main() =
         trial.Press Keys.Tab
         note ((trial.Selected |> Option.map(fun entry -> entry.title))<>beforeTab) "Tab set as a key of the lists did not move the choice"
         api.setHotKey "listNext" 0
+        // Bidirectional shortcut conflict resolution across built-in, custom and window shortcuts.
+        do
+            let sharedKey = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F9)
+            Services.program.saveCustomCommand { id="ocr"; name="Umi-OCR"; target="Umi-OCR.exe"; args="--screenshot"; hidden=true; code=sharedKey } |> ignore
+            match Commands.holderOfServices "newTab" sharedKey with
+            | Some holder ->
+                note (holder.name="Umi-OCR" && holder.key="custom:ocr") (sprintf "Custom holder mismatch: %s (%s)" holder.name holder.key)
+                holder.release()
+                note ((Services.program.customCommands() |> List.head).code=0) "Releasing custom command shortcut left its code set"
+                holder.restore()
+                note ((Services.program.customCommands() |> List.head).code=sharedKey) "Restoring custom command shortcut did not put its code back"
+            | None -> issues.Add "holderOfServices did not find custom command shortcut"
+            Services.program.deleteCustomCommand "ocr"
+            Services.program.setWindowShortcut { path="notepad.exe"; title="Notes"; code=sharedKey } |> ignore
+            match Commands.holderOfServices "custom:ocr" sharedKey with
+            | Some holder ->
+                note (holder.name="Notes") (sprintf "Window shortcut holder mismatch: %s" holder.name)
+                holder.release()
+                note (Services.program.windowShortcuts().IsEmpty) "Releasing window shortcut did not remove it"
+            | None -> issues.Add "holderOfServices did not find window shortcut"
         // Ctrl+U clears what is typed.
         trial.Query <- "move down"
         trial.Press(Keys.Control ||| Keys.U)

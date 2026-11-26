@@ -27,6 +27,8 @@ module SettingsCatalog =
     /// Percent, solid at 100: below 30 the tabs would be hard to find.
     let opacityRange = 30,100
     let opacityDefault = 100
+    let hotCornerDelayRange = 0,1000
+    let hotCornerDelayDefault = 200
     let leaderKeyPresets = List.zip ["123456789";"QWERTYUIOP";"ASDFGHJKL;"] (Array.toList Strings.Settings.leaderKeyPresets)
     let all = [
         { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"ByWindow";"ByApp"],"Off") }
@@ -99,6 +101,10 @@ module SettingsCatalog =
         // Off until asked for: on, every right-drag over any app is taken for a gesture.
         { id="mouse-gestures"; page=MouseGestureSettings; text=Strings.Settings.mouseGestures; binding=Toggle("enableMouseGestures",false,false) }
         { id="gesture-hint"; page=MouseGestureSettings; text=Strings.Settings.gestureHint; binding=Toggle("showGestureHint",true,true) }
+        { id="gesture-trail"; page=MouseGestureSettings; text=Strings.Settings.gestureTrail; binding=Toggle("showGestureTrail",true,true) }
+        { id="edge-scroll"; page=MouseGestureSettings; text=Strings.Settings.edgeScroll; binding=Toggle("enableEdgeScroll",false,false) }
+        { id="hot-corners"; page=MouseGestureSettings; text=Strings.Settings.hotCorners; binding=Toggle("enableHotCorners",false,false) }
+        { id="hotCornerDelay"; page=MouseGestureSettings; text=Strings.Settings.hotCornerDelay; binding=Number(hotCornerDelayRange) }
         { id="tabTextColor"; page=AppearanceSettings; text=Strings.Settings.tabTextColor; binding=Colour }
         { id="tabNormalBgColor"; page=AppearanceSettings; text=Strings.Settings.tabNormalBgColor; binding=Colour }
         { id="tabActiveBgColor"; page=AppearanceSettings; text=Strings.Settings.tabActiveBgColor; binding=Colour }
@@ -181,6 +187,7 @@ module SettingsCatalog =
         | "number-leader" | "leader-keys" -> Some "enable-number-leader"
         | "show-tabs-on-switch" -> Some "auto-hide-tabs"
         | "group-windows-in-the-switcher" -> Some "use-windowtabs-for-alt-tab"
+        | "hotCornerDelay" -> Some "hot-corners"
         | _ -> None
     let toggleKey id = match (find id).binding with Toggle(key,_,_) -> key | _ -> invalidArg "id" "Not a toggle"
     /// Every toggle's value on a fresh install. A reset writes these: a missing toggle in an
@@ -192,7 +199,7 @@ module SettingsCatalog =
     let appRulePathKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths"]
     let appGroupingMatchTypes = [-1]
     let appGroupingMatchDefault = -1
-    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"disabledShortcutPaths";"appTabColors";"appTabPositions";"appGroupingRules";"appGroupingTargets";"mouseGestures"]
+    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"disabledShortcutPaths";"appTabColors";"appTabPositions";"appGroupingRules";"appGroupingTargets";"mouseGestures";"mouseTriggers";"customCommands"]
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery";"session"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.
