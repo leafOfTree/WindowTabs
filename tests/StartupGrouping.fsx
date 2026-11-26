@@ -292,9 +292,13 @@ let main() =
             dispatcher.Post(fun () -> prepared <- true))
         pumpUntil "Restart state was not prepared" (fun () -> prepared)
         let seen = typeof<Program.Program>.GetField("groupedThisRun",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetValue(program) :?> Collections.Generic.HashSet<IntPtr>
-        for hwnd in [keptA.Handle;keptB.Handle] do seen.Remove hwnd |> ignore
+        // Pause discovery while the old group exits so a timer tick cannot put its windows back
+        // into `seen` before the simulated restart scan runs.
+        restoring <- false
         (keptGroup :> IGroup).destroy()
         pumpUntil "The old group did not exit" (fun () -> keptGroup.isExited)
+        for hwnd in [keptA.Handle;keptB.Handle] do seen.Remove hwnd |> ignore
+        restoring <- true
         program.refresh()
         pumpUntil "The group's windows were not restored after restart" (fun () ->
             match groupOf keptA.Handle,groupOf keptB.Handle with
@@ -330,7 +334,10 @@ let main() =
         pumpUntil "A title change in a remembered group was not recorded, or the old title was kept" (fun () ->
             runtimeSettings.rememberedGroups |> List.exists(fun group ->
                 group.id=5151 && List.contains { app=app; title="Renamed A" } group.members
-                && not (List.contains { app=app; title="Remembered A" } group.members)))
+                && List.contains { app=app; title="Remembered C" } group.members
+                && not (List.contains { app=app; title="Remembered A" } group.members)) &&
+            (program :> IProgram).handMadeGroups() |> List.exists(fun (id,_,members) ->
+                id=5151 && members |> List.exists(fun (_,title,hwnd,_) -> title="Remembered C" && hwnd=late.Handle)))
         // A window of a group made by hand that closes stays in the group's record, to come back to
         // it, and App rules is told so it shows the window as closed.
         let announced = ref 0
@@ -420,6 +427,7 @@ let main() =
             let click text =
                 controls editor |> Seq.pick(function :? Button as button when button.Text=text -> Some button | _ -> None) |> fun button -> button.PerformClick()
             let selectApp target =
+                pumpUntil "The application menu scan did not find the fixture app" (fun () -> Array.contains path editor.AddMenu.Applications)
                 let tree = controls editor |> Seq.pick(function :? SettingsTreeList as tree -> Some tree | _ -> None)
                 let targets = api.getValue("appGroupingTargets") :?> AppGroupingTarget list
                 let root = tree.Roots.[targets |> List.findIndex(fun group -> group.id=target)]

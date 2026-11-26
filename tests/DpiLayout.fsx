@@ -110,6 +110,25 @@ let main() =
                                  decoratorHeightOffset=0;decoratorIndentNormal=0;decoratorIndentFlipped=0}
                 let side = decorator.sidePlacement(dock,Dpi.scale 220,contentHeight=Dpi.scale 120)
                 check (side.showInside && owner.completlyContains side.bounds) "Side column crossed into the neighboring monitor"
+            // An icons-only column the pointer opens grows the way its edge resizes it: over the
+            // window from inside it, outward beside it; it stays on its monitor, and one on no
+            // monitor is not moved onto one.
+            let screen = Rect(Pt(0,0),Dpi.scaleSize(Sz(1920,1080)))
+            let narrow = Dpi.scale 48
+            let wide = Dpi.scale 250
+            let opening = {windowBounds=screen;monitorBounds=List2([screen]);decoratorHeight=Dpi.scale 32
+                           decoratorHeightOffset=0;decoratorIndentNormal=0;decoratorIndentFlipped=0}
+            let column x inside = {bounds=Rect(Pt(x,Dpi.scale 100),Sz(narrow,Dpi.scale 400));showInside=inside}
+            let leftInside = opening.widenSide(TabDockLeft,column 0 true,wide).bounds
+            check (leftInside.left=0 && leftInside.width=wide) "A left column inside its window did not open over it"
+            let rightInside = opening.widenSide(TabDockRight,column (screen.right-narrow) true,wide).bounds
+            check (rightInside.right=screen.right && rightInside.width=wide) "A right column inside its window did not open over it"
+            let leftOutside = opening.widenSide(TabDockLeft,column (Dpi.scale 600) false,wide).bounds
+            check (leftOutside.right=Dpi.scale 600+narrow && leftOutside.width=wide) "A left column beside its window did not open outward"
+            let clamped = opening.widenSide(TabDockLeft,column (Dpi.scale 100) false,wide).bounds
+            check (clamped.left=0 && clamped.width=wide) "An opened column left its monitor"
+            let offScreen = opening.widenSide(TabDockRight,column (screen.right+Dpi.scale 500) false,wide).bounds
+            check (offScreen.left=screen.right+Dpi.scale 500 && offScreen.width=wide) "A column on no monitor was moved onto one as it opened"
         Dpi.set originalDpi
         use form = new Form(AutoScaleDimensions=SizeF(float32(Dpi.value()),float32(Dpi.value())),AutoScaleMode=AutoScaleMode.Dpi,
                             ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ClientSize=Size(980,760))

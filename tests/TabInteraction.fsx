@@ -909,6 +909,126 @@ let main() =
                     check (strip.position=Some 0.51) (sprintf "A column let go near the middle was moved: %A" strip.position)
                     strip.setAlignment(TabUp,TabLeft)
                     check (strip.position.IsNone) "An alignment chosen did not put the dragged column back"
+                    // An icons-only column opens to its full width once the pointer rests on it, stays
+                    // open under a menu of the strip, and shuts when the pointer is gone.
+                    do
+                        let flags = BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public
+                        let pointAt (point:Point) = typeof<TabStrip>.GetProperty("pointer",flags).SetValue(strip,box(fun () -> point))
+                        let step () = typeof<TabStrip>.GetMethod("stepHoverOpen",flags).Invoke(strip,[||]) |> ignore
+                        let waiting () = (typeof<TabStrip>.GetField("hoverOpenTimer",flags).GetValue(strip) :?> Timer).Enabled
+                        strip.isIconOnly <- true
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) false)
+                        pointAt (Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        check (waiting() && not strip.isHoverOpen) "An icons-only column opened inside the move that reached it, not on the next turn"
+                        check ((typeof<TabStrip>.GetField("hoverOpenTimer",flags).GetValue(strip) :?> Timer).Interval<=1) "An icons-only column waited before opening"
+                        let titleWaiting () = (typeof<TabStrip>.GetField("titleTimer",flags).GetValue(strip) :?> Timer).Enabled
+                        step()
+                        check strip.isHoverOpen "An icons-only column did not open under the pointer"
+                        check (titleWaiting()) "The tab under the pointer did not start its tip wait again once the column opened"
+                        pointAt (Point(-30000,-30000))
+                        strip.ownMenuOpen <- true
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        check strip.isHoverOpen "An icons-only column shut under a menu of its own"
+                        strip.ownMenuOpen <- false
+                        step()
+                        check (not strip.isHoverOpen && not (waiting())) "An icons-only column stayed open after the pointer left"
+                        // A menu of another window does not hold it open.
+                        pointAt (Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        pointAt (Point(-30000,-30000))
+                        OpenMenus.change 1
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        OpenMenus.change -1
+                        check (not strip.isHoverOpen) "A menu of another window kept an icons-only column open"
+                        // Hidden while open under the pointer, it hears no leave; shown again, it is shut.
+                        pointAt (Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        check strip.isHoverOpen "An icons-only column did not open before it was hidden"
+                        strip.visible <- false
+                        strip.visible <- true
+                        check (not strip.isHoverOpen && strip.hoverOpenProgress=0.0 && not (waiting()))
+                              "An icons-only column hidden while open came back open"
+                        // Where Windows animates, the column widens over a moment and keeps its titles
+                        // until it has narrowed again.
+                        let animate () = typeof<TabStrip>.GetMethod("stepHoverOpenAnimation",flags).Invoke(strip,[||]) |> ignore
+                        TabReveal.forced <- Some true
+                        pointAt (Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        check (strip.isHoverOpen && strip.hoverOpenProgress<1.0) "An icons-only column opened at once where Windows animates"
+                        Threading.Thread.Sleep(int TabReveal.duration+50)
+                        animate()
+                        check (strip.hoverOpenProgress=1.0) (sprintf "An opening column did not reach its full width: %f" strip.hoverOpenProgress)
+                        pointAt (Point(-30000,-30000))
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        check (strip.isHoverOpen && strip.hoverOpenProgress=1.0) "A shutting column dropped its titles before it narrowed"
+                        Threading.Thread.Sleep(int TabReveal.duration+50)
+                        animate()
+                        check (not strip.isHoverOpen && strip.hoverOpenProgress=0.0) "A shut column kept its titles"
+                        TabReveal.forced <- Some false
+                        // The resize edge never opens it, whether the pointer comes to it first or
+                        // moves onto it while the column waits to open.
+                        let over = Point(start.x+Dpi.scale 20,start.y+Dpi.scale 20)
+                        pointAt (Point(start.x+1,start.y+Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(1,Dpi.scale 20))
+                        check (not (waiting()) && not strip.isHoverOpen) "The resize edge of an icons-only column started to open it"
+                        pointAt over
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        pointAt (Point(start.x+1,start.y+Dpi.scale 20))
+                        step()
+                        check (not strip.isHoverOpen) "An icons-only column opened under a pointer on its resize edge"
+                        pointAt over
+                        // A press on the edge of an opened column changes nothing; dragging it keeps
+                        // the titles at the width let go.
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) true)
+                        let edge = Dpi.scale 48-1
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        let savedWidth = strip.columnWidth
+                        let openWidth = strip.columnOpenWidth
+                        check (openWidth>=250) (sprintf "An icons-only column opened narrower than a sidebar: %d" openWidth)
+                        // Icons stay on the 48px rail's centre across collapsed, intermediate and open widths.
+                        let iconX () =
+                            let loc,tab = strip.tabSprites.head
+                            (tab :> ISprite).children.list |> List.pick(fun (pt,child) -> if child :? IconSprite then Some(loc.x+pt.x) else None)
+                        strip.visible <- false; strip.visible <- true
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) true)
+                        let closedIconX = iconX()
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(64,400))) true)
+                        let midIconX = iconX()
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(openWidth,400))) true)
+                        let openIconX = iconX()
+                        check (closedIconX=midIconX && midIconX=openIconX)
+                              (sprintf "Opening an icons-only column shifted its icons: %d -> %d -> %d" closedIconX midIconX openIconX)
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) true)
+                        let layouts = ref 0
+                        use _layouts = strip.layoutChanged.Subscribe(fun _ -> incr layouts)
+                        send WindowMessages.WM_LBUTTONDOWN (Pt(edge,Dpi.scale 20))
+                        send WindowMessages.WM_LBUTTONUP (Pt(edge,Dpi.scale 20))
+                        check (strip.isHoverOpen && strip.isIconOnly && strip.columnWidth=savedWidth && layouts.Value=0)
+                              "A press without a drag on an opened column's edge changed its layout"
+                        send WindowMessages.WM_LBUTTONDOWN (Pt(edge,Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(edge+Dpi.scale 32,Dpi.scale 20))
+                        send WindowMessages.WM_LBUTTONUP (Pt(edge+Dpi.scale 32,Dpi.scale 20))
+                        check (not strip.isIconOnly && not strip.isHoverOpen && strip.columnWidth=min (snd SettingsCatalog.columnWidthRange) (openWidth+32))
+                              (sprintf "Dragging an opened column's edge did not keep titles at its width: %d" strip.columnWidth)
+                        // Titles shown by a width end an opened column: the next icons-only width
+                        // does not open it with no pointer on it.
+                        strip.columnWidth <- fst SettingsCatalog.columnWidthRange
+                        send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 20,Dpi.scale 20))
+                        step()
+                        check strip.isHoverOpen "A column icons-only by its width did not open under the resting pointer"
+                        strip.columnWidth <- 220
+                        strip.columnWidth <- fst SettingsCatalog.columnWidthRange
+                        check (not strip.isHoverOpen) "A width with titles left the column to open again by itself"
+                        strip.columnWidth <- savedWidth
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(48,400))) false)
+                        strip.isIconOnly <- false
                     strip.dock <- TabDockTop
                     strip.setPlacement(placement start size false)
                     strip.isIconOnly <- false
@@ -995,6 +1115,17 @@ let main() =
                               "The title tip followed the pointer instead of staying centered under its tab"
                         hover 460
                         check (tip.Visible && centeredOn (Tab(IntPtr 103))) "The title tip did not move under the next tab"
+                        // In a column the tip stands beside its tab, level with it, clear of the tabs below.
+                        strip.dock <- TabDockLeft
+                        strip.setPlacement(placement start (Dpi.scaleSize(Sz(220,400))) false)
+                        let first = Tab(IntPtr 101)
+                        typeof<TabStrip>.GetMethod("showTip",flags).Invoke(strip,[|box first;box (None:Bitmap option)|]) |> ignore
+                        let at = strip.tabLocation first
+                        check (tip.Visible && tip.Left>=start.x+Dpi.scale 150 && tip.Top=start.y+at.y)
+                              (sprintf "A column's title tip did not stand beside its tab: at %A, tab at %A" tip.Location at)
+                        strip.dock <- TabDockTop
+                        strip.setPlacement(placement start size false)
+                        rest()
                     hover 460
                     check (shown()) "Moving between cut-short titles did not show the next one at once"
                     hover 260

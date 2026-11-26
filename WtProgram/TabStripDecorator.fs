@@ -210,6 +210,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             | MouseUp, MouseRight ->
                 let ptScreen = this.ts.toScreen(pt)
                 group.bb.write("contextMenuVisible", true)
+                this.ts.ownMenuOpen <- true
                 let images = ResizeArray<Img>()
                 try
                     try
@@ -217,6 +218,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         // Back over the tabs when the menu goes, the pointer has not moved, so the strip
                         // looks again before auto-hide decides; it collapsed under the pointer otherwise.
                         let menuClosed () =
+                            this.ts.ownMenuOpen <- false
                             this.ts.refreshHover()
                             group.bb.write("contextMenuVisible", false)
                         // Built again for a colour chosen, which keeps the menu up to remember it.
@@ -226,6 +228,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y,os.windowFromHwnd(this.ts.hwnd).bounds.Rectangle)
                     with _ ->
                         contextMenu |> Option.iter(fun menu -> menu.Dispose())
+                        this.ts.ownMenuOpen <- false
                         group.bb.write("contextMenuVisible", false)
                         reraise()
                 finally
@@ -293,7 +296,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         | None ->
             this.ts.visible <- false
         | Some frame ->
-            let placement,span = this.placementFor(frame,group.isMaximized.value)
+            let placement,span = this.shownPlacement(frame,group.isMaximized.value)
             // A column dragged along the side needs its room to know where it is let go.
             span |> Option.iter(fun span -> this.ts.columnSpan <- span)
             this.ts.setPlacement(placement, ?owner=(group.zorder.value.tryHead |> Option.map Tab), ownerRight=frame.right)
@@ -309,9 +312,18 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// Where the strip goes and, for a column, the room it has along the side. A column being
     /// dragged sits where the pointer holds it; otherwise where it was dragged to, else aligned.
     member private this.placementAndSpan =
-        this.placementFor(group.bounds.value.def(Rect()),group.isMaximized.value)
+        this.shownPlacement(group.bounds.value.def(Rect()),group.isMaximized.value)
 
+    /// Where the strip stands now: a column the pointer opened is wider than the one saved.
+    member private this.shownPlacement(frame:Rect,maximized:bool) =
+        this.placementWith(frame,maximized,this.ts.hoverOpenProgress)
+
+    /// Where the strip would stand in its saved layout, for a window not yet there.
     member private this.placementFor(frame:Rect,maximized:bool) =
+        this.placementWith(frame,maximized,0.0)
+
+    /// `opened`: how far a column the pointer opens has widened, 0 to 1.
+    member private this.placementWith(frame:Rect,maximized:bool,opened:float) =
         let readAreas() = Mon.all.map(fun m -> m.workRect)
         let areas =
             if not group.isMoving.value then readAreas()
@@ -335,6 +347,11 @@ type TabStripDecorator(group:WindowGroup) as this =
             let position = match this.ts.columnSlide with Some fraction -> Some fraction | None -> this.ts.position
             let placed = decorator.sidePlacement(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
                                                  alignment=this.ts.getAlignment TabUp,maximized=maximized,?position=position)
+            let placed =
+                if opened<=0.0 then placed
+                else
+                    let wide = Dpi.scale this.ts.columnOpenWidth
+                    decorator.widenSide(this.ts.dock,placed,width+int(Math.Round(float(wide-width)*opened)))
             let span = decorator.sideSpan(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
                                           alignment=this.ts.getAlignment TabUp,maximized=maximized,?position=position)
             placed,Some span
@@ -522,12 +539,22 @@ type TabStripDecorator(group:WindowGroup) as this =
         if items.count>0 then
             contextMenu |> Option.iter(fun menu -> menu.Dispose())
             group.bb.write("contextMenuVisible", true)
+            this.ts.ownMenuOpen <- true
             let menuClosed () =
+                this.ts.ownMenuOpen <- false
                 this.ts.refreshHover()
                 group.bb.write("contextMenuVisible", false)
-            let menu = new ThemedContextMenu(items,menuClosed,group.windows.contains)
-            contextMenu <- Some menu
-            menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y,os.windowFromHwnd(this.ts.hwnd).bounds.Rectangle)
+            try
+                let menu = new ThemedContextMenu(items,menuClosed,group.windows.contains)
+                contextMenu <- Some menu
+                menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y,os.windowFromHwnd(this.ts.hwnd).bounds.Rectangle)
+            with _ ->
+                // A menu that never showed must not hold an opened column open, or keep auto-hide off.
+                contextMenu |> Option.iter(fun menu -> menu.Dispose())
+                contextMenu <- None
+                this.ts.ownMenuOpen <- false
+                group.bb.write("contextMenuVisible", false)
+                reraise()
 
     member private this.contextMenu(hwnd,images:ResizeArray<Img>) =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()

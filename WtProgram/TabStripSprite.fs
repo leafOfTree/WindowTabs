@@ -687,7 +687,12 @@ type TabSprite<'id> = {
 
     member private this.iconLocation =
         let side = this.iconSize.width
-        let x = if this.onlyIcon then (this.size.width-side)/2 else this.edgeWidth
+        let x =
+            // Keep a column's icon on the centre of its 48px icon rail at every width, so sliding an
+            // icons-only column open or shut never shifts its icons.
+            if this.inColumn then min ((max 0 (this.size.width - side)) / 2) ((Dpi.scale (fst SettingsCatalog.columnWidthRange) - Dpi.scale 8 - side) / 2)
+            elif this.onlyIcon then (this.size.width-side)/2
+            else this.edgeWidth
         Pt(x,this.contentTop+(this.contentHeight-side)/2)
 
     /// Float beside the icon, aligned to its vertical centre.

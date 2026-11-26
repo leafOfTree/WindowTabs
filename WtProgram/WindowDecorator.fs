@@ -56,6 +56,24 @@ type WindowDecorator = {
     member this.sidePlacement(dock:TabDock,width:int,?contentHeight:int,?alignment:TabAlignment,?maximized:bool,?position:float) : TabStripPlacment =
         fst (this.sideFit(dock,width,contentHeight,alignment,maximized,position))
 
+    /// A column opened to `width`, the way its edge resizes it: over the window for a column
+    /// inside it, outward for one beside it. It stays on the monitor it is on, so the pointer that
+    /// opened it stays over it; a column on no monitor is not moved onto one.
+    member this.widenSide(dock:TabDock,placed:TabStripPlacment,width:int) : TabStripPlacment =
+        let bounds = placed.bounds
+        let overlap (area:Rect) =
+            let shared = bounds.intersection area
+            int64 shared.width*int64 shared.height
+        let area =
+            match this.monitorBounds.list |> List.filter(fun area -> overlap area>0L) with
+            | [] -> None
+            | areas -> Some(areas |> List.maxBy overlap)
+        let width = max bounds.width (match area with Some area -> min width area.width | None -> width)
+        let growsRight = (dock=TabDockRight) <> placed.showInside
+        let x = if growsRight then bounds.x else bounds.right-width
+        let x = match area with Some area -> max area.left (min x (area.right-width)) | None -> x
+        { placed with bounds=Rect(Pt(x,bounds.y),Sz(width,bounds.height)) }
+
     /// The top of the room the column has along the side, and how far it can move down it.
     member this.sideSpan(dock:TabDock,width:int,?contentHeight:int,?alignment:TabAlignment,?maximized:bool,?position:float) : int*int =
         snd (this.sideFit(dock,width,contentHeight,alignment,maximized,position))
