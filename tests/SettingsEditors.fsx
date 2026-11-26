@@ -656,6 +656,34 @@ let main() =
         command next Keys.Escape |> ignore
         assertTrue (not next.IsRecording && next.Shortcut=3623) "Esc cancels recording"
         assertTrue (not (ShortcutRecording.isActive())) "Cancelling a recording did not give the keys back"
+        // Another app's registered chord bypasses ProcessCmdKey. The recording hook must explain
+        // it, preserve the old shortcut, and leave the box listening for a different key.
+        next.StartRecording()
+        let captureField = typeof<SettingsShortcutInput>.GetFields(BindingFlags.Instance ||| BindingFlags.NonPublic) |> Array.find(fun field -> field.FieldType=typeof<ShortcutConflictCapture option>)
+        let capture = (captureField.GetValue(next) :?> ShortcutConflictCapture option).Value
+        use competitor = new Control()
+        let reserve keys =
+            let chord = Bemo.Win32.HotKeyShortcut(HotKeyControlCode=int16(SettingsShortcut.encode keys))
+            WinUserApi.RegisterHotKey(competitor.Handle,73,chord.RegisterHotKeyModifierFlags,chord.RegisterHotKeyVirtualKeyCode)
+        let blockedKeys =
+            [Keys.G;Keys.F9;Keys.F10;Keys.F11;Keys.F14]
+            |> List.map(fun key -> Keys.Control ||| Keys.Alt ||| Keys.Shift ||| key)
+            |> List.find reserve
+        try
+            assertTrue (capture.Handle(WindowMessages.WM_SYSKEYDOWN,blockedKeys)) "A competing registered hotkey escaped the recorder"
+            Application.DoEvents()
+            assertTrue (next.IsRecording && next.Shortcut=3623 && next.LastPressed=SettingsShortcut.encode blockedKeys
+                        && next.Message=Some(tr Strings.Shortcuts.inUseByAnotherApp)) "An occupied hotkey did not explain the refusal while preserving the old key"
+            assertTrue (capture.Handle(WindowMessages.WM_SYSKEYUP,blockedKeys)) "The blocked hotkey's release escaped"
+        finally WinUserApi.UnregisterHotKey(competitor.Handle,73) |> ignore
+        assertTrue (not (capture.Handle(WindowMessages.WM_SYSKEYDOWN,blockedKeys))) "A free key was swallowed by the conflict hook"
+        assertTrue (reserve blockedKeys) "The conflict probe leaked its temporary registration"
+        WinUserApi.UnregisterHotKey(competitor.Handle,73) |> ignore
+        command next blockedKeys |> ignore
+        assertTrue (not next.IsRecording && next.Message.IsNone) "A successful recording retained the previous conflict notice"
+        next.Shortcut <- 3623
+        hotKeys.["nextTab"] <- 3623
+        assertTrue (not (capture.Handle(WindowMessages.WM_SYSKEYDOWN,blockedKeys))) "A stopped recording still captured keys"
         next.StartRecording()
         command next (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
         let expected = SettingsShortcut.encode (Keys.Control ||| Keys.OemCloseBrackets)

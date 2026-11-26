@@ -701,6 +701,7 @@ module Strings =
                                     ko="단축키를 기본값으로 되돌립니다. 이 페이지의 단축키와 명령 팔레트에서 명령이나 목록에 지정한 키가 대상이며, 창이나 그룹에 지정한 키는 지워집니다." }
         let restoreDefaults = { en="Restore default shortcuts"; zh="恢复默认快捷键"; ja="既定のショートカットに戻す"; ar="استعادة الاختصارات الافتراضية"; ko="기본 단축키로 되돌리기" }
         let inUse = { en="Shortcut already in use"; zh="快捷键已被占用"; ja="ショートカットは使用中です"; ar="الاختصار مستخدم بالفعل"; ko="이미 사용 중인 단축키" }
+        let inUseByAnotherApp = { en="Shortcut is used by another application"; zh="快捷键已被其他应用占用"; ja="ショートカットは別のアプリで使用されています"; ar="الاختصار مستخدم بواسطة تطبيق آخر"; ko="다른 앱에서 사용 중인 단축키입니다" }
         /// A key pressed for one command that another had: it moves, and the other is left without.
         let takenFrom name = { en=sprintf "Taken from %s" name; zh=sprintf "已从“%s”移过来" name; ja=sprintf "「%s」から移しました" name; ar=sprintf "نُقل من «%s»" name; ko=sprintf "‘%s’에서 가져왔습니다" name }
         // Shortcut field messages are kept short to fit.
