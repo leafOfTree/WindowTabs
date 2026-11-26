@@ -110,7 +110,10 @@ module GroupShortcuts =
         bound shortcut |> Option.bind byToken
         |> Option.orElseWith(fun () ->
             if not (String.IsNullOrEmpty shortcut.ruleGroupId) then
-                groups |> List.tryFind(fun group -> group.ruleGroupId = Some shortcut.ruleGroupId)
+                let matching = groups |> List.filter(fun group -> group.ruleGroupId = Some shortcut.ruleGroupId)
+                // One rule can have a separate group on each virtual desktop.
+                matching |> List.tryFind(fun group -> group.groupToken = shortcut.groupToken)
+                |> Option.orElseWith(fun () -> List.tryHead matching)
             else
                 let unruled = groups |> List.filter(fun group -> group.ruleGroupId.IsNone)
                 (if shortcut.groupToken <> 0 then unruled |> List.tryFind(fun group -> group.groupToken = shortcut.groupToken) else None)

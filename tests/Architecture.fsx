@@ -1666,6 +1666,12 @@ let main() =
     let openGroups = [candRule;candObs;candNoteA;candNoteB]
     let unboundGroup (_:GroupShortcut) : int option = None
     check (GroupShortcuts.target unboundGroup openGroups ruleShortcut=Some candRule) "A named rule group shortcut did not follow its ruleGroupId"
+    let otherDesktopRule = { candRule with groupToken=ruleShortcut.groupToken; windows=[IntPtr 102] }
+    check (GroupShortcuts.target unboundGroup [candRule;otherDesktopRule] ruleShortcut=Some otherDesktopRule)
+          "A named group shortcut lost its persisted group to the same rule on another desktop after restart"
+    let unrelatedToken = { candRule with groupToken=ruleShortcut.groupToken; ruleGroupId=Some "other-rule" }
+    check (GroupShortcuts.target unboundGroup [unrelatedToken;candRule] ruleShortcut=Some candRule)
+          "A named group shortcut followed a token belonging to a different rule"
     check (GroupShortcuts.target unboundGroup [candObs;candNoteA] ruleShortcut).IsNone "A closed named rule group shortcut stole an unrelated group"
     check (GroupShortcuts.target unboundGroup openGroups obsShortcut=Some candObs) "A single-app group shortcut did not match after restart with new titles"
     check (GroupShortcuts.target unboundGroup openGroups noteShortcutA=Some candNoteA
