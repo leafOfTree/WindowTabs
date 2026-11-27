@@ -61,6 +61,13 @@ module GroupEditorMetrics =
 /// allows and centred in it, so the window is seen as it is rather than cut to the cell's shape
 /// (filling the cell was tried: a window not of the cell's shape lost its edges).
 module GroupEditorPicture =
+    /// The carried title can be much narrower than its preview card. Keep the grab point
+    /// inside that title at the same relative position, including a bottom-corner press.
+    let dragOffset (source:Size) (carried:Size) (point:Point) =
+        let along value extent target =
+            if extent<=0 || target<=0 then 0
+            else min (target-1) (max 0 (int(int64 value*int64 target/int64 extent)))
+        Point(along point.X source.Width carried.Width,along point.Y source.Height carried.Height)
     let fit (picture:Rectangle) (source:Sz) =
         if source.width<=0 || source.height<=0 || picture.Width<=0 || picture.Height<=0 then picture
         else
@@ -138,7 +145,7 @@ type GhostPlace =
 
 /// A row growing or folding: the picture as it was, with where its rows, loose row and bottom
 /// stood, blended towards the picture as it is over a few frames.
-type GroupEditorMorph = { from:Bitmap; fromRows:Rectangle list; fromLoose:int; fromHeight:int; start:DateTime }
+type GroupEditorMorph = { from:Bitmap; fromRows:Rectangle list; fromPanels:Rectangle list; fromTabs:Map<IntPtr,Rectangle>; fromLoose:int; fromHeight:int; start:DateTime }
 
 /// Where the picture's parts are, in the popup's own coordinates before scrolling.
 type GroupEditorLayout = {
@@ -207,15 +214,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable pendingPreviews : bool option = None
     let previewChanged = Event<bool>()
     let previewThumbs = new GroupEditorPreviews()
-    let previewTimer = new Timer(Interval=400)
     let dragScrollTimer = new Timer(Interval=30)
     let mutable pointer = Point.Empty
-    let mutable previewTip : GroupEditorPreviewTip option = None
-    let mutable previewTab : IntPtr option = None
-    let hidePreview() =
-        previewTimer.Stop()
-        previewTab <- None
-        previewTip |> Option.iter(fun tip -> tip.Dismiss())
     let mutable current = draft
     /// The group of the row expanded, by its strip, or by its first tab for a group made here.
     let mutable expandedKey : (IntPtr option * IntPtr) option =
@@ -287,6 +287,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let t = min 1.0 ((DateTime.UtcNow-m.start).TotalMilliseconds/GroupEditorMetrics.morphMs)
             1.0-(1.0-t)*(1.0-t)*(1.0-t)) |> Option.defaultValue 1.0
     let morphLerp (t:float) (a:int) (b:int) = a+int(Math.Round(float(b-a)*t))
+    let morphRect t (a:Rectangle) (b:Rectangle) =
+        Rectangle(morphLerp t a.X b.X,morphLerp t a.Y b.Y,morphLerp t a.Width b.Width,morphLerp t a.Height b.Height)
+    let animatedTab hwnd rect =
+        morph |> Option.bind(fun m -> m.fromTabs.TryFind hwnd) |> Option.map(fun before -> morphRect (morphT()) before rect) |> Option.defaultValue rect
     let endMorph() =
         morphTimer.Stop()
         morph |> Option.iter(fun m -> m.from.Dispose())
@@ -471,6 +475,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let noteHeight() =
         min (2*hintFont.Height) (TextRenderer.MeasureText(noteText(),hintFont,Size(noteWidth(),Int32.MaxValue),noteFlags).Height)
 
+    let panelBand (row:GroupEditorRowLayout) =
+        if previews && row.expanded then Rectangle.Inflate(row.picture,rowPad,rowPad) else Rectangle.Empty
+
+    let rowBounds (row:GroupEditorRowLayout) =
+        if previews && row.expanded then Rectangle.Union(row.band,panelBand row) else row.band
+
     /// The layout for the width, the expanded row's content as tall as its frame's shape asks
     /// within its bounds, the upper one raised by the room the window leaves under the rows.
     let computeLayout (room:int) : GroupEditorLayout =
@@ -496,21 +506,51 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             for _,h,_ in vacated |> List.filter(fun (p,_,_) -> p=index) do
                 vacatedRects.Add(Rectangle(pad,y,inner,h))
                 y <- y+h+scale GroupEditorMetrics.rowGap
-        let rowLayouts =
+        let gap = scale GroupEditorMetrics.rowGap
+        let halfWidth = (inner-gap)/2
+        let measured =
             groups() |> List.mapi(fun index g ->
+                let order = rowTabs index g
+                let naturalWidth =
+                    order.Length*scale GroupEditorPreview.width+2*rowPad+
+                    (order |> List.pairwise |> List.sumBy(fun (a,b) -> gapBetween (paneOf g) a b))
+                index,g,previews && naturalWidth<=halfWidth)
+        let mutable halfPending = false
+        let mutable lineBottom = y
+        let finishLine() =
+            if halfPending then
+                y <- lineBottom+gap
+                halfPending <- false
+        let rowLayouts =
+            measured |> List.map(fun (index,g,fitsHalf) ->
+                if vacated |> List.exists(fun (p,_,_) -> p=index) then finishLine()
                 placeholders index
+                let order = rowTabs index g
+                let small = fitsHalf
+                if not small then finishLine()
                 let top = y
+                let left = if small && halfPending then pad+halfWidth+gap else pad
+                let bandWidth = if small then halfWidth else inner
+                let advance bottom =
+                    if small && not halfPending then
+                        halfPending <- true
+                        lineBottom <- bottom
+                    elif small then
+                        lineBottom <- max lineBottom bottom
+                        finishLine()
+                    else y <- bottom+gap
                 let info = infoOf index
                 if expandedIndex=Some index then
                     let stripTop = top+rowPad
                     let tabs,stripBottom =
-                        if previews then wrapTabs (paneOf g) (rowTabs index g) (pad+rowPad) stripTop (inner-2*rowPad)
-                        else stripTabs (paneOf g) (rowTabs index g) (pad+rowPad) stripTop (inner-2*rowPad),stripTop+scale GroupEditorMetrics.stripHeight
-                    let contentWidth = inner-2*rowPad
+                        if previews then wrapTabs (paneOf g) (rowTabs index g) (left+rowPad) stripTop (bandWidth-2*rowPad)
+                        else stripTabs (paneOf g) (rowTabs index g) (left+rowPad) stripTop (bandWidth-2*rowPad),stripTop+scale GroupEditorMetrics.stripHeight
+                    let contentWidth = (if previews then inner else bandWidth)-2*rowPad
                     let contentHeight =
                         let byFrame = if info.frame.width>0 then int(int64 contentWidth*int64 info.frame.height/int64 info.frame.width) else contentWidth*9/16
                         max (scale GroupEditorMetrics.contentMin) (min (scale GroupEditorMetrics.contentMax+room) byFrame)
-                    let content = Rectangle(pad+rowPad,stripBottom,contentWidth,contentHeight)
+                    let contentTop = if previews then stripBottom+2*rowPad+gap else stripBottom
+                    let content = Rectangle((if previews then pad else left)+rowPad,contentTop,contentWidth,contentHeight)
                     let cells,ownCell = cellsOf g selected content (scale GroupEditorMetrics.cellGap)
                     let focused =
                         match cellFocus with
@@ -529,16 +569,18 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             let panelTop = button.Y-scale 8-fpad*2-h
                             GroupDraft.shapes |> List.mapi(fun i shape -> shape,Rectangle(left+fpad+i*(w+fgap),panelTop+fpad,w,h))
                         | _ -> []
-                    y <- content.Bottom+rowPad+scale GroupEditorMetrics.rowGap
-                    {index=index; band=Rectangle(pad,top,inner,content.Bottom+rowPad-top); expanded=true; tabs=tabs; picture=content; cells=cells
+                    advance (content.Bottom+rowPad)
+                    {index=index; band=Rectangle(left,top,bandWidth,(if previews then stripBottom+rowPad else content.Bottom+rowPad)-top); expanded=true; tabs=tabs; picture=content; cells=cells
                      focused=focused; splitButton=splitButton; shapes=shapes}
                 else
-                    // Folded: the tabs alone.
-                    let tabs,tabsBottom = wrapTabs (paneOf g) (rowTabs index g) (pad+rowPad) (top+rowPad) (inner-2*rowPad)
+                    // Adjacent small groups share a line without changing their order.
+                    let tabs,tabsBottom = wrapTabs (paneOf g) order (left+rowPad) (top+rowPad) (bandWidth-2*rowPad)
                     let bottom = max tabsBottom (top+rowPad+scale GroupEditorMetrics.tabHeight)+rowPad
-                    y <- bottom+scale GroupEditorMetrics.rowGap
-                    {index=index; band=Rectangle(pad,top,inner,bottom-top); expanded=false; tabs=tabs; picture=Rectangle.Empty; cells=[]
+                    advance bottom
+                    {index=index; band=Rectangle(left,top,bandWidth,bottom-top); expanded=false; tabs=tabs; picture=Rectangle.Empty; cells=[]
                      focused=None; splitButton=None; shapes=[]})
+            |> List.sortBy(fun row -> row.index)
+        finishLine()
         placeholders (groups()).Length
         let looseTop = y
         let looseTabs,looseBottom = wrapTabs (fun _ -> false) looseNow (pad+rowPad) (looseTop+rowPad) (inner-3*rowPad-scale GroupEditorMetrics.labelWidth)
@@ -618,7 +660,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// content, a cell's edge, the whole content's edge or a cell's middle; the loose row; the
     /// new group's band.
     let aimAt (l:GroupEditorLayout) (pt:Point) (dragged:IntPtr) =
-        let inRow = l.rows |> List.tryFind(fun row -> row.band.Contains pt)
+        let inRow = l.rows |> List.tryFind(fun row -> (row.band.Contains pt || row.picture.Contains pt))
         match inRow with
         | Some row when row.expanded ->
             if pt.Y<row.picture.Y then Some(StripSlot(row.index,slotAt row.tabs pt dragged))
@@ -891,6 +933,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use band = rounded row.band (scale 8)
             use fill = new SolidBrush(rowFill)
             g.FillPath(fill,band)
+            if previews && row.expanded then
+                use panel = rounded (panelBand row) (scale 8)
+                g.FillPath(fill,panel)
             if row.expanded then
                 use shape = rounded row.picture (scale 6)
                 use fill = new SolidBrush(if highContrast then SystemColors.Control else palette.background)
@@ -1012,7 +1057,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     match List.tryItem slot others,List.tryItem (slot-1) others with
                     | Some(_,r),_ -> r.X-scale GroupEditorMetrics.tabGap/2,r.Y,r.Height
                     | None,Some(_,r) -> r.Right+scale GroupEditorMetrics.tabGap/2,r.Y,r.Height
-                    | None,None -> pad+rowPad,row.band.Y+rowPad,scale GroupEditorMetrics.tabHeight
+                    | None,None -> row.band.X+rowPad,row.band.Y+rowPad,scale GroupEditorMetrics.tabHeight
                 use pen = new Pen(accent,float32(scale 3))
                 g.DrawLine(pen,x,y,x,y+h))
         | Some(CellMiddle _ | CellEdge _ as aim) ->
@@ -1127,6 +1172,32 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         if not (isNull bitmap) then
             let l = layout()
             match morph with
+            | Some m when previews && m.fromRows.Length=l.rows.Length ->
+                let t = morphT()
+                let body = clientHeight-(l.height-l.body)
+                use back = new SolidBrush(surface)
+                g.FillRectangle(back,Rectangle(0,0,width,body))
+                g.SetClip(Rectangle(0,headerHeight,width,max 0 (body-headerHeight)))
+                g.TranslateTransform(0.0f,float32 -scroll)
+                List.iter2 (fun before (row:GroupEditorRowLayout) ->
+                    use shape = rounded (morphRect t before row.band) (scale 8)
+                    use fill = new SolidBrush(rowFill)
+                    g.FillPath(fill,shape)) m.fromRows l.rows
+                List.iter2 (fun (before:Rectangle) row ->
+                    let after = panelBand row
+                    if not before.IsEmpty || not after.IsEmpty then
+                        let source,rect = if after.IsEmpty then m.from,before else bitmap,after
+                        let h = morphLerp t before.Height after.Height
+                        if h>0 then
+                            let area = Rectangle(rect.X,rect.Y,rect.Width,min h rect.Height)
+                            g.DrawImage(source,area,area,GraphicsUnit.Pixel)) m.fromPanels l.rows
+                for hwnd,look in tabLooks l |> List.filter(fun (_,look) -> look.rect.Y<l.loose.Y) do
+                    drawTabOn g hwnd {look with rect=animatedTab hwnd look.rect}
+                let bottomY = morphLerp t m.fromLoose l.loose.Y
+                g.DrawImage(bitmap,Rectangle(0,bottomY,width,l.body-l.loose.Y),Rectangle(0,l.loose.Y,width,l.body-l.loose.Y),GraphicsUnit.Pixel)
+                g.ResetTransform()
+                g.ResetClip()
+                g.DrawImage(bitmap,Rectangle(0,body,width,bitmap.Height-l.body),Rectangle(0,l.body,width,bitmap.Height-l.body),GraphicsUnit.Pixel)
             | Some m when m.fromRows.Length=l.rows.Length ->
                 // Each row at its height on the way, cut from whichever picture has
                 // it at the larger, the loose row and the bottom along with them.
@@ -1329,12 +1400,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let viewBottom = if morph.IsSome then form.ClientSize.Height-(l.height-l.body) else viewBody l
             let view = Rectangle(0,headerHeight,width,max 0 (viewBottom-headerHeight))
             let cards =
-                if not previews || morph.IsSome || flyout || (rowDrag |> Option.exists(fun d -> d.begun)) then []
+                if not previews || flyout || (rowDrag |> Option.exists(fun d -> d.begun)) then []
                 else
                     tabLooks l |> List.choose(fun (hwnd,look) ->
                         if look.blank || look.ghost || sliding.ContainsKey hwnd then None
                         else
-                            let r = look.rect
+                            let r = animatedTab hwnd look.rect
                             Some(hwnd,Rectangle(r.X+scale 2,r.Y+scale GroupEditorMetrics.tabHeight-scroll,r.Width-scale 4,r.Height-scale GroupEditorMetrics.tabHeight-scale 2)))
             previewThumbs.Update(form.Handle,true,view,cards)
             let other side = if side=First then Second else First
@@ -1366,10 +1437,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             // While its row grows or folds, the picture follows the row and is cut at its edge.
             let t = morphT()
             let placed index =
-                morph |> Option.bind(fun m -> List.tryItem index m.fromRows) |> Option.map(fun a ->
-                    let b = l.rows.[index].band
-                    let y,h = morphLerp t a.Y b.Y,morphLerp t a.Height b.Height
-                    y-b.Y,Rectangle(0,y-scroll,width,h))
+                morph |> Option.bind(fun m ->
+                    List.tryItem index m.fromRows |> Option.map(fun band ->
+                        let panel = m.fromPanels.[index]
+                        if panel.IsEmpty then band else Rectangle.Union(band,panel))) |> Option.map(fun a ->
+                    let b = rowBounds l.rows.[index]
+                    let rect = morphRect t a b
+                    rect.Y-b.Y,Rectangle(rect.X,rect.Y-scroll,rect.Width,rect.Height))
             for hwnd,r,index,kept,corner in wanted do
                 let hidden = kept=Some None
                 let thumbIn (table:Dictionary<IntPtr,IntPtr>) =
@@ -1419,7 +1493,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     do scrollBar.changed.Add(fun value ->
         if not closed then
-            hidePreview()
             hideTitle()
             scrollTimer.Stop()
             scrollTarget <- None
@@ -1429,7 +1502,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     let refresh() =
         if not closed then
-            hidePreview()
             // The tabs may move under a resting pointer: the title shown is put away.
             hideTitle()
             // Once in place, the tabs are drawn in the picture again.
@@ -1456,7 +1528,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             pendingPreviews <- None
             let old = layout()
             let anchor = tabLooks old |> List.tryFind(fun (_,look) -> look.rect.Bottom>scroll)
-            hidePreview()
             endMorph()
             sliding <- Map.empty
             slideTimer.Stop()
@@ -1494,7 +1565,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let finish (plan:DesktopPlan option) =
         if not closed then
             closed <- true
-            hidePreview()
             slideTimer.Stop()
             scrollTimer.Stop()
             endMorph()
@@ -1511,11 +1581,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             // Not inside its own event: on the next turn of the loop.
             let dispose() =
                 form.Dispose()
-                previewTimer.Dispose()
                 dragScrollTimer.Dispose()
                 (previewThumbs :> IDisposable).Dispose()
-                previewTip |> Option.iter(fun tip -> tip.Dispose())
-                previewTip <- None
                 titleTimer.Dispose()
                 titleTip |> Option.iter(fun tip -> tip.Dispose())
                 titleTip <- None
@@ -1630,7 +1697,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let l = layout()
         l.rows |> List.tryItem i |> Option.iter(fun row ->
             let top = headerHeight+pad/2
-            if row.band.Y-scroll<top || row.band.Bottom-scroll>viewBody l then
+            if row.band.Y-scroll<top || (rowBounds row).Bottom-scroll>viewBody l then
                 scrollTarget <- None
                 scroll <- row.band.Y-top
                 clampScroll l
@@ -1659,9 +1726,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// The rows slid from where the picture had them to where it has them now, over a few frames.
     let startMorph (fromL:GroupEditorLayout) (from:Bitmap) =
         let l = layout()
-        if previews || isNull from || fromL.rows.Length<>l.rows.Length || not form.Visible then (if not (isNull from) then from.Dispose())
+        if not SystemInformation.UIEffectsEnabled || isNull from || fromL.rows.Length<>l.rows.Length || not form.Visible then (if not (isNull from) then from.Dispose())
         else
-            morph <- Some {from=from; fromRows=fromL.rows |> List.map(fun row -> row.band); fromLoose=fromL.loose.Y; fromHeight=fromL.height; start=DateTime.UtcNow}
+            morph <- Some {from=from; fromRows=fromL.rows |> List.map(fun row -> row.band);
+                           fromPanels=fromL.rows |> List.map panelBand;
+                           fromTabs=Map.ofList ((fromL.rows |> List.collect(fun row -> row.tabs))@fromL.looseTabs@fromL.closingTabs);
+                           fromLoose=fromL.loose.Y; fromHeight=fromL.height; start=DateTime.UtcNow}
             morphTimer.Start()
             morphFrame()
 
@@ -1674,7 +1744,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         | Some i when i<(groups()).Length ->
             let g = (groupAt i).Value
             expandedKey <- Some(g.group,List.head g.tabs)
-            selected <- (infoOf i).active
+            if not(List.contains selected g.tabs) then selected <- (infoOf i).active
         | _ ->
             expandedKey <- None
             selected <- IntPtr.Zero
@@ -1791,47 +1861,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             hideTitle()
             if tab.IsSome then (if showing then showTitle() else titleTimer.Start())
 
-    let showPreview() =
-        previewTimer.Stop()
-        match previewTab with
-        | Some hwnd when previews && not closed && form.Visible && drag.IsNone && rowDrag.IsNone && not flyout && scrollTarget.IsNone ->
-            let l = layout()
-            tabLooks l |> List.tryFind(fun (h,look) -> h=hwnd && not look.blank && not look.ghost)
-            |> Option.iter(fun (_,look) ->
-                if WinUserApi.IsWindow hwnd && not(WinUserApi.IsIconic hwnd) then
-                    hideTitle()
-                    let tip =
-                        match previewTip with
-                        | Some tip -> tip
-                        | None ->
-                            let tip = new GroupEditorPreviewTip()
-                            previewTip <- Some tip
-                            tip
-                    let r = look.rect
-                    let anchor = form.RectangleToScreen(Rectangle(r.X,r.Y-scroll,r.Width,r.Height))
-                    let available = Rectangle.Intersect(Screen.FromControl(form).WorkingArea,form.RectangleToScreen(Rectangle(0,headerHeight,width,max 0 (viewBody l-headerHeight))))
-                    tip.Preview(form,hwnd,nameOf hwnd,anchor,available))
-        | _ -> ()
-
-    let pointPreview (pt:Point) =
-        let l = layout()
-        let target =
-            if not previews || drag.IsSome || rowDrag.IsSome || scrollDrag.IsSome || scrollTarget.IsSome || flyout || morph.IsSome ||
-               (menu |> Option.exists(fun m -> m.Visible)) || pt.Y<headerHeight || pt.Y>=viewBody l then None
-            else
-                let at = Point(pt.X,pt.Y+scroll)
-                tabLooks l |> List.tryFind(fun (_,look) -> not look.blank && not look.ghost && look.rect.Contains at && at.Y>=look.rect.Y+scale GroupEditorMetrics.tabHeight)
-                |> Option.map fst
-        if target<>previewTab then
-            hidePreview()
-            previewTab <- target
-            if target.IsSome then previewTimer.Start()
-
     /// A press at the point: the empty cell's cross, the split button and its shapes, the buttons,
     /// the row's menu button; else a tab taken in hand.
     let mouseDown (keys:Keys) (pt:Point) =
       if not closed then
-        hidePreview()
         let l = layout()
         let view = pt
         let pt = unscroll pt
@@ -1842,8 +1875,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             batch <- if marked.IsEmpty && not modifiedPress then [hwnd] else marked
             refresh()
             if not modifiedPress || selection.contains hwnd then
-                let offsetY = if previews && pt.Y-r.Y>=scale GroupEditorMetrics.tabHeight then scale GroupEditorMetrics.tabHeight/2 else pt.Y-r.Y
-                drag <- Some {hwnd=hwnd; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,offsetY)
+                let offset = GroupEditorPicture.dragOffset r.Size (Size(tabWidth hwnd,scale GroupEditorMetrics.tabHeight)) (Point(pt.X-r.X,pt.Y-r.Y))
+                drag <- Some {hwnd=hwnd; start=pt; at=pt; aim=None; fits=true; begun=false; offset=offset
                               origin=current; originSelected=selected}
         let hitTab = (l.rows |> List.collect(fun row -> row.tabs)) @ l.looseTabs @ l.closingTabs
         if not(hitTab |> List.exists(fun (_,r) -> r.Contains pt)) && not((selection.items (ordered())).IsEmpty) then
@@ -1869,7 +1902,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         elif l.save.Contains pt then save()
         elif l.cancel.Contains pt then cancel()
         else
-            match l.rows |> List.tryFind(fun row -> row.band.Contains pt) with
+            match l.rows |> List.tryFind(fun row -> (row.band.Contains pt || row.picture.Contains pt)) with
             | Some row ->
                 if row.splitButton |> Option.exists(fun r -> r.Contains pt) then
                     flyout <- true
@@ -1926,7 +1959,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         if begun then
             let l = layout()
             let aim =
-                match l.rows |> List.tryFind(fun row -> row.band.Contains pt) with
+                match l.rows |> List.tryFind(fun row -> (row.band.Contains pt || row.picture.Contains pt)) with
                 | Some row when row.index<>d.index -> Some(IntoRow row.index)
                 | Some _ -> None
                 | None -> if l.closing.Contains pt then Some CloseAll else None
@@ -1949,7 +1982,24 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         | Some d ->
             let threshold = SystemInformation.DragSize
             let begun = d.begun || abs(pt.X-d.start.X)>threshold.Width/2 || abs(pt.Y-d.start.Y)>threshold.Height/2
-            if begun && batch.Length>1 then
+            if begun && previews then
+                // Keep every target in place until release, including a group about to grow
+                // from half a line to a full line or a source about to disappear.
+                let l = layout()
+                let aim,fits =
+                    if batch.Length>1 then batchAim l view pt d.hwnd,true
+                    elif offRows l view pt then None,true
+                    else
+                        match aimAt l pt d.hwnd with
+                        | Some aim ->
+                            match dropped d.hwnd aim current with
+                            | Some(next,Some at) -> Some aim,fitsIn at next.groups.[at]
+                            | Some(_,None) -> Some aim,true
+                            | None -> None,true
+                        | None -> None,true
+                drag <- Some {d with at=pt; aim=aim; fits=fits; begun=true}
+                if not d.begun || aim<>d.aim || fits<>d.fits then refresh()
+            elif begun && batch.Length>1 then
                 let l = layout()
                 let aim = batchAim l view pt d.hwnd
                 drag <- Some {d with at=pt; begun=true; aim=aim}
@@ -2067,7 +2117,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mouseMove (pt:Point) =
       if not closed then
         pointer <- pt
-        pointPreview pt
         match scrollDrag with
         | Some(fromY,fromScroll) -> thumbMove pt fromY fromScroll
         | None ->
@@ -2075,6 +2124,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if drag.IsSome || rowDrag.IsSome then dragScrollTimer.Start()
 
     let tabUp (view:Point) (pt:Point) =
+        let mutable expansion : int option option = None
         match drag with
         | Some d ->
             let before = tabsNow()
@@ -2116,19 +2166,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 // is selected, or, selected already, folds the row.
                 match DesktopDraft.find d.hwnd current,expandedRow() with
                 | InGroup index,Some row when index=row ->
-                    if selected=d.hwnd then expand None
+                    if selected=d.hwnd then expansion <- Some None
                     else
                         selected <- d.hwnd
                         cellFocus <- None
                 | InGroup index,_ ->
-                    expand (Some index)
                     selected <- d.hwnd
-                    refresh()
+                    expansion <- Some(Some index)
                 | _ -> ()
             if d.begun then selection.clear()
             vacated <- []
             slide before
             refresh()
+            expansion |> Option.iter expand
         | None -> ()
 
     let mouseUp (pt:Point) =
@@ -2166,7 +2216,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             showMenu (tabMenuItems hwnd) view
         | Some _ -> ()
         | None ->
-            l.rows |> List.tryFind(fun row -> row.band.Contains pt && not(row.expanded && row.picture.Contains pt))
+            l.rows |> List.tryFind(fun row -> (row.band.Contains pt || row.picture.Contains pt) && not(row.expanded && row.picture.Contains pt))
             |> Option.iter(fun row -> rowMenu row.index view)
 
     /// A button pressed, then released, at a point of the popup. The left click that closed a
@@ -2174,7 +2224,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// them, and would otherwise take a tab in hand. A right click goes on to open the menu of
     /// what it is on, so one menu follows another without a click in between.
     let buttonDown (button:MouseButtons) (pt:Point) =
-        hidePreview()
         // A click puts the title away until the pointer moves on.
         pointTitle None
         if (DateTime.UtcNow-menuClosedAt).TotalMilliseconds<500.0 then
@@ -2201,7 +2250,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if form.IsHandleCreated then form.Invalidate()
         | None -> scrollTimer.Stop()
     let wheel (delta:int) =
-        hidePreview()
         let l = layout()
         if l.body>viewBody l then
             // The tabs scroll away under the pointer: the title shown is put away.
@@ -2222,12 +2270,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     if not closed && drag.IsSome && not form.Capture then press Keys.Escape)) |> ignore)
         form.MouseWheel.Add(fun e -> wheel e.Delta)
         form.MouseLeave.Add(fun _ ->
-            hidePreview()
             pointTitle None
             if hovered.IsSome || hoveredCell.IsSome || hoveredButton.IsSome || hoveredAction.IsSome then
                 hovered <- None; hoveredCell <- None; hoveredButton <- None; hoveredAction <- None; form.Invalidate())
         titleTimer.Tick.Add(fun _ -> showTitle())
-        previewTimer.Tick.Add(fun _ -> showPreview())
         dragScrollTimer.Tick.Add(fun _ ->
             if closed || not ((drag |> Option.exists(fun d -> d.begun)) || (rowDrag |> Option.exists(fun d -> d.begun))) then
                 dragScrollTimer.Stop()
@@ -2248,12 +2294,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     scroll <- scroll+step
                     clampScroll l
                     if scroll<>was then
-                        hidePreview()
                         dragMove pointer (unscroll pointer)
                         updateThumbnails (layout())
                         form.Invalidate())
-        form.Deactivate.Add(fun _ -> hidePreview())
-        form.Move.Add(fun _ -> hidePreview())
         // The frames of a slide; the last one leaves the tabs in place until the next picture.
         scrollTimer.Tick.Add(fun _ -> if closed then scrollTimer.Stop() else scrollFrame())
         slideTimer.Tick.Add(fun _ ->
@@ -2277,9 +2320,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.Previews = previews
     member _.SetPreviews(value) = setPreviews value
     member _.PreviewChanged = previewChanged.Publish
-    member _.PreviewFor = previewTab
-    member _.PreviewShown = previewTip |> Option.exists(fun tip -> tip.Visible)
-    member _.ShowPreview() = showPreview()
     member _.PreviewCount = previewThumbs.Count
     member _.Selected = selected
     member _.MarkedTabs = selection.items (ordered())
@@ -2302,7 +2342,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         paint g image.Height
     /// The rows scrolled down by so much, within what they can.
     member _.ScrollTo(y:int) =
-        hidePreview()
         scrollTarget <- None
         scroll <- y
         clampScroll (layout())

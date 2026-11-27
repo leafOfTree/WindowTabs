@@ -508,12 +508,19 @@ trees release their owned icons. Closing the view cancels its worker.
 ## Settings and diagnostics
 
 The group editor's `groupEditorPreviews` preference is shared with the command
-palette through `SettingsCatalog`. Preview cards wrap in the existing tab order
+palette through `SettingsCatalog`. Adjacent preview groups that fit within half
+the available width share a line without reordering groups. Larger groups use the
+full width. Expanding a group keeps both preview bands and all cards in their
+original positions. A separate full-width content panel opens below their shared
+line, pushing only subsequent lines down without changing draft order. Preview
+drags only show a destination until release, so changing membership cannot resize
+or remove a drop target mid-drag. Preview cards wrap in the existing tab order
 and preserve the draft, expanded split and scroll anchor when toggled. Only visible
 cards register DWM thumbnails; their source rectangles are clipped with the viewport
-so scrolling does not distort the image. A 400 ms hover opens an owned, non-activating
-full-window preview. Scrolling, editing, deactivation and closing dismiss it and
-release its registrations. The existing expanded split editor remains available.
+so scrolling does not distort the image. Hovering never opens a separate window
+preview. Clicking a card expands or collapses the split editor with a short
+transition; subsequent rows and their inline thumbnails move together while the
+selected row's cards stay in place. Closing releases all DWM registrations.
 
 Taskbar button visibility is remembered per HWND, so unchanged z-order
 notifications do not repeatedly call Explorer to add or delete a button.
