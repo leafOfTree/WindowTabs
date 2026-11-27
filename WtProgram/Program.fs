@@ -1401,6 +1401,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                         let key = (shortcutText group).ToLowerInvariant()
                         { hwnd=IntPtr(group.groupToken)
                           title=group.label
+                          names=[]
                           program=tr (Strings.TabSearch.windows group.windows.Length)
                           keywords=keywords
                           keys=(if key="" then [] else [key])

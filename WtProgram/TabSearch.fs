@@ -10,6 +10,8 @@ type TabSearchEntry = {
     hwnd:IntPtr
     /// The tab's name: the user's rename, else the window title.
     title:string
+    /// Translated command and setting names, kept separate from descriptions.
+    names:string list
     /// The process's file name without .exe.
     program:string
     /// What a search term may match, in lower case: both names and the program.
@@ -128,11 +130,14 @@ module TabSearch =
     let private named (query:string) (entry:TabSearchEntry) =
         let typed = String.Join(" ",query.Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries))
         let phrase (text:string) = termMatch (typed.ToLowerInvariant()) (text.ToLowerInvariant()) |> Option.exists(fun (quality,_) -> quality=2)
+        let names = entry.title :: entry.names
+        let terms = typed.ToLowerInvariant().Split([|' '|],StringSplitOptions.RemoveEmptyEntries)
         if typed="" then 3
-        elif entry.title.Equals(typed,StringComparison.CurrentCultureIgnoreCase) then 0
-        elif entry.title.StartsWith(typed,StringComparison.CurrentCultureIgnoreCase) then 1
-        elif phrase entry.title || phrase entry.program then 2
-        else 3
+        elif names |> List.exists(fun name -> name.Equals(typed,StringComparison.CurrentCultureIgnoreCase)) then 0
+        elif names |> List.exists(fun name -> name.StartsWith(typed,StringComparison.CurrentCultureIgnoreCase)) then 1
+        elif names |> List.exists phrase || phrase entry.program then 2
+        elif entry.names.IsEmpty || names |> List.exists(fun name -> terms |> Array.forall(fun term -> (termMatch term (name.ToLowerInvariant())).IsSome)) then 3
+        else 4
 
     /// How well an entry matches, best first: its name, match quality, terms its name shows, earlier
     /// positions, a window on the desktop in view, then recency. None when it does not match.
@@ -203,7 +208,7 @@ module TabSearch =
             { window=window; title=entry.title; highlights=highlights query entry.title })
 
     let create hwnd title original program =
-        { hwnd=hwnd; title=title; program=program
+        { hwnd=hwnd; title=title; names=[]; program=program
           keywords=[title;original;program] |> List.filter((<>) "") |> List.distinct |> List.map(fun text -> text.ToLowerInvariant())
           keys=[]; group=0; recency=0; desktop="" }
 
