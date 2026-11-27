@@ -530,6 +530,8 @@ let main() =
             let frame = Rect(Pt(100,100),Sz(1600,900))
             let desk = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a;b;c;d] Set.empty (Split(pair a b))] []
             let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a}],shown,Some 0)
+            // This fixture uses layout coordinates; keep its controls visible on small CI desktops.
+            editor.Resize(Size(Dpi.scale 900,Dpi.scale 900))
             let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
             let cellRect path = editor.Layout.rows.[0].cells |> List.find(fun (each,_,_) -> each=path) |> fun (_,_,r) -> r
             let tabRect hwnd = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
@@ -601,8 +603,20 @@ let main() =
             editor.MouseDown(centre (tabRect a))
             editor.MouseUp(centre (tabRect a))
             check (editor.Selected=a && editor.Layout.rows.[0].focused=Some [Second] && editor.Layout.rows.[0].splitButton.IsSome) "Clicking a pane tab did not focus its cell"
-            editor.MouseDown(centre editor.Layout.rows.[0].splitButton.Value)
-            check (editor.FlyoutOpen && editor.Layout.rows.[0].shapes.Length=GroupDraft.shapes.Length) "The split button did not open the shapes"
+            // A short viewport needs scrolling and client coordinates, just like a real click.
+            let fullSize = editor.Size
+            editor.Resize(Size(fullSize.Width,Dpi.scale 480))
+            let shortLayout = editor.Layout
+            let button = shortLayout.rows.[0].splitButton.Value
+            let body = editor.Size.Height-(shortLayout.height-shortLayout.body)
+            let offset = button.Bottom-body+Dpi.scale 8
+            check (offset>0) "The short viewport did not put the split button below the visible rows"
+            editor.ScrollTo offset
+            let at = centre button
+            editor.MouseDown(Point(at.X,at.Y-offset))
+            check (editor.FlyoutOpen && editor.Layout.rows.[0].shapes.Length=GroupDraft.shapes.Length) "The visible split button did not open the shapes after scrolling"
+            editor.Resize fullSize
+            editor.ScrollTo 0
             editor.MouseDown(centre (editor.Layout.rows.[0].shapes |> List.find(fun (shape,_) -> shape=StackedPair) |> snd))
             check (not editor.FlyoutOpen && GroupDraft.emptyCells editor.Draft.groups.[0]=[[Second;Second]] && panes()=[c;a]) (sprintf "A shape did not cut the cell with an empty slot: %A" editor.Draft.groups.[0].panes)
             check (editor.Plan.groups.Head.layout=Some(Split {pair c a with focused=[Second]})) "The empty slot did not close in the plan"
