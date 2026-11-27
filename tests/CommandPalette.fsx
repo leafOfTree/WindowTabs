@@ -983,6 +983,22 @@ let main() =
                 note (List.contains (tr setting.caption) titles) (sprintf "Searching \"%s\" did not find %s: %A" query (tr setting.caption) titles)
         // A setting for the group in front comes before the one for every group, its name a little
         // longer: the group in front is what the palette was opened over.
+        // Every translation of a name outranks a description, even after that command was used.
+        try
+            for language in ["en";"zh";"ja";"ar";"ko"] do
+                Localization.setPreference language
+                let entries = (CommandPalette.actionsPage active).entries
+                let edit = entries |> List.find(fun entry -> entry.title=tr Strings.Settings.editGroups.caption)
+                let rename = entries |> List.find(fun entry -> entry.title=tr Strings.Commands.renameTab.caption)
+                let rows = [0,{ rename with recency=0 };1,{ edit with recency=10000 }]
+                note (TabSearch.shown "edit" rows |> List.map fst = [1;0])
+                     (sprintf "Edit groups lost to Rename tab's description in %s" language)
+                for name in Localization.all Strings.Settings.editGroups.caption do
+                    let description = { rename with keywords=[name.ToLowerInvariant()] }
+                    note (TabSearch.best name [description;edit]=Some edit)
+                         (sprintf "Translated name %s lost to a description in %s" name language)
+            note (Strings.Commands.renameTab.caption.en="Rename tab") "Rename tab's English name changed"
+        finally Localization.setPreference (api.getValue "language" :?> string)
         let englishEntries =
             Localization.setPreference "en"
             try (CommandPalette.actionsPage active).entries |> List.map(fun entry -> (),entry)

@@ -8,8 +8,8 @@ module CommandPalette =
     open SettingRows
     let private words (texts:LocalizedText list) (extra:string list) =
         (texts |> List.collect Localization.all) @ extra |> List.filter((<>) "") |> List.distinct |> List.map(fun text -> text.ToLowerInvariant())
-    let private row index title texts extra group =
-        { hwnd=IntPtr(index+1); title=title; program=""; keywords=words texts extra; keys=[]; group=group; recency=index; desktop="" }
+    let private row index (caption:LocalizedText) texts extra group =
+        { hwnd=IntPtr(index+1); title=tr caption; names=Localization.all caption; program=""; keywords=words texts extra; keys=[]; group=group; recency=index; desktop="" }
     /// What has a key besides `key`, which gives it up as the Shortcuts page's boxes do.
     let holderOf key code = Commands.anyHolderOf key code
     /// Setting a command's shortcut from its row, as the Shortcuts page does.
@@ -121,7 +121,7 @@ module CommandPalette =
                           | ASetting item when item.id=presetId -> Strings.Appearance.custom :: List.ofArray ThemePresets.names
                           | ANumberKeys _ -> numberKeyOptions() |> List.map fst
                           | _ -> []
-                      { row index (tr text.caption) (text.caption::text.keywords::text.description::options) (extra action)
+                      { row index text.caption (text.caption::text.keywords::text.description::options) (extra action)
                             (if recency<recentLimit then -1 else group action)
                         with recency=recency*listed.Length+index; keys=(if key="" then [] else [key]) })
                   |> Array.sortBy(fun entry -> entry.recency) |> List.ofArray
