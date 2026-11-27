@@ -210,6 +210,215 @@ let main() =
         let api = settings :> ISettings
         api.setValue("enableCtrlNumberHotKey",box false)
         api.setValue("autoHideMode",box "Never")
+        // Preview cards wrap without changing the draft, and clipping keeps the source scale.
+        check (GroupEditorPicture.dragOffset (Size(180,126)) (Size(60,30)) (Point(179,125))=Point(59,29)) "A corner grab lay outside the carried title"
+        check (GroupEditorPicture.dragOffset (Size(60,30)) (Size(60,30)) (Point(20,15))=Point(20,15)) "A compact tab changed its grab point"
+        let cropped = GroupEditorPreview.projection true (Size(1000,800)) (Rectangle(10,20,200,96)) (Rectangle(0,50,500,500))
+        check (cropped=Some(Rectangle(10,50,200,66),Rectangle(0,150,1000,330))) "Scrolling stretched or exposed the cropped source"
+        let fitted = GroupEditorPreview.projection false (Size(1000,800)) (Rectangle(0,0,400,200)) (Rectangle(0,0,400,200))
+        check (fitted=Some(Rectangle(75,0,250,200),Rectangle(0,0,1000,800))) "The hover preview cropped the complete window"
+        let previewHandles = [1..8] |> List.map(fun i -> IntPtr(10000+i))
+        let previewDraft = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 90) previewHandles Set.empty Single] []
+        let previewWindows = previewHandles |> List.map(fun h -> {hwnd=h;name="Window "+string h;icon=None;minimized=true})
+        let previewFrame = Rect(Pt(0,0),Sz(1200,800))
+        let previewEditor = GroupEditorForm(previewDraft,[{group=Some(IntPtr 90);frame=previewFrame;active=previewHandles.Head}],previewWindows,None)
+        try
+            previewEditor.Resize(Size(Dpi.scale 820,Dpi.scale 600))
+            previewEditor.SetPreviews true
+            let row = previewEditor.Layout.rows.Head
+            check ((row.tabs |> List.map fst)=previewHandles) "Preview wrapping changed tab order"
+            check ((row.tabs |> List.map(fun (_,r) -> r.Y) |> List.distinct).Length=2) "Eight preview cards did not wrap into two rows"
+            check (row.tabs |> List.forall(fun (_,r) -> r.Height=Dpi.scale 126 && r.Right<=row.band.Right)) "Preview cards escaped the group or changed height"
+            check (previewEditor.Draft=previewDraft && DesktopPlan.isEmpty previewEditor.Plan) "Changing preview mode edited the draft"
+            previewEditor.Resize(Size(Dpi.scale 820,Dpi.scale 320))
+            previewEditor.Show()
+            let host = Control.FromHandle(previewEditor.Handle)
+            let bar = host.Controls |> Seq.cast<Control> |> Seq.pick(fun c -> match c with :? SettingsScrollBar as bar -> Some bar | _ -> None)
+            check bar.Visible "Overflowing preview rows did not show the settings scrollbar"
+            if not SystemInformation.HighContrast then
+                let sample() =
+                    use image = new Bitmap(bar.Width,bar.Height)
+                    bar.DrawToBitmap(image,bar.ClientRectangle)
+                    image.GetPixel(Dpi.scale 6,Dpi.scale 8).ToArgb()
+                let thin = sample()
+                typeof<SettingsScrollBar>.GetMethod("OnMouseEnter",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).Invoke(bar,[|box EventArgs.Empty|]) |> ignore
+                pumpUntil "The editor scrollbar did not widen on hover" (fun () -> sample()<>thin)
+            previewEditor.Resize(Size(Dpi.scale 820,Dpi.scale 600))
+            use previewImage = previewEditor.Render()
+            previewImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-editor-previews.png"))
+            let start = snd row.tabs.[4]
+            let target = snd row.tabs.[1]
+            previewEditor.MouseDown(Point(start.X+10,start.Y+10))
+            previewEditor.MouseMove(Point(target.X+2,target.Y+10))
+            previewEditor.MouseUp(Point(target.X+2,target.Y+10))
+            check (previewEditor.Draft.groups.Head.tabs.[1]=previewHandles.[4]) "Dragging across wrapped preview rows did not reorder"
+            let tab = snd previewEditor.Layout.rows.Head.tabs.Head
+            let click = Point(tab.X+10,tab.Y+10)
+            previewEditor.MouseDown click
+            previewEditor.MouseUp click
+            let expandedPreview = previewEditor.Layout.rows.Head
+            check (expandedPreview.expanded && expandedPreview.picture.Y>=(expandedPreview.tabs |> List.map(fun (_,r) -> r.Bottom) |> List.max)) "Expanded content overlapped wrapped preview cards"
+            check expandedPreview.splitButton.IsSome "Preview mode removed the existing split editor"
+            let edited = previewEditor.Draft
+            previewEditor.SetPreviews false
+            check (previewEditor.Draft=edited && previewEditor.Layout.rows.Head.tabs |> List.forall(fun (_,r) -> r.Height=Dpi.scale 30)) "Turning previews off lost edits or kept card heights"
+            let r = snd previewEditor.Layout.rows.Head.tabs.Head
+            previewEditor.MouseDown(Point(r.X+10,r.Y+10))
+            previewEditor.SetPreviews true
+            check (not previewEditor.Previews) "A preference change rearranged cards during a gesture"
+            previewEditor.Press Keys.Escape
+            check (previewEditor.Previews && previewEditor.Draft=edited) "Cancelling the gesture lost edits or the pending preview preference"
+        finally previewEditor.Close()
+        // Half-width groups pair in order; crossing the size threshold waits for the drop.
+        let packingDpi = Dpi.value()
+        try
+            for dpi in [96;144;192] do
+                Dpi.set dpi
+                let handles = [21..28] |> List.map IntPtr
+                let drafts = [[handles.[0];handles.[1]];[handles.[2];handles.[3]];[handles.[4];handles.[5];handles.[6]];[handles.[7]]]
+                             |> List.mapi(fun i tabs -> GroupDraft.ofGroup (IntPtr(200+i)) tabs Set.empty Single)
+                let packedDraft = DesktopDraft.ofDesktop drafts []
+                let rows = drafts |> List.map(fun g -> {group=g.group;frame=previewFrame;active=g.tabs.Head})
+                let windows = handles |> List.map(fun h -> {hwnd=h;name="W";icon=None;minimized=true})
+                let packed = GroupEditorForm(packedDraft,rows,windows,None,previews=true)
+                try
+                    packed.Resize(Size(Dpi.scale 1000,Dpi.scale 900))
+                    let bands() = packed.Layout.rows |> List.map(fun r -> r.band)
+                    let original = bands()
+                    let grab = snd packed.Layout.rows.Head.tabs.Head
+                    let corner = Point(grab.Right-2,grab.Bottom-2)
+                    packed.MouseDown corner
+                    let offset = packed.Drag.Value.offset
+                    check (offset.X>=0 && offset.X<Dpi.scale 100 && offset.Y>=0 && offset.Y<Dpi.scale 30) "Dragging a short title from a preview corner left it away from the pointer"
+                    packed.MouseMove(Point(corner.X+20,corner.Y+20))
+                    check (packed.Drag.Value.offset=offset) "Beginning the drag changed its grab point"
+                    packed.Press Keys.Escape
+                    check (original.[0].Y=original.[1].Y && original.[0].Right<original.[1].Left) "Adjacent small groups did not share a line"
+                    check (original.[2].Width>original.[0].Width && original.[2].Y>=original.[0].Bottom) "A large group did not occupy a full line"
+                    check (original.[3].Width=original.[0].Width && original.[3].Left=original.[0].Left && original.[3].Y>=original.[2].Bottom) "An unpaired group moved out of order or filled the line"
+                    for index in [1;0] do
+                        let beforeTabs = packed.Layout.rows.[index].tabs
+                        let r = snd beforeTabs.Head
+                        let click = Point(r.X+10,r.Y+10)
+                        packed.MouseDown click
+                        packed.MouseUp click
+                        let expanded = packed.Layout.rows.[index]
+                        let neighbour = packed.Layout.rows.[1-index]
+                        check (expanded.expanded && expanded.band=original.[index] && expanded.tabs=beforeTabs) "Expansion moved the original group or its preview cards"
+                        check (expanded.picture.Left=original.[2].Left+Dpi.scale 10 && expanded.picture.Width=original.[2].Width-Dpi.scale 20 && expanded.picture.Top>original.[index].Bottom) "Expanded content did not span the width below the original row"
+                        check (neighbour.band=original.[1-index]) "Expansion moved the paired neighbour"
+                        check (packed.Draft=packedDraft && (packed.Layout.rows |> List.map(fun row -> row.index))=[0;1;2;3]) "Visual expansion reordered draft groups or layout indices"
+                        check (packed.Layout.rows.[2].band.Top>expanded.picture.Bottom) "Expansion overlapped the following row"
+                        if dpi=96 && index=1 then
+                            use image = packed.Render()
+                            image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-editor-expanded-inline.png"))
+                        let neighbourTab = snd neighbour.tabs.Head
+                        packed.MouseDown(Point(neighbourTab.X+10,neighbourTab.Y+10))
+                        packed.MouseMove(Point(expanded.picture.Left+1,expanded.picture.Top+expanded.picture.Height/2))
+                        check (packed.Drag |> Option.exists(fun d -> match d.aim with Some(CellEdge(row,_,_,_)) -> row=index | _ -> false)) "The full-width panel did not accept a drop outside its original half row"
+                        packed.Press Keys.Escape
+                        check (packed.Draft=packedDraft && packed.Layout.rows.[1-index].band=original.[1-index]) "Cancelling a panel drag moved or edited the neighbouring group"
+                        while packed.Expanded.IsSome do packed.Press Keys.Escape
+                        check (bands()=original) "Collapsing a half-row group did not restore the layout"
+                    if dpi=96 then
+                        use image = packed.Render()
+                        image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-editor-packed.png"))
+                    let source = snd packed.Layout.rows.[0].tabs.Head
+                    let target = snd packed.Layout.rows.[1].tabs.[1]
+                    let at = Point(target.Right+3,target.Y+10)
+                    packed.MouseDown(Point(source.X+10,source.Y+10))
+                    packed.MouseMove at
+                    check (bands()=original && packed.Draft=packedDraft) "A half-width target moved or changed membership before release"
+                    packed.Press Keys.Escape
+                    check (bands()=original && packed.Draft=packedDraft) "Cancelling a preview drag changed its layout"
+                    packed.MouseDown(Point(source.X+10,source.Y+10))
+                    packed.MouseMove at
+                    packed.MouseUp at
+                    check (packed.Draft.groups.[1].tabs=[handles.[2];handles.[3];handles.[0]]) "Dropping into the right-hand group lost tab order"
+                    check (packed.Layout.rows.[1].band.Width=original.[2].Width) "A group crossing half-width did not grow after release"
+                    let tab = snd packed.Layout.rows.[0].tabs.Head
+                    let click = Point(tab.X+10,tab.Y+10)
+                    packed.MouseDown click
+                    packed.MouseUp click
+                    check (packed.Layout.rows.Head.expanded && packed.Layout.rows.Head.picture.Width=original.[2].Width-Dpi.scale 20) "An expanded small group did not have full-width content"
+                    while packed.Expanded.IsSome do packed.Press Keys.Escape
+                    let beforeLast = bands()
+                    let lastSource = snd packed.Layout.rows.Head.tabs.Head
+                    let lastTarget = snd packed.Layout.rows.[1].tabs.Head
+                    let lastAt = Point(lastTarget.X+2,lastTarget.Y+10)
+                    packed.MouseDown(Point(lastSource.X+10,lastSource.Y+10))
+                    packed.MouseMove lastAt
+                    let lastDrag = packed.Drag
+                    check (bands()=beforeLast && packed.Draft.groups.Length=4) "A group's last tab removed its band before release"
+                    packed.MouseUp lastAt
+                    check (packed.Draft.groups.Length=3) (sprintf "The emptied group remained after release: dpi=%d closed=%b expanded=%A drag=%A source=%A target=%A groups=%A" dpi packed.IsClosed packed.Expanded lastDrag lastSource lastTarget (packed.Draft.groups |> List.map(fun g -> g.tabs)))
+                    // A narrow editor cannot fit even one card into a half row.
+                    packed.Resize(Size(Dpi.scale 400,Dpi.scale 900))
+                    let narrow = packed.Layout.rows
+                    check (narrow |> List.pairwise |> List.forall(fun (a,b) -> a.band.Bottom<=b.band.Top)) "Narrow groups overlapped instead of using full lines"
+                finally packed.Close()
+                let multi = GroupEditorForm(packedDraft,rows,windows,None,previews=true)
+                try
+                    multi.Resize(Size(Dpi.scale 1000,Dpi.scale 900))
+                    for _,r in multi.Layout.rows.Head.tabs do
+                        let pt = Point(r.X+10,r.Y+10)
+                        multi.MouseDown(pt,keys=Keys.Control)
+                        multi.MouseUp pt
+                    let before = multi.Layout.rows |> List.map(fun r -> r.band)
+                    let source = snd multi.Layout.rows.Head.tabs.Head
+                    let target = snd multi.Layout.rows.[1].tabs.[1]
+                    let at = Point(target.Right+3,target.Y+10)
+                    multi.MouseDown(Point(source.X+10,source.Y+10))
+                    multi.MouseMove at
+                    check (multi.Draft=packedDraft && (multi.Layout.rows |> List.map(fun r -> r.band))=before) "Moving multiple cards rearranged groups before release"
+                    multi.MouseUp at
+                    check (multi.Draft.groups.Head.tabs=[handles.[2];handles.[3];handles.[0];handles.[1]]) "A block drop lost the destination or selected order"
+                finally multi.Close()
+        finally Dpi.set packingDpi
+        // Live DWM cards remain inline; clicking expands and collapses with a transition.
+        use previewSource = new Form(Text="Preview fixture",Size=Size(640,480))
+        previewSource.Show()
+        let sourceHandle = previewSource.Handle
+        let nativeDraft = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 91) [sourceHandle] Set.empty Single] []
+        let nativeEditor = GroupEditorForm(nativeDraft,[{group=Some(IntPtr 91);frame=previewFrame;active=sourceHandle}],
+                                          [{hwnd=sourceHandle;name="Preview fixture";icon=None;minimized=false}],None,previews=true)
+        try
+            nativeEditor.Show()
+            Application.DoEvents()
+            check (nativeEditor.PreviewCount=1) "The visible card did not register a live thumbnail"
+            let r = snd nativeEditor.Layout.rows.Head.tabs.Head
+            nativeEditor.MouseMove(Point(r.X+10,r.Y+Dpi.scale 40))
+            let host = Control.FromHandle(nativeEditor.Handle) :?> Form
+            let owned = host.OwnedForms.Length
+            Thread.Sleep(450)
+            Application.DoEvents()
+            check (host.OwnedForms.Length=owned) "Hovering a card opened an unwanted preview window"
+            let click = Point(r.X+10,r.Y+10)
+            nativeEditor.MouseDown click
+            nativeEditor.MouseUp click
+            check (nativeEditor.Expanded=Some 0) "Clicking a preview card did not expand the group"
+            if SystemInformation.UIEffectsEnabled then check nativeEditor.Morphing "Click expansion lost its transition"
+            pumpUntil "Expansion animation did not finish" (fun () -> not nativeEditor.Morphing)
+            let expandedTab = snd nativeEditor.Layout.rows.Head.tabs.Head
+            let collapse = Point(expandedTab.X+10,expandedTab.Y+10)
+            nativeEditor.MouseDown collapse
+            nativeEditor.MouseUp collapse
+            check nativeEditor.Expanded.IsNone "Clicking the selected card did not collapse the group"
+            if SystemInformation.UIEffectsEnabled then check nativeEditor.Morphing "Click collapse lost its transition"
+            pumpUntil "Collapse animation did not finish" (fun () -> not nativeEditor.Morphing)
+            nativeEditor.ScrollTo 0
+            nativeEditor.SetPreviews false
+            check (nativeEditor.PreviewCount=0) "Turning previews off retained thumbnail registrations"
+            nativeEditor.SetPreviews true
+            check (nativeEditor.PreviewCount=1) "Turning previews back on lost the live thumbnail"
+            for _ in 1..10 do
+                nativeEditor.SetPreviews false
+                check (nativeEditor.PreviewCount=0) "Repeated toggles retained live thumbnails"
+                nativeEditor.SetPreviews true
+            previewSource.Close()
+            nativeEditor.ScrollTo 0
+            check (nativeEditor.PreviewCount=0) "A destroyed source retained its thumbnail"
+        finally nativeEditor.Close()
         // The popup with one row expanded, drawn without a screen, in both looks: the tabs along
         // the top with the selected one in the accent, the content under them; keys select, move
         // and take out; Save plans what changed.
@@ -321,6 +530,8 @@ let main() =
             let frame = Rect(Pt(100,100),Sz(1600,900))
             let desk = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a;b;c;d] Set.empty (Split(pair a b))] []
             let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a}],shown,Some 0)
+            // This fixture uses layout coordinates; keep its controls visible on small CI desktops.
+            editor.Resize(Size(Dpi.scale 900,Dpi.scale 900))
             let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
             let cellRect path = editor.Layout.rows.[0].cells |> List.find(fun (each,_,_) -> each=path) |> fun (_,_,r) -> r
             let tabRect hwnd = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
@@ -392,8 +603,20 @@ let main() =
             editor.MouseDown(centre (tabRect a))
             editor.MouseUp(centre (tabRect a))
             check (editor.Selected=a && editor.Layout.rows.[0].focused=Some [Second] && editor.Layout.rows.[0].splitButton.IsSome) "Clicking a pane tab did not focus its cell"
-            editor.MouseDown(centre editor.Layout.rows.[0].splitButton.Value)
-            check (editor.FlyoutOpen && editor.Layout.rows.[0].shapes.Length=GroupDraft.shapes.Length) "The split button did not open the shapes"
+            // A short viewport needs scrolling and client coordinates, just like a real click.
+            let fullSize = editor.Size
+            editor.Resize(Size(fullSize.Width,Dpi.scale 480))
+            let shortLayout = editor.Layout
+            let button = shortLayout.rows.[0].splitButton.Value
+            let body = editor.Size.Height-(shortLayout.height-shortLayout.body)
+            let offset = button.Bottom-body+Dpi.scale 8
+            check (offset>0) "The short viewport did not put the split button below the visible rows"
+            editor.ScrollTo offset
+            let at = centre button
+            editor.MouseDown(Point(at.X,at.Y-offset))
+            check (editor.FlyoutOpen && editor.Layout.rows.[0].shapes.Length=GroupDraft.shapes.Length) "The visible split button did not open the shapes after scrolling"
+            editor.Resize fullSize
+            editor.ScrollTo 0
             editor.MouseDown(centre (editor.Layout.rows.[0].shapes |> List.find(fun (shape,_) -> shape=StackedPair) |> snd))
             check (not editor.FlyoutOpen && GroupDraft.emptyCells editor.Draft.groups.[0]=[[Second;Second]] && panes()=[c;a]) (sprintf "A shape did not cut the cell with an empty slot: %A" editor.Draft.groups.[0].panes)
             check (editor.Plan.groups.Head.layout=Some(Split {pair c a with focused=[Second]})) "The empty slot did not close in the plan"

@@ -976,6 +976,7 @@ type TabStripSprite<'id> when 'id : equality = {
     windowRight: int option
     buttonScreen: Rectangle option
     scrollOffset: int
+    scrollExpansion: float32
     } with
 
     member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
@@ -992,7 +993,7 @@ type TabStripSprite<'id> when 'id : equality = {
         else this.size.height
     member this.columnContentHeight = TabMetrics.columnHeight this.lorder.count this.appearance.tabHeight
     member this.scrollMaximum = max 0 (this.columnContentHeight-this.tabAreaHeight)
-    member this.scrollTrack = Rect(Pt(this.size.width-Dpi.scale 12,Dpi.scale 4),Sz(Dpi.scale 6,max 1 (this.tabAreaHeight-Dpi.scale 8)))
+    member this.scrollTrack = Rect(Pt(this.size.width-Dpi.scale 14,Dpi.scale 4),Sz(Dpi.scale 14,max 1 (this.tabAreaHeight-Dpi.scale 8)))
     member this.scrollThumb =
         if not this.isVertical || this.scrollMaximum=0 then None
         else
@@ -1146,8 +1147,21 @@ type TabStripSprite<'id> when 'id : equality = {
             gr.ResetClip()
         else gr.FillRectangle(brush, bounds.Rectangle)
         this.scrollThumb |> Option.iter(fun thumb ->
-            use ink = new SolidBrush(this.appearance.tabBorderColor)
-            gr.FillRectangle(ink,thumb.Rectangle))
+            let t = if System.Windows.Forms.SystemInformation.HighContrast then 1.0f else this.scrollExpansion
+            let thickness = float32(Dpi.scale 2)+float32(Dpi.scale 4)*t
+            let x = float32(this.scrollTrack.x+this.scrollTrack.width-Dpi.scale 3)-thickness
+            let pill y height color =
+                use path = new System.Drawing.Drawing2D.GraphicsPath()
+                path.AddArc(x,y,thickness,thickness,180.0f,180.0f)
+                path.AddArc(x,y+height-thickness,thickness,thickness,0.0f,180.0f)
+                path.CloseFigure()
+                use brush = new SolidBrush(color)
+                gr.FillPath(brush,path)
+            gr.SmoothingMode <- System.Drawing.Drawing2D.SmoothingMode.AntiAlias
+            if t>0.0f && not System.Windows.Forms.SystemInformation.HighContrast then
+                pill (float32 this.scrollTrack.y) (float32 this.scrollTrack.height) (Color.FromArgb(int(35.0f*t),this.appearance.tabBorderColor))
+            pill (float32 thumb.y) (float32 thumb.height)
+                (if System.Windows.Forms.SystemInformation.HighContrast then SystemColors.WindowText else this.appearance.tabBorderColor))
         img
 
     /// Narrowest a tab gets: its icon with room either side to click it. Tabs that still do

@@ -93,6 +93,7 @@ type SettingsRec = {
     enableMiddleClickClose: bool
     /// A picture of a tab's window while the pointer rests on the tab.
     tabHoverPreview: bool
+    groupEditorPreviews: bool
     /// While a full-screen app is in front, shortcuts let go of their keys and notices wait.
     pauseInFullScreen: bool
     /// The Support page's charts: a reading every five seconds in the background, kept in memory.

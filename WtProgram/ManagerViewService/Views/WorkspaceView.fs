@@ -89,7 +89,7 @@ type WorkspaceRestoreDialog(first:WorkspaceRestoreResult, ?launch:WorkspaceResto
                                           Margin=Padding(-Dpi.scale 3,0,(if i<shown.Length-1 then Dpi.scale 22 else 0),0)))
         table.Controls.Add(counts)
         // Titles are often file paths with no spaces, which a label would cut off rather than wrap.
-        let wrap (text:string) font = String.Join("\n",SettingsTextWrap.lines text font (width-indent-SystemInformation.VerticalScrollBarWidth))
+        let wrap (text:string) font = String.Join("\n",SettingsTextWrap.lines text font (width-indent-Dpi.scale 14))
         let details = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.TopDown,
                                           WrapContents=false,Margin=Padding.Empty)
         let section state (items:(string*string) list) (hint:LocalizedText option) =
@@ -113,8 +113,27 @@ type WorkspaceRestoreDialog(first:WorkspaceRestoreResult, ?launch:WorkspaceResto
         let listed = details.Controls.Count>0
         // The summary is centred; the list reads from the left and, empty, still
         // keeps the dialog at its width.
-        let holder = new Panel(AutoScroll=true,Margin=Padding(0,(if listed then Dpi.scale 20 else 0),0,0))
+        let holder = new Panel(Margin=Padding(0,(if listed then Dpi.scale 20 else 0),0,0))
+        let scroll = new SettingsScrollBar(TabStop=false)
+        let mutable offset = 0
+        let maximum() = max 0 (details.Height-holder.ClientSize.Height)
+        let apply value =
+            offset <- max 0 (min (maximum()) value)
+            details.Top <- -offset
+            scroll.configure(maximum(),holder.ClientSize.Height,offset)
+        let smooth = new SmoothScroller((fun () -> offset),(fun n -> max 0 (min (maximum()) n)),apply)
         holder.Controls.Add(details)
+        holder.Controls.Add(scroll)
+        scroll.BringToFront()
+        scroll.changed.Add(smooth.jump)
+        holder.SizeChanged.Add(fun _ ->
+            scroll.Bounds <- Rectangle(holder.ClientSize.Width-scroll.Width,0,scroll.Width,holder.ClientSize.Height)
+            apply offset)
+        details.SizeChanged.Add(fun _ -> apply offset)
+        holder.MouseWheel.Add(fun e ->
+            smooth.by(SmoothScroller.wheelStep e.Delta holder.ClientSize.Height)
+            match e with :? HandledMouseEventArgs as handled -> handled.Handled <- true | _ -> ())
+        holder.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
         table.Controls.Add(holder)
         let buttons = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
                                           FlowDirection=FlowDirection.RightToLeft,Anchor=AnchorStyles.Right,Margin=Padding(0,Dpi.scale 24,0,0))

@@ -72,6 +72,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | "Right" -> TabDockRight
         | _ -> TabDockTop)
     let scrollOffsetCell = Cell.create(0)
+    let scrollExpansionCell = Cell.create(0.0f)
+    let mutable scrollHover = false
+    let mutable scrollCollapseAt = DateTime.MinValue
+    let scrollAnimation = new Timer(Interval=15)
     let dockChangedEvent = Event<unit>()
     let layoutChangedEvent = Event<bool>()
     let mutable columnWidthValue = Services.settings.getValue("tabColumnWidth") :?> int
@@ -236,6 +240,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         titleTimer.Tick.Add(fun _ -> titleTimer.Stop(); this.showTitle())
         hoverOpenTimer.Tick.Add(fun _ -> this.stepHoverOpen())
         hoverOpenAnimation.Tick.Add(fun _ -> this.stepHoverOpenAnimation())
+        scrollAnimation.Tick.Add(fun _ ->
+            let active = scrollHover || columnScroll.IsSome || DateTime.UtcNow<scrollCollapseAt
+            let value = scrollExpansionCell.value
+            let next = if active then min 1.0f (value+0.2f) else max 0.0f (value-0.12f)
+            if next<>value then scrollExpansionCell.set(next)
+            elif DateTime.UtcNow>=scrollCollapseAt then scrollAnimation.Stop())
         captureWatch.Tick.Add(fun _ ->
             if this.isVertical && WinUserApi.GetCapture()=IntPtr.Zero then
                 this.refreshHover(trackLeave=false)
@@ -346,6 +356,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             windowRight = windowRight
             buttonScreen = this.buttonScreen
             scrollOffset = scrollOffsetCell.value
+            scrollExpansion = scrollExpansionCell.value
             held = heldLayoutCell.value
             position = positionCell.value
             rowSlide = rowSlideCell.value
@@ -371,10 +382,15 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         this.withUpdate(fun () ->
             match mouse with
             | MouseMove(pt) ->
+                let over = this.ts.scrollThumb.IsSome && this.ts.scrollTrack.containsPoint(pt)
+                if over<>scrollHover then
+                    scrollHover <- over
+                    if not over then scrollCollapseAt <- DateTime.UtcNow.AddMilliseconds(600.0)
+                    scrollAnimation.Start()
                 pointerOverCell.set(true)
                 if this.window.hasCapture.not && defaultArg trackLeave true then
                     this.window.trackMouseLeave()
-                let hit = this.hitAt pt
+                let hit = if over then None else this.hitAt pt
                 hoverCell.set(hit)
                 let tabHit = hit |> Option.filter(fun (_,part) -> not part.isAddButton)
                 this.pointTitle(hit |> Option.map(fun (tab,part) -> if part.isAddButton then AddTabHint else TabTitle tab))
@@ -412,6 +428,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 if action=MouseUp then capturedCell.set(None)
                 if pointerOverCell.value then hoverCell.set(this.hitAt pt)
             | MouseLeave ->
+                scrollHover <- false
+                scrollCollapseAt <- DateTime.UtcNow.AddMilliseconds(600.0)
+                scrollAnimation.Start()
                 tipTarget <- None
                 this.hideTitle()
                 this.closeHoverOpen()
@@ -615,6 +634,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             if btn=MouseLeft && (columnResize.IsSome || columnScroll.IsSome) then
                 columnResize <- None
                 columnScroll <- None
+                scrollCollapseAt <- DateTime.UtcNow.AddMilliseconds(600.0)
+                scrollAnimation.Start()
                 this.window.releaseCapture()
                 this.refreshHover()
             elif btn=MouseRight && (this.moveRowDrag(mousePt()) |> ignore; this.endRowDrag()) then this.refreshHover()
@@ -977,6 +998,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             true
         elif this.ts.scrollThumb.IsSome && this.ts.scrollTrack.containsPoint(pt) then
             this.hideTitle()
+            scrollHover <- true
+            scrollAnimation.Start()
             let thumb = this.ts.scrollThumb.Value
             if thumb.containsPoint(pt) then
                 columnScroll <- Some(pt.y,scrollOffsetCell.value)
@@ -1514,6 +1537,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         titleTimer.Dispose()
         hoverOpenTimer.Dispose()
         hoverOpenAnimation.Dispose()
+        scrollAnimation.Dispose()
         tipRequest <- tipRequest+1
         tipTarget <- None
         titleTip |> Option.iter(fun tip -> tip.Dispose())

@@ -1220,7 +1220,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                         let draft = DesktopDraft.ofDesktop drafts loose
                         // Every row folded, the overview first; the popup opens on the screen of the window in front.
                         let front = if hwnd=IntPtr.Zero then None else Some(os.windowFromHwnd(hwnd).visibleBounds)
-                        let editor = GroupEditorForm(draft,rows |> List.map fst,windows,None,?front=front)
+                        let editor = GroupEditorForm(draft,rows |> List.map fst,windows,None,?front=front,previews=(Services.settings.getValue "groupEditorPreviews" :?> bool))
+                        editor.PreviewChanged.Add(fun value -> Services.settings.setValue("groupEditorPreviews",box value))
+                        let previewSubscription = Services.settings.notifyValue "groupEditorPreviews" (fun value -> editor.SetPreviews(unbox value))
+                        editor.Ended.Add(fun () -> previewSubscription.Dispose())
                         editor.Ended.Add(fun () -> groupEditorCell.set None)
                         editor.Saved.Add(fun plan ->
                             if DesktopPlan.isEmpty plan then Notice.show (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.nothingChanged)
