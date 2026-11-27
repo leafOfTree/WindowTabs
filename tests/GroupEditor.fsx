@@ -210,6 +210,96 @@ let main() =
         let api = settings :> ISettings
         api.setValue("enableCtrlNumberHotKey",box false)
         api.setValue("autoHideMode",box "Never")
+        // Preview cards wrap without changing the draft, and clipping keeps the source scale.
+        let cropped = GroupEditorPreview.projection true (Size(1000,800)) (Rectangle(10,20,200,96)) (Rectangle(0,50,500,500))
+        check (cropped=Some(Rectangle(10,50,200,66),Rectangle(0,150,1000,330))) "Scrolling stretched or exposed the cropped source"
+        let fitted = GroupEditorPreview.projection false (Size(1000,800)) (Rectangle(0,0,400,200)) (Rectangle(0,0,400,200))
+        check (fitted=Some(Rectangle(75,0,250,200),Rectangle(0,0,1000,800))) "The hover preview cropped the complete window"
+        let previewHandles = [1..8] |> List.map(fun i -> IntPtr(10000+i))
+        let previewDraft = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 90) previewHandles Set.empty Single] []
+        let previewWindows = previewHandles |> List.map(fun h -> {hwnd=h;name="Window "+string h;icon=None;minimized=true})
+        let previewFrame = Rect(Pt(0,0),Sz(1200,800))
+        let previewEditor = GroupEditorForm(previewDraft,[{group=Some(IntPtr 90);frame=previewFrame;active=previewHandles.Head}],previewWindows,None)
+        try
+            previewEditor.Resize(Size(Dpi.scale 820,Dpi.scale 600))
+            previewEditor.SetPreviews true
+            let row = previewEditor.Layout.rows.Head
+            check ((row.tabs |> List.map fst)=previewHandles) "Preview wrapping changed tab order"
+            check ((row.tabs |> List.map(fun (_,r) -> r.Y) |> List.distinct).Length=2) "Eight preview cards did not wrap into two rows"
+            check (row.tabs |> List.forall(fun (_,r) -> r.Height=Dpi.scale 126 && r.Right<=row.band.Right)) "Preview cards escaped the group or changed height"
+            check (previewEditor.Draft=previewDraft && DesktopPlan.isEmpty previewEditor.Plan) "Changing preview mode edited the draft"
+            previewEditor.Resize(Size(Dpi.scale 820,Dpi.scale 320))
+            previewEditor.Show()
+            let host = Control.FromHandle(previewEditor.Handle)
+            let bar = host.Controls |> Seq.cast<Control> |> Seq.pick(fun c -> match c with :? SettingsScrollBar as bar -> Some bar | _ -> None)
+            check bar.Visible "Overflowing preview rows did not show the settings scrollbar"
+            if not SystemInformation.HighContrast then
+                let sample() =
+                    use image = new Bitmap(bar.Width,bar.Height)
+                    bar.DrawToBitmap(image,bar.ClientRectangle)
+                    image.GetPixel(Dpi.scale 6,Dpi.scale 8).ToArgb()
+                let thin = sample()
+                typeof<SettingsScrollBar>.GetMethod("OnMouseEnter",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).Invoke(bar,[|box EventArgs.Empty|]) |> ignore
+                pumpUntil "The editor scrollbar did not widen on hover" (fun () -> sample()<>thin)
+            previewEditor.Resize(Size(Dpi.scale 820,Dpi.scale 600))
+            use previewImage = previewEditor.Render()
+            previewImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-editor-previews.png"))
+            let start = snd row.tabs.[4]
+            let target = snd row.tabs.[1]
+            previewEditor.MouseDown(Point(start.X+10,start.Y+10))
+            previewEditor.MouseMove(Point(target.X+2,target.Y+10))
+            previewEditor.MouseUp(Point(target.X+2,target.Y+10))
+            check (previewEditor.Draft.groups.Head.tabs.[1]=previewHandles.[4]) "Dragging across wrapped preview rows did not reorder"
+            let tab = snd previewEditor.Layout.rows.Head.tabs.Head
+            let click = Point(tab.X+10,tab.Y+10)
+            previewEditor.MouseDown click
+            previewEditor.MouseUp click
+            let expandedPreview = previewEditor.Layout.rows.Head
+            check (expandedPreview.expanded && expandedPreview.picture.Y>=(expandedPreview.tabs |> List.map(fun (_,r) -> r.Bottom) |> List.max)) "Expanded content overlapped wrapped preview cards"
+            check expandedPreview.splitButton.IsSome "Preview mode removed the existing split editor"
+            let edited = previewEditor.Draft
+            previewEditor.SetPreviews false
+            check (previewEditor.Draft=edited && previewEditor.Layout.rows.Head.tabs |> List.forall(fun (_,r) -> r.Height=Dpi.scale 30)) "Turning previews off lost edits or kept card heights"
+            let r = snd previewEditor.Layout.rows.Head.tabs.Head
+            previewEditor.MouseDown(Point(r.X+10,r.Y+10))
+            previewEditor.SetPreviews true
+            check (not previewEditor.Previews) "A preference change rearranged cards during a gesture"
+            previewEditor.Press Keys.Escape
+            check (previewEditor.Previews && previewEditor.Draft=edited) "Cancelling the gesture lost edits or the pending preview preference"
+        finally previewEditor.Close()
+        // Live DWM cards and the hover helper release registrations on scroll, toggle and close.
+        use previewSource = new Form(Text="Preview fixture",Size=Size(640,480))
+        previewSource.Show()
+        let sourceHandle = previewSource.Handle
+        let nativeDraft = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 91) [sourceHandle] Set.empty Single] []
+        let nativeEditor = GroupEditorForm(nativeDraft,[{group=Some(IntPtr 91);frame=previewFrame;active=sourceHandle}],
+                                          [{hwnd=sourceHandle;name="Preview fixture";icon=None;minimized=false}],None,previews=true)
+        try
+            nativeEditor.Show()
+            Application.DoEvents()
+            check (nativeEditor.PreviewCount=1) "The visible card did not register a live thumbnail"
+            let r = snd nativeEditor.Layout.rows.Head.tabs.Head
+            nativeEditor.MouseMove(Point(r.X+10,r.Y+Dpi.scale 40))
+            check (nativeEditor.PreviewFor=Some sourceHandle) "Hovering a preview did not arm enlargement"
+            nativeEditor.ShowPreview()
+            check nativeEditor.PreviewShown "Hovering did not show the full-window preview"
+            nativeEditor.MouseDown(Point(r.X+10,r.Y+Dpi.scale 40))
+            check (not nativeEditor.PreviewShown) "Beginning a drag left the hover preview open"
+            nativeEditor.Press Keys.Escape
+            nativeEditor.ScrollTo 0
+            check (not nativeEditor.PreviewShown && nativeEditor.PreviewFor.IsNone) "Scrolling left a hover preview open"
+            nativeEditor.SetPreviews false
+            check (nativeEditor.PreviewCount=0) "Turning previews off retained thumbnail registrations"
+            nativeEditor.SetPreviews true
+            check (nativeEditor.PreviewCount=1) "Turning previews back on lost the live thumbnail"
+            for _ in 1..10 do
+                nativeEditor.SetPreviews false
+                check (nativeEditor.PreviewCount=0) "Repeated toggles retained live thumbnails"
+                nativeEditor.SetPreviews true
+            previewSource.Close()
+            nativeEditor.ScrollTo 0
+            check (nativeEditor.PreviewCount=0) "A destroyed source retained its thumbnail"
+        finally nativeEditor.Close()
         // The popup with one row expanded, drawn without a screen, in both looks: the tabs along
         // the top with the selected one in the accent, the content under them; keys select, move
         // and take out; Save plans what changed.

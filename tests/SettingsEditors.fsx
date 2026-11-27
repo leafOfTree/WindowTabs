@@ -1277,6 +1277,14 @@ otepad.exe"]},
         Application.DoEvents()
         let rec all (control:Control) = seq { yield control; for child in control.Controls do yield! all child }
         assertTrue dialog.TopMost "Restore result could be covered by the windows being restored"
+        use longResult = new WorkspaceRestoreDialog(WorkspaceRestoreResult.Of("Long workspace",0,[for i in 1..40 -> "app.exe",sprintf "%d %s" i longTitle],[]))
+        longResult.StartPosition <- FormStartPosition.Manual
+        longResult.Location <- Point(-20000,-20000)
+        longResult.Show()
+        Application.DoEvents()
+        assertTrue (all longResult |> Seq.exists(function :? SettingsScrollBar as bar -> bar.Visible | _ -> false)) "A long restore result did not use the shared scrollbar"
+        assertTrue (all longResult |> Seq.forall(function :? ScrollableControl as panel -> not panel.AutoScroll | _ -> true)) "A restore result retained a system scrollbar"
+        longResult.Close()
         let marks = all dialog |> Seq.choose(function :? RestoreMark as mark -> Some(mark.State,mark.Active) | _ -> None) |> Seq.truncate 3 |> List.ofSeq
         assertTrue (marks=[Restored,true;NotFound,true;Failed,true]) (sprintf "Restore states lack their marks: %A" marks)
         // A clean restore shows only its restored count, not states with none in them.

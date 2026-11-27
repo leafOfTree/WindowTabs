@@ -29,6 +29,7 @@ module SettingsCatalog =
     let opacityDefault = 100
     let leaderKeyPresets = List.zip ["123456789";"QWERTYUIOP";"ASDFGHJKL;"] (Array.toList Strings.Settings.leaderKeyPresets)
     let all = [
+        { id="group-editor-previews"; page=GeneralSettings; text=Strings.GroupEditor.previewSetting; binding=Toggle("groupEditorPreviews",false,false) }
         { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"ByWindow";"ByApp"],"Off") }
         { id="tab-color-style"; page=AppearanceSettings; text=Strings.Settings.tabColorStyle; binding=Choice("tabColorStyle",["Fill";"Stripe"],"Fill") }
         // Kept in the appearance, not under a key of its own: the palette lists the presets itself.

@@ -910,6 +910,11 @@ module Strings =
     /// Written to the console a command line was given from.
     /// The group editor's popup.
     module GroupEditor =
+        let previews = { en="Window previews"; zh="窗口预览"; ja="ウィンドウのプレビュー"; ar="معاينات النوافذ"; ko="창 미리 보기" }
+        let previewSetting = {
+            caption={ en="Window previews in Edit groups"; zh="编辑分组中的窗口预览"; ja="グループ編集のウィンドウプレビュー"; ar="معاينات النوافذ في تحرير المجموعات"; ko="그룹 편집에서 창 미리 보기" }
+            description={ en="Show wrapping preview cards; hover to see the complete window."; zh="显示自动换行的预览卡片，悬停查看完整窗口。"; ja="折り返すプレビューカードを表示し、ホバーでウィンドウ全体を確認します。"; ar="عرض بطاقات معاينة تلتف تلقائيًا؛ مرر المؤشر لرؤية النافذة كاملة."; ko="줄 바꿈되는 미리 보기 카드를 표시하고 마우스를 올리면 전체 창을 봅니다." }
+            keywords={ en="group editor thumbnail hover preview"; zh="分组编辑器 缩略图 悬停 预览"; ja="グループ 編集 サムネイル プレビュー"; ar="مجموعة محرر مصغرة معاينة"; ko="그룹 편집기 썸네일 미리 보기" } }
         let title = { en="Edit groups"; zh="编辑分组"; ja="グループを編集"; ar="تحرير المجموعات"; ko="그룹 편집" }
         let windows count =
             { en=(if count=1 then "1 window" else sprintf "%d windows" count); zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نافذة" count; ko=sprintf "창 %d개" count }

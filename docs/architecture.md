@@ -507,6 +507,14 @@ trees release their owned icons. Closing the view cancels its worker.
 
 ## Settings and diagnostics
 
+The group editor's `groupEditorPreviews` preference is shared with the command
+palette through `SettingsCatalog`. Preview cards wrap in the existing tab order
+and preserve the draft, expanded split and scroll anchor when toggled. Only visible
+cards register DWM thumbnails; their source rectangles are clipped with the viewport
+so scrolling does not distort the image. A 400 ms hover opens an owned, non-activating
+full-window preview. Scrolling, editing, deactivation and closing dismiss it and
+release its registrations. The existing expanded split editor remains available.
+
 Taskbar button visibility is remembered per HWND, so unchanged z-order
 notifications do not repeatedly call Explorer to add or delete a button.
 A new Shell_TrayWnd handle invalidates this state after Explorer restarts;

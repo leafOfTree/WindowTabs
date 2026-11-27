@@ -107,7 +107,7 @@ let main () =
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
-        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; position=None; rowSlide=None; showAddButton=false; reserveAddButton=false; buttonScreen=None; windowRight=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0
+        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; position=None; rowSlide=None; showAddButton=false; reserveAddButton=false; buttonScreen=None; windowRight=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0; scrollExpansion=0.0f
         transparent=true; appearance=appearance; hover=None; captured=None }
     let originalVerticalDpi = Dpi.value()
     try
@@ -322,6 +322,11 @@ let main () =
                 check overflow.scrollThumb.IsSome "An overflowing column has no scrollbar"
                 let thumb = overflow.scrollThumb.Value
                 check (thumb.x+thumb.width<=overflow.size.width) "Scrollbar escaped the column at high DPI"
+                if not System.Windows.Forms.SystemInformation.HighContrast then
+                    use thin = overflow.render.bitmap
+                    use wide = { overflow with scrollExpansion=1.0f }.render.bitmap
+                    let different = seq { for y in 0..thin.Height-1 do for x in max 0 (thin.Width-Dpi.scale 14)..thin.Width-1 do yield thin.GetPixel(x,y)<>wide.GetPixel(x,y) } |> Seq.exists id
+                    check different "Hovering did not widen the vertical tab scrollbar"
                 let bottom = { overflow with scrollOffset=overflow.scrollMaximum }
                 check (bottom.scrollThumb.Value.bottom=bottom.scrollTrack.bottom) "Scrollbar thumb cannot reach the last row"
                 check (column.scrollThumb.IsNone) "A short column shows an unnecessary scrollbar"

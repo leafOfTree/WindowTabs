@@ -71,6 +71,8 @@ namespace Bemo
         [DllImport("dwmapi.dll")]
         public static extern int DwmRegisterThumbnail(IntPtr dest, IntPtr src, out IntPtr thumb);
         [DllImport("dwmapi.dll")]
+        public static extern int DwmQueryThumbnailSourceSize(IntPtr thumb, out SIZE size);
+        [DllImport("dwmapi.dll")]
         public static extern int DwmUpdateThumbnailProperties(IntPtr hThumbnail, ref DWM_THUMBNAIL_PROPERTIES props);
         [DllImport("dwmapi.dll")]
         public static extern int DwmUnregisterThumbnail(IntPtr hThumbnail);
