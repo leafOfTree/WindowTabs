@@ -1474,19 +1474,31 @@ let main() =
             | Invalid _ | Start | Help -> failwithf "The help's example %s is not read as a request" example
             | RunCommand(id,_) -> check (Commands.find id).IsSome (sprintf "The help's example names no command %s" id)
             | _ -> ()
-        for option in ["--command";"-c";"--workspace";"-w";"--group";"-g";"--commands";"--help";"-h"] do
+        for option in ["--command";"-c";"--workspace";"-w";"--group";"-g";"--commands";"--workspaces";"--help";"-h"] do
             check (help.Contains option) (sprintf "The %s help leaves out %s" language option)
     check (CommandLine.parse [|"--command";"next-tab"|]=RunCommand("next-tab",None)) "A command by id was not read"
     check (CommandLine.parse [|"-c";"tab-color";"Sky";"blue"|]=RunCommand("tab-color",Some "Sky blue")) "A command's choice was not read whole"
     check (CommandLine.parse [|"--workspace";"Dev";"work"|]=RestoreWorkspace "Dev work") "A workspace name with a space was not read whole"
     check (CommandLine.parse [|"--group";"a.exe";"b.exe"|]=StartGroup ["a.exe";"b.exe"]) "The programs of a group were not read"
-    check (CommandLine.parse [|"--commands"|]=ListCommands && CommandLine.parse [|"--help"|]=Help) "The listing and help were not read"
+    check (CommandLine.parse [|"--commands"|]=ListCommands && CommandLine.parse [|"--workspaces"|]=ListWorkspaces && CommandLine.parse [|"--help"|]=Help) "The listings and help were not read"
+    check ((CommandLine.invalid "--workspces").Contains (tr (Strings.CommandLine.didYouMean "--workspaces"))) "A mistyped --workspaces did not suggest it"
     check ((match CommandLine.parse [|"--bogus"|] with Invalid _ -> true | _ -> false) && (match CommandLine.parse [|"--group"|] with Invalid _ -> true | _ -> false)) "An unknown or incomplete command line was accepted"
     check (CommandLine.listing().Contains "command-palette") "The listing left out the palette"
+    check (CommandLine.workspaceListing (Bemo.Json.JObject())="") "An empty settings object listed workspaces"
+    let sampleWorkspaces =
+        Bemo.Json.JObject.Parse("""{"workspaceSchemaVersion":1,"workspaces":[{"name":"Project A","groups":[]},{"name":"Daily","groups":[]}]}""")
+    check (CommandLine.workspaceListing sampleWorkspaces="Project A"+Environment.NewLine+"Daily") "Saved workspace names were not listed one per line"
+    let multilingualNames = ["项目 A";"仕事用";"업무 공간";"Проект";"مشروع";"Café";"Cafe\u0301";"Workspace 🚀";"Research & Design"]
+    let multilingualSettings = Bemo.Json.JObject.Parse("""{"workspaceSchemaVersion":1,"workspaces":[{"name":"项目 A","groups":[]},{"name":"仕事用","groups":[]},{"name":"업무 공간","groups":[]},{"name":"Проект","groups":[]},{"name":"مشروع","groups":[]},{"name":"Café","groups":[]},{"name":"Cafe\u0301","groups":[]},{"name":"Workspace 🚀","groups":[]},{"name":"Research & Design","groups":[]}]}""")
+    check (CommandLine.workspaceListing multilingualSettings=String.concat Environment.NewLine multilingualNames) "Multilingual workspace listing changed names"
+    for name in multilingualNames do
+        check (CommandLine.parse [|"--workspace";name|]=RestoreWorkspace name) "Multilingual workspace argument changed"
     let pipe = "BemoSoftware.WindowTabs.Test."+Guid.NewGuid().ToString("N")
     do
         use server = new CommandServer(pipe,fun argv -> if argv.Length=0 then Result.Error "nothing" else Result.Ok(String.Join("+",argv)))
         check (CommandPipe.send pipe [|"--command";"next-tab"|] 3000=Some(Result.Ok "--command+next-tab")) "The pipe did not carry a command line and its reply"
+        for name in multilingualNames do
+            check (CommandPipe.send pipe [|"--workspace";name|] 3000=Some(Result.Ok ("--workspace+"+name))) "The pipe changed a multilingual workspace name"
         check (CommandPipe.send pipe [||] 3000=Some(Result.Error "nothing")) "The pipe did not carry a refusal"
         check (CommandPipe.send pipe [|"again"|] 3000=Some(Result.Ok "again")) "The pipe did not take a second command line"
     check (CommandPipe.send (pipe+".gone") [|"x"|] 200).IsNone "Sending to no listener did not say so"

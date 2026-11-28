@@ -6,7 +6,23 @@ open System.IO
 open System.Windows.Forms
 open Microsoft.FSharp.Reflection
 open Bemo.Json
- 
+
+module SettingsPaths =
+    let resolve (isStandAlone:bool) =
+        let fileName = "WindowTabsSettings.json"
+        /// The name older versions use: still read when no .json file exists yet, never written.
+        let legacyFileName = "WindowTabsSettings.txt"
+        // Resolved once, so a later working-directory change cannot redirect pending saves.
+        // A debug or test run (standalone) keeps its file in the working directory. Otherwise a file
+        // next to WindowTabs.exe makes that copy portable; this used to look in the working
+        // directory, which is not the exe's folder when Windows starts the app at sign-in.
+        let exeFolder = AppDomain.CurrentDomain.BaseDirectory
+        let folder =
+            if isStandAlone then Path.GetFullPath(".")
+            elif File.Exists(Path.Combine(exeFolder,fileName)) || File.Exists(Path.Combine(exeFolder,legacyFileName)) then exeFolder
+            else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"WindowTabs")
+        Path.GetFullPath(Path.Combine(folder,fileName)),Path.GetFullPath(Path.Combine(folder,legacyFileName))
+
 type Settings(isStandAlone, ?saveDelay:int) as this =
     let mutable cachedSettingsString = None
     let mutable cachedSettingsRec = None
@@ -17,20 +33,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     let valueCache = Dictionary<string, obj>()
     // Values already handed to other threads; cleared on every write, like valueCache.
     let published = Collections.Concurrent.ConcurrentDictionary<string, obj>()
-    let fileName = "WindowTabsSettings.json"
-    /// The name older versions use: still read when no .json file exists yet, never written.
-    let legacyFileName = "WindowTabsSettings.txt"
-    // Resolved once, so a later working-directory change cannot redirect pending saves.
-    // A debug or test run (standalone) keeps its file in the working directory. Otherwise a file
-    // next to WindowTabs.exe makes that copy portable; this used to look in the working
-    // directory, which is not the exe's folder when Windows starts the app at sign-in.
-    let exeFolder = AppDomain.CurrentDomain.BaseDirectory
-    let folder =
-        if isStandAlone then Path.GetFullPath(".")
-        elif File.Exists(Path.Combine(exeFolder,fileName)) || File.Exists(Path.Combine(exeFolder,legacyFileName)) then exeFolder
-        else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"WindowTabs")
-    let settingsPath = Path.GetFullPath(Path.Combine(folder,fileName))
-    let legacyPath = Path.GetFullPath(Path.Combine(folder,legacyFileName))
+    let settingsPath,legacyPath = SettingsPaths.resolve isStandAlone
     let store = new SettingsFileStore(settingsPath,defaultArg saveDelay 250,(fun ex ->
         Alert.show AlertKind.Warning (tr Strings.Messages.settingsSaveFailed) (tr (Strings.Messages.unableToSaveSettings settingsPath ex.Message))),
                                       legacyPath)

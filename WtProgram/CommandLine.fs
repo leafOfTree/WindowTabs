@@ -5,6 +5,7 @@ open System.IO.Pipes
 open System.Runtime.InteropServices
 open System.Text
 open System.Threading
+open Bemo.Json
 
 /// What a command line asks for.
 type CommandLineRequest =
@@ -18,6 +19,7 @@ type CommandLineRequest =
     /// Starts the programs and puts the windows they open into one group.
     | StartGroup of paths:string list
     | ListCommands
+    | ListWorkspaces
     | Help
     | Invalid of string
 
@@ -30,12 +32,13 @@ module CommandLine =
         | ("--workspace" | "-w")::name when not name.IsEmpty -> RestoreWorkspace(String.Join(" ",name))
         | ("--group" | "-g")::paths when not paths.IsEmpty -> StartGroup paths
         | ["--commands"] | ["--list"] -> ListCommands
+        | ["--workspaces"] -> ListWorkspaces
         | ["--help"] | ["-h"] | ["/?"] -> Help
         | other -> Invalid(String.Join(" ",other))
     let usage() = tr Strings.CommandLine.usage
     /// The options a command line may begin with, the long ones offered when one is mistyped.
-    let private options = ["--command";"-c";"--workspace";"-w";"--group";"-g";"--commands";"--list";"--help";"-h";"/?";"--restart"]
-    let private longOptions = ["--command";"--workspace";"--group";"--commands";"--help"]
+    let private options = ["--command";"-c";"--workspace";"-w";"--group";"-g";"--commands";"--list";"--workspaces";"--help";"-h";"/?";"--restart"]
+    let private longOptions = ["--command";"--workspace";"--group";"--commands";"--workspaces";"--help"]
     let private distance (a:string) (b:string) =
         let row = Array.init (b.Length+1) id
         for i in 1..a.Length do
@@ -65,6 +68,23 @@ module CommandLine =
         Commands.all |> List.filter(fun command -> command.listed)
         |> List.map(fun command -> sprintf "%-28s %s" command.id (tr command.text.caption))
         |> String.concat Environment.NewLine
+    /// Every saved workspace's name, one per line, from a settings JSON object.
+    let workspaceListing (root:JObject) =
+        let workspaces,_,unsupported = WorkspaceData.read root
+        if unsupported then ""
+        else
+            workspaces
+            |> List.choose(fun ws -> ws.getString("name"))
+            |> String.concat Environment.NewLine
+    /// Saved workspace names read from disk when no running copy answers the pipe.
+    let savedWorkspaces (isStandAlone:bool) =
+        try
+            let settingsPath,legacyPath = SettingsPaths.resolve isStandAlone
+            use store = new SettingsFileStore(settingsPath,250,ignore,legacyPath)
+            match store.Read() with
+            | Some text -> workspaceListing (JObject.Parse(text))
+            | None -> ""
+        with _ -> ""
 
 /// The console the program was started from, when there is one: a window program has none of
 /// its own, so what the command line asks to see is written there.
