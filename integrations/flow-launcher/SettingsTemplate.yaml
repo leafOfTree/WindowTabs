@@ -1,0 +1,13 @@
+body:
+  - type: input
+    attributes:
+      name: executable_path
+      label: WindowTabs.exe path (optional)
+      description: Leave blank to auto-detect from PATH, startup entry, or default folders.
+      defaultValue: ""
+  - type: input
+    attributes:
+      name: command_delay_ms
+      label: Focus delay before running commands (ms)
+      description: Brief pause after Flow Launcher hides so commands act on your previous window.
+      defaultValue: "120"
