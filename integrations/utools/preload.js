@@ -47,29 +47,37 @@ function sendPipe(args, timeoutMs = 1200) {
     };
     const client = net.createConnection(pipePath);
     let data = "";
+    let sent = false;
+    const lost = () => sent ? { ok: false, body: "Pipe reply lost; command outcome unknown" } : null;
+    client.setEncoding("utf8");
     const timer = setTimeout(() => {
       client.destroy();
-      done(null);
+      done(lost());
     }, timeoutMs);
 
     client.on("connect", () => {
+      sent = true;
       client.write(args.join("\r\n") + "\r\n\r\n", "utf8");
     });
     client.on("data", (chunk) => {
-      data += chunk.toString("utf8");
+      data += chunk;
     });
     client.on("end", () => {
       clearTimeout(timer);
       const lines = data.split(/\r?\n/);
-      if (!lines.length || !lines[0]) return done(null);
+      if (!["ok", "error"].includes(lines[0]) || lines.length < 2) return done(lost());
       done({
         ok: lines[0].trim() === "ok",
-        body: lines.slice(1).join("\n").trimEnd(),
+        body: lines.slice(1).join("\n").replace(/\n$/, ""),
       });
     });
     client.on("error", () => {
       clearTimeout(timer);
-      done(null);
+      done(lost());
+    });
+    client.on("close", () => {
+      clearTimeout(timer);
+      done(lost());
     });
   });
 }
@@ -103,24 +111,23 @@ function findExecutable() {
 function runCli(exe, args) {
   return new Promise((resolve) => {
     if (!exe) return resolve("");
-    execFile(exe, args, { encoding: "utf8", windowsHide: true, timeout: 3000 }, (err, stdout) => {
-      resolve(err ? "" : (stdout || "").trim());
+    execFile(exe, args, { encoding: "utf8", windowsHide: true, timeout: 8000 }, (err, stdout) => {
+      resolve(err ? "" : (stdout || ""));
     });
   });
 }
 
 async function fetchWorkspaces(exe) {
   const reply = await sendPipe(["--workspaces"]);
-  const raw = reply && reply.ok ? reply.body : await runCli(exe, ["--workspaces"]);
+  const raw = reply ? (reply.ok ? reply.body : "") : await runCli(exe, ["--workspaces"]);
   return raw
     .split(/\r?\n/)
-    .map((line) => line.trim())
     .filter(Boolean);
 }
 
 async function fetchCommands(exe) {
   const reply = await sendPipe(["--commands"]);
-  const raw = reply && reply.ok ? reply.body : await runCli(exe, ["--commands"]);
+  const raw = reply ? (reply.ok ? reply.body : "") : await runCli(exe, ["--commands"]);
   return raw
     .split(/\r?\n/)
     .map((line) => line.trim())
