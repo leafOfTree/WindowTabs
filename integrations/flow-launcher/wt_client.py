@@ -1,4 +1,5 @@
 import ctypes
+from ctypes import wintypes as W
 import os
 import shutil
 import subprocess
@@ -12,11 +13,28 @@ OPEN_EXISTING = 3
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 
+def _kernel32():
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.ProcessIdToSessionId.argtypes = [W.DWORD, ctypes.POINTER(W.DWORD)]
+    k.ProcessIdToSessionId.restype = W.BOOL
+    k.WaitNamedPipeW.argtypes = [W.LPCWSTR, W.DWORD]
+    k.WaitNamedPipeW.restype = W.BOOL
+    k.CreateFileW.argtypes = [W.LPCWSTR, W.DWORD, W.DWORD, W.LPVOID, W.DWORD, W.DWORD, W.HANDLE]
+    k.CreateFileW.restype = W.HANDLE
+    k.WriteFile.argtypes = [W.HANDLE, W.LPCVOID, W.DWORD, ctypes.POINTER(W.DWORD), W.LPVOID]
+    k.WriteFile.restype = W.BOOL
+    k.ReadFile.argtypes = [W.HANDLE, W.LPVOID, W.DWORD, ctypes.POINTER(W.DWORD), W.LPVOID]
+    k.ReadFile.restype = W.BOOL
+    k.CloseHandle.argtypes = [W.HANDLE]
+    k.CloseHandle.restype = W.BOOL
+    return k
+
+
 def _session_id() -> int:
     if sys.platform != "win32":
         return 0
-    kernel32 = ctypes.windll.kernel32
-    sid = ctypes.c_ulong(0)
+    kernel32 = _kernel32()
+    sid = W.DWORD(0)
     if kernel32.ProcessIdToSessionId(os.getpid(), ctypes.byref(sid)):
         return sid.value
     return 0
@@ -30,7 +48,7 @@ def send_pipe(args: list[str], timeout_ms: int = 1500) -> tuple[bool, str] | Non
     """Send CLI args to a running WindowTabs instance over its named pipe."""
     if sys.platform != "win32":
         return None
-    kernel32 = ctypes.windll.kernel32
+    kernel32 = _kernel32()
     name = pipe_name()
     if not kernel32.WaitNamedPipeW(name, timeout_ms):
         return None
@@ -47,20 +65,30 @@ def send_pipe(args: list[str], timeout_ms: int = 1500) -> tuple[bool, str] | Non
         return None
     try:
         payload = ("\r\n".join(args) + "\r\n\r\n").encode("utf-8")
-        written = ctypes.c_ulong(0)
-        if not kernel32.WriteFile(handle, payload, len(payload), ctypes.byref(written), None):
-            return None
+        written = W.DWORD(0)
+        if not kernel32.WriteFile(handle, payload, len(payload), ctypes.byref(written), None) or written.value != len(payload):
+            return False, "Pipe write failed; command outcome unknown"
         chunks: list[bytes] = []
         buf = ctypes.create_string_buffer(4096)
-        read = ctypes.c_ulong(0)
-        while kernel32.ReadFile(handle, buf, 4096, ctypes.byref(read), None) and read.value > 0:
-            chunks.append(buf.raw[: read.value])
-        text = b"".join(chunks).decode("utf-8", errors="replace")
-        lines = text.splitlines()
-        if not lines:
-            return None
-        ok = lines[0].strip() == "ok"
-        body = "\n".join(lines[1:]).rstrip()
+        read = W.DWORD(0)
+        while True:
+            if not kernel32.ReadFile(handle, buf, 4096, ctypes.byref(read), None):
+                if ctypes.get_last_error() == 109:
+                    break
+                return False, "Pipe read failed; command outcome unknown"
+            if not read.value:
+                break
+            chunks.append(buf.raw[:read.value])
+        try:
+            text = b"".join(chunks).decode("utf-8")
+        except UnicodeDecodeError:
+            return False, "Invalid UTF-8 response"
+        status, sep, body = text.partition("\n")
+        status = status.removesuffix("\r")
+        if not sep or status not in ("ok", "error"):
+            return False, "Invalid pipe response; command outcome unknown"
+        ok = status == "ok"
+        body = body.removesuffix("\n").removesuffix("\r")
         return ok, body
     finally:
         kernel32.CloseHandle(handle)
@@ -105,25 +133,29 @@ def find_executable(configured: str = "") -> str | None:
     return None
 
 
-def _run_cli(exe: str, args: list[str], timeout_s: float = 3.0) -> str:
+def _run_cli(exe: str, args: list[str], timeout_s: float = 8.0) -> str:
     result = subprocess.run(
         [exe, *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
-        errors="replace",
+        errors="strict",
+        check=True,
         timeout=timeout_s,
         creationflags=CREATE_NO_WINDOW if sys.platform == "win32" else 0,
     )
-    return result.stdout.strip()
+    return result.stdout
 
 
 def list_commands(exe: str | None) -> list[tuple[str, str]]:
     reply = send_pipe(["--commands"])
-    if reply is not None and reply[0]:
-        raw = reply[1]
+    if reply is not None:
+        raw = reply[1] if reply[0] else ""
     elif exe:
-        raw = _run_cli(exe, ["--commands"])
+        try:
+            raw = _run_cli(exe, ["--commands"])
+        except (OSError, subprocess.SubprocessError, UnicodeError):
+            return []
     else:
         return []
     commands: list[tuple[str, str]] = []
@@ -140,13 +172,16 @@ def list_commands(exe: str | None) -> list[tuple[str, str]]:
 
 def list_workspaces(exe: str | None) -> list[str]:
     reply = send_pipe(["--workspaces"])
-    if reply is not None and reply[0]:
-        raw = reply[1]
+    if reply is not None:
+        raw = reply[1] if reply[0] else ""
     elif exe:
-        raw = _run_cli(exe, ["--workspaces"])
+        try:
+            raw = _run_cli(exe, ["--workspaces"])
+        except (OSError, subprocess.SubprocessError, UnicodeError):
+            return []
     else:
         return []
-    return [line.strip() for line in raw.splitlines() if line.strip()]
+    return [line for line in raw.splitlines() if line]
 
 
 def restore_workspace(exe: str | None, name: str) -> None:
