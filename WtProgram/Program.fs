@@ -997,6 +997,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             else Result.Error (tr (Strings.CommandLine.noSuchWorkspace name))
         | StartGroup paths -> this.launchGroup paths; Result.Ok ""
         | ListCommands -> Result.Ok (CommandLine.listing())
+        | ListWorkspaces -> this.workspaceSummaries() |> List.map fst |> String.concat Environment.NewLine |> Result.Ok
         | Invalid given -> Result.Error (CommandLine.invalid given)
         | Start | Restart | Help -> Result.Ok (CommandLine.usage())
 
@@ -2139,6 +2140,14 @@ module Bootstrap =
             | ListCommands ->
                 ConsoleOutput.write (CommandLine.listing())
                 0
+            | ListWorkspaces ->
+                match CommandPipe.send CommandPipe.name argv 3000 with
+                | Some(Result.Ok text) -> (if text<>"" then ConsoleOutput.write text); 0
+                | Some(Result.Error text) -> ConsoleOutput.write text; 1
+                | None ->
+                    let text = CommandLine.savedWorkspaces Diagnostics.Debugger.IsAttached
+                    if text<>"" then ConsoleOutput.write text
+                    0
             | _ ->
             use instance = new SingleInstance("BemoSoftware.WindowTabs")
             // Starting WindowTabs again replaces the running copy, whichever build or folder either

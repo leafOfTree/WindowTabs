@@ -142,11 +142,13 @@ Run the same commands from PowerShell in the folder containing `WindowTabs.exe`:
 .\WindowTabs.exe --workspace "Project A"
 .\WindowTabs.exe --group "C:\Program Files\App\app.exe" notepad.exe
 .\WindowTabs.exe --commands
+.\WindowTabs.exe --workspaces
 ```
 
 `--group` starts the programs and puts the windows they open into one group, and
 `--workspace` restores a saved workspace; either also starts WindowTabs when it is not
-running. `--commands` lists every command with its id.
+running. `--commands` lists every command with its id, and `--workspaces` lists every saved
+workspace name.
 
 ## Settings and updates
 
