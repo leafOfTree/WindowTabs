@@ -1,0 +1,12 @@
+{
+  "ID": "8F3A4B6C9D124E8BA7C32D5E6F1A9B04",
+  "ActionKeyword": "wt",
+  "Name": "WindowTabs",
+  "Description": "Switch workspaces and run WindowTabs commands",
+  "Author": "leafOfTree",
+  "Version": "1.0.0",
+  "Language": "python",
+  "Website": "https://windowtabs.app",
+  "IcoPath": "Images\\app.png",
+  "ExecuteFileName": "main.py"
+}

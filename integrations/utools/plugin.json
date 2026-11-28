@@ -1,0 +1,22 @@
+{
+  "pluginName": "WindowTabs",
+  "description": "Control WindowTabs workspaces and window-tabbing commands / 控制 WindowTabs 工作区与窗口标签命令",
+  "author": "leafOfTree",
+  "homepage": "https://windowtabs.app",
+  "version": "1.0.0",
+  "logo": "logo.png",
+  "preload": "preload.js",
+  "platform": ["win32"],
+  "features": [
+    {
+      "code": "wt_all",
+      "explain": "搜索 WindowTabs 工作区与命令",
+      "cmds": ["wt", "windowtabs", "窗口标签", "标签分组", "窗口分屏"]
+    },
+    {
+      "code": "wt_workspaces",
+      "explain": "快速恢复 WindowTabs 工作区",
+      "cmds": ["工作区", "wt ws", "workspaces"]
+    }
+  ]
+}
